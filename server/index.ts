@@ -5,12 +5,13 @@ import jwt from 'jsonwebtoken'
 import { prisma, isDatabaseConfigured } from './db'
 
 const app = express()
-const PORT = process.env.PORT || 5000
+const PORT = Number(process.env.PORT) || 5000
 const JWT_SECRET = process.env.JWT_SECRET || 'rdk-esports-secret-jwt-key-2026'
 
 const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
+  'https://rdkesports-production.up.railway.app',
   process.env.CLIENT_URL,
 ].filter(Boolean) as string[]
 
@@ -2096,8 +2097,9 @@ async function initDatabase() {
   }
 }
 
-initDatabase().then(() => {
-  app.listen(PORT, () => {
-    console.log(`RDK Esports Tournament OS running on http://127.0.0.1:${PORT}`)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`RDK Esports Tournament OS running on http://0.0.0.0:${PORT}`)
+  initDatabase().catch((err) => {
+    console.error('[Database] Background sync notice:', err)
   })
 })

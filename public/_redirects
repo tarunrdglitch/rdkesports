@@ -1,2 +1,5 @@
+# API Proxy to Railway Backend
+/api/*  https://rdkesports-production.up.railway.app/api/:splat  200!
+
 # Netlify SPA routing (prevents 404 on refresh)
-/*    /index.html   200
+/*      /index.html                                             200
