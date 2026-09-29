@@ -6,19 +6,14 @@ import {
   Users,
   Gamepad2,
   Share2,
-  Copy,
   CheckCircle2,
-  Edit3,
   ExternalLink,
   Sparkles,
   Plus,
   Calendar,
   Coins,
-  Radio,
-  X,
-  AlertCircle,
   Play,
-  Save,
+  Lock,
 } from 'lucide-react'
 import { useAuth } from '@/stores/authStore'
 import { creatorService } from '@/services/api/creatorService'
@@ -31,25 +26,7 @@ export default function CreatorProfilePage() {
   const [creator, setCreator] = useState<OfficialCreator | null>(null)
   const [tournaments, setTournaments] = useState<Tournament[]>([])
   const [loading, setLoading] = useState(true)
-  const [isEditing, setIsEditing] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
-  const [successMsg, setSuccessMsg] = useState('')
-  const [errorMsg, setErrorMsg] = useState('')
-
-  // Edit form state
-  const [formData, setFormData] = useState({
-    name: '',
-    handle: '',
-    organizationName: '',
-    avatar: '',
-    bio: '',
-    subscribers: '',
-    games: '',
-    youtube: '',
-    instagram: '',
-    discord: '',
-  })
 
   useEffect(() => {
     loadProfileAndTournaments()
@@ -99,18 +76,6 @@ export default function CreatorProfilePage() {
       }
 
       setCreator(activeCreator)
-      setFormData({
-        name: activeCreator.name,
-        handle: activeCreator.handle,
-        organizationName: activeCreator.organizationName,
-        avatar: activeCreator.avatar || '',
-        bio: activeCreator.bio || '',
-        subscribers: activeCreator.subscribers || 'Official Partner',
-        games: Array.isArray(activeCreator.games) ? activeCreator.games.join(', ') : '',
-        youtube: activeCreator.socials?.youtube || '',
-        instagram: activeCreator.socials?.instagram || '',
-        discord: activeCreator.socials?.discord || '',
-      })
 
       // Filter tournaments hosted by this creator
       const myTourneys = allTournaments.filter(
@@ -131,57 +96,21 @@ export default function CreatorProfilePage() {
 
   const handleCopyShareLink = () => {
     const handleClean = (creator?.handle || 'creator').replace('@', '')
-    const url = `${window.location.origin}/tournaments?creator=${encodeURIComponent(handleClean)}`
+    const url = `${window.location.origin}/#creators`
     navigator.clipboard.writeText(url)
     setCopiedLink(true)
     setTimeout(() => setCopiedLink(false), 2500)
   }
 
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!creator) return
-
-    setIsSaving(true)
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    try {
-      const gamesList = formData.games
-        .split(',')
-        .map((g) => g.trim())
-        .filter(Boolean)
-
-      const payload: Partial<OfficialCreator> = {
-        name: formData.name.trim(),
-        handle: formData.handle.startsWith('@') ? formData.handle.trim() : `@${formData.handle.trim()}`,
-        organizationName: formData.organizationName.trim(),
-        avatar: formData.avatar.trim() || undefined,
-        bio: formData.bio.trim(),
-        subscribers: formData.subscribers.trim() || 'Official Partner',
-        games: gamesList.length > 0 ? gamesList : ['Free Fire', 'BGMI'],
-        socials: {
-          youtube: formData.youtube.trim() || undefined,
-          instagram: formData.instagram.trim() || undefined,
-          discord: formData.discord.trim() || undefined,
-        },
-      }
-
-      const updated = await creatorService.update(creator.id, payload)
-      setCreator(updated)
-      setIsEditing(false)
-      setSuccessMsg('Creator portfolio updated successfully!')
-      setTimeout(() => setSuccessMsg(''), 4000)
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to update portfolio')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
   // Calculate dynamic stats
   const totalTourneys = tournaments.length
-  const activeTourneys = tournaments.filter((t) => t.status === 'registration_open' || t.status === 'live').length
-  const totalTeams = tournaments.reduce((acc, t) => acc + (t.registeredTeamsCount || t.teams || 0), 0)
+  const activeTourneys = tournaments.filter(
+    (t) => t.status === 'registration_open' || t.status === 'live'
+  ).length
+  const totalTeams = tournaments.reduce(
+    (acc, t) => acc + (t.registeredTeamsCount || t.teams || 0),
+    0
+  )
   const totalPrizePool = tournaments.reduce((acc, t) => {
     const numeric = parseInt((t.prizePool || '0').replace(/[^0-9]/g, ''), 10)
     return acc + (isNaN(numeric) ? 0 : numeric)
@@ -192,7 +121,7 @@ export default function CreatorProfilePage() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-muted-foreground text-xs">
           <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span>Loading creator portfolio...</span>
+          <span>Loading creator profile...</span>
         </div>
       </div>
     )
@@ -200,22 +129,7 @@ export default function CreatorProfilePage() {
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
-      {/* Notifications */}
-      {successMsg && (
-        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-400">
-          <CheckCircle2 className="size-4 shrink-0" />
-          <span>{successMsg}</span>
-        </div>
-      )}
-
-      {errorMsg && (
-        <div className="flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger">
-          <AlertCircle className="size-4 shrink-0" />
-          <span>{errorMsg}</span>
-        </div>
-      )}
-
-      {/* ── 1. HERO BRAND & IDENTITY BANNER ── */}
+      {/* ── 1. HERO BRAND & IDENTITY BANNER (COMMON CREATOR INFO) ── */}
       <div className="relative rounded-2xl border border-border/80 bg-gradient-to-b from-card via-card/90 to-background overflow-hidden shadow-2xl">
         {/* Esports ambient backdrop */}
         <div className="h-44 md:h-56 w-full relative overflow-hidden bg-gradient-to-r from-primary/30 via-amber-600/20 to-primary/10">
@@ -234,22 +148,15 @@ export default function CreatorProfilePage() {
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 -mt-16 md:-mt-20">
             {/* Avatar & Main Titles */}
             <div className="flex flex-col sm:flex-row sm:items-end gap-5">
-              <div className="relative group size-28 md:size-32 rounded-2xl overflow-hidden border-4 border-card bg-muted shadow-2xl shrink-0 ring-2 ring-primary/40">
+              <div className="relative size-28 md:size-32 rounded-2xl overflow-hidden border-4 border-card bg-muted shadow-2xl shrink-0 ring-2 ring-primary/40">
                 <img
                   src={
                     creator?.avatar ||
                     'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80'
                   }
                   alt={creator?.name}
-                  className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                  className="w-full h-full object-cover"
                 />
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="absolute inset-0 bg-black/60 backdrop-blur-xs opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-white text-[10px] font-bold gap-1 cursor-pointer"
-                >
-                  <Edit3 className="size-4 text-primary" />
-                  Change
-                </button>
               </div>
 
               <div className="space-y-1.5">
@@ -258,7 +165,7 @@ export default function CreatorProfilePage() {
                     {creator?.name || 'Creator Name'}
                   </h1>
                   <span className="inline-flex items-center gap-1 rounded bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider">
-                    <ShieldCheck className="size-3" /> Partner
+                    <ShieldCheck className="size-3" /> Official Creator
                   </span>
                 </div>
 
@@ -283,23 +190,24 @@ export default function CreatorProfilePage() {
                 {copiedLink ? (
                   <>
                     <CheckCircle2 className="size-3.5 text-emerald-400" />
-                    <span className="text-emerald-400">Link Copied!</span>
+                    <span className="text-emerald-400">Profile Link Copied!</span>
                   </>
                 ) : (
                   <>
                     <Share2 className="size-3.5" />
-                    <span>Share Portfolio</span>
+                    <span>Share Public Profile</span>
                   </>
                 )}
               </button>
 
-              <button
-                onClick={() => setIsEditing(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3.5 py-2 text-xs font-bold text-primary hover:bg-primary/20 transition shadow-sm"
+              <Link
+                to="/"
+                target="_blank"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-muted transition shadow-sm"
               >
-                <Edit3 className="size-3.5" />
-                <span>Edit Portfolio</span>
-              </button>
+                <ExternalLink className="size-3.5" />
+                <span>View on Landing Page</span>
+              </Link>
 
               <Link
                 to="/creator/tournaments/create"
@@ -311,9 +219,22 @@ export default function CreatorProfilePage() {
             </div>
           </div>
 
+          {/* Admin Managed Note */}
+          <div className="mt-6 rounded-lg border border-primary/20 bg-primary/5 p-3 flex items-center justify-between text-xs text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <Lock className="size-4 text-primary shrink-0" />
+              <span>
+                <strong>Official Partner Profile:</strong> Managed by Platform Authority (Super Admin) & showcased on the RDK Esports Landing Page.
+              </span>
+            </div>
+            <span className="text-[10px] font-bold text-primary uppercase tracking-wider bg-primary/10 px-2 py-0.5 rounded">
+              Verified Partner
+            </span>
+          </div>
+
           {/* Creator Bio Description */}
           {creator?.bio && (
-            <div className="mt-6 pt-5 border-t border-border/60">
+            <div className="mt-5 pt-4 border-t border-border/60">
               <p className="text-xs md:text-sm text-muted-foreground leading-relaxed max-w-4xl">
                 {creator.bio}
               </p>
@@ -368,7 +289,7 @@ export default function CreatorProfilePage() {
                   className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-bold text-indigo-400 hover:bg-indigo-500/20 transition"
                 >
                   <ExternalLink className="size-3.5" />
-                  Discord
+                  Discord Community
                 </a>
               )}
             </div>
@@ -423,7 +344,7 @@ export default function CreatorProfilePage() {
         </div>
       </div>
 
-      {/* ── 3. TOURNAMENTS PORTFOLIO GRID ── */}
+      {/* ── 3. TOURNAMENTS HOSTED BY THIS CREATOR ── */}
       <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
         <div className="p-5 border-b border-border flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -530,170 +451,6 @@ export default function CreatorProfilePage() {
           </div>
         )}
       </div>
-
-      {/* ── 4. EDIT PROFILE & SOCIALS MODAL ── */}
-      {isEditing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-border pb-3 mb-5">
-              <div className="flex items-center gap-2">
-                <Edit3 className="size-5 text-primary" />
-                <h3 className="font-heading font-black text-lg text-foreground">
-                  Edit Creator Portfolio & Brand
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsEditing(false)}
-                className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-medium text-foreground mb-1">Creator / Channel Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full rounded-lg border border-border bg-muted p-2.5 text-foreground font-semibold focus:border-primary focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-medium text-foreground mb-1">Public Handle *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.handle}
-                    onChange={(e) => setFormData({ ...formData, handle: e.target.value })}
-                    className="w-full rounded-lg border border-border bg-muted p-2.5 text-foreground font-mono focus:border-primary focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-medium text-foreground mb-1">Organization / Clan Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.organizationName}
-                    onChange={(e) => setFormData({ ...formData, organizationName: e.target.value })}
-                    className="w-full rounded-lg border border-border bg-muted p-2.5 text-foreground font-semibold focus:border-primary focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-medium text-foreground mb-1">Community Tag / Subscribers</label>
-                  <input
-                    type="text"
-                    value={formData.subscribers}
-                    onChange={(e) => setFormData({ ...formData, subscribers: e.target.value })}
-                    placeholder="e.g. 50K Subscribers or Official Partner"
-                    className="w-full rounded-lg border border-border bg-muted p-2.5 text-foreground focus:border-primary focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-medium text-foreground mb-1">Avatar Image URL</label>
-                <input
-                  type="url"
-                  value={formData.avatar}
-                  onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full rounded-lg border border-border bg-muted p-2.5 text-foreground focus:border-primary focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-foreground mb-1">Bio / Channel Overview</label>
-                <textarea
-                  rows={3}
-                  value={formData.bio}
-                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                  placeholder="Tell tournament participants and brands about your channel and tournaments..."
-                  className="w-full rounded-lg border border-border bg-muted p-2.5 text-foreground focus:border-primary focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-foreground mb-1">Supported Games (comma-separated)</label>
-                <input
-                  type="text"
-                  value={formData.games}
-                  onChange={(e) => setFormData({ ...formData, games: e.target.value })}
-                  placeholder="Free Fire, BGMI, Valorant"
-                  className="w-full rounded-lg border border-border bg-muted p-2.5 text-foreground focus:border-primary focus:outline-none"
-                />
-              </div>
-
-              <div className="pt-2 border-t border-border space-y-3">
-                <span className="font-bold text-foreground text-xs uppercase tracking-wider block">
-                  Connected Social Links
-                </span>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-24 text-muted-foreground font-semibold">YouTube URL:</span>
-                    <input
-                      type="url"
-                      value={formData.youtube}
-                      onChange={(e) => setFormData({ ...formData, youtube: e.target.value })}
-                      placeholder="https://youtube.com/@channel"
-                      className="flex-1 rounded-lg border border-border bg-muted p-2 text-foreground focus:border-primary focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="w-24 text-muted-foreground font-semibold">Instagram URL:</span>
-                    <input
-                      type="url"
-                      value={formData.instagram}
-                      onChange={(e) => setFormData({ ...formData, instagram: e.target.value })}
-                      placeholder="https://instagram.com/handle"
-                      className="flex-1 rounded-lg border border-border bg-muted p-2 text-foreground focus:border-primary focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="w-24 text-muted-foreground font-semibold">Discord URL:</span>
-                    <input
-                      type="url"
-                      value={formData.discord}
-                      onChange={(e) => setFormData({ ...formData, discord: e.target.value })}
-                      placeholder="https://discord.gg/invite"
-                      className="flex-1 rounded-lg border border-border bg-muted p-2 text-foreground focus:border-primary focus:outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-xs font-bold text-background shadow hover:opacity-90 disabled:opacity-50"
-                >
-                  <Save className="size-3.5" />
-                  {isSaving ? 'Saving...' : 'Save Portfolio Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

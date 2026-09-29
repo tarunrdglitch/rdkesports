@@ -32,15 +32,16 @@ import { homeFor } from '@/app/config/roles'
 import type { Tournament, PlatformStats } from '@/types'
 
 // ═══════════════════════════════════════════════════════════════
-// HARDCODED OFFICIAL CREATORS — Update this list manually
 // ═══════════════════════════════════════════════════════════════
-const OFFICIAL_CREATORS = [
+// OFFICIAL CREATORS — Default & Dynamic Partners
+// ═══════════════════════════════════════════════════════════════
+const DEFAULT_CREATORS = [
   {
     id: 'rdk_head',
     name: 'RDK Esports',
     handle: '@rdkesports',
     title: 'Platform Head & Tournament Director',
-    photo: '/creator-rdk.png', // ← The real photo you provided
+    photo: '/creator-rdk.png',
     subscribers: '12K+ Community',
     bio: 'The architect behind RDK Esports — running high-stakes tournaments, IPL-style player auctions, and building the next generation of South Indian competitive gaming.',
     games: ['Free Fire', 'BGMI', 'Valorant'],
@@ -55,51 +56,28 @@ const OFFICIAL_CREATORS = [
       discord: 'https://discord.gg/rdkesports',
     },
   },
-  // ─────────────────────────────────────────────────────────────
-  // Add more creators below. Use the same shape as above.
-  // Replace photo with '/your-creator-photo.png' (put it in /public)
-  // ─────────────────────────────────────────────────────────────
   {
-    id: 'clashers',
-    name: 'Clashers Live',
-    handle: '@clasherslive',
+    id: 'tamil_aura_zoner',
+    name: 'Tamil Aura Zoner',
+    handle: '@tamilaurazonerofficial',
     title: 'Official Partner Creator',
     photo: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
-    subscribers: '480K Subscribers',
-    bio: 'Premier Free Fire esports caster and tournament organizer hosting high-stakes tier-1 championships across South India.',
+    subscribers: 'Official Partner',
+    bio: 'Official verified esports creator, tournament broadcaster, and community partner conducting competitive Free Fire & BGMI championships on RDK Esports.',
     games: ['Free Fire', 'BGMI'],
-    activeTournaments: 2,
-    totalTournaments: 14,
+    activeTournaments: 1,
+    totalTournaments: 8,
     verified: true,
     rank: 2,
-    accentColor: '#8B5CF6',
+    accentColor: '#FF4D2D',
     socials: {
-      youtube: 'https://youtube.com/@clasherslive',
-      instagram: 'https://instagram.com/clasherslive',
-      discord: 'https://discord.gg/clashers',
-    },
-  },
-  {
-    id: 'tamil_titans',
-    name: 'Tamil Titans Gaming',
-    handle: '@tamiltitansgaming',
-    title: 'Official Partner Creator',
-    photo: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
-    subscribers: '320K Followers',
-    bio: 'Official South India gaming creator known for daily BGMI competitive scrims, LAN events, and collegiate tournaments.',
-    games: ['BGMI', 'Valorant'],
-    activeTournaments: 1,
-    totalTournaments: 9,
-    verified: true,
-    rank: 3,
-    accentColor: '#F59E0B',
-    socials: {
-      youtube: 'https://youtube.com/@tamiltitans',
-      instagram: 'https://instagram.com/tamiltitans',
-      discord: 'https://discord.gg/tamiltitans',
+      youtube: 'https://youtube.com',
+      instagram: 'https://instagram.com',
+      discord: 'https://discord.gg',
     },
   },
 ]
+const OFFICIAL_CREATORS = DEFAULT_CREATORS
 
 // ═══════════════════════════════════════════════════════════════
 // Animation variants
@@ -192,7 +170,7 @@ function CreatorCard({ creator, index }: { creator: typeof OFFICIAL_CREATORS[0];
 
         {/* Game tags floating on photo */}
         <div className="absolute bottom-4 left-4 flex flex-wrap gap-1.5 z-10">
-          {creator.games.map((g) => (
+          {creator.games.map((g: string) => (
             <span
               key={g}
               className="rounded-md border border-white/10 bg-background/70 backdrop-blur-sm px-2.5 py-0.5 text-[10px] font-bold text-white/90"
@@ -421,6 +399,7 @@ export default function LandingPage() {
   const { user } = useAuth()
   const { openLogin, openRegister } = useAuthModal()
   const [tournaments, setTournaments] = useState<Tournament[]>([])
+  const [creators, setCreators] = useState<any[]>(DEFAULT_CREATORS)
   const [stats, setStats] = useState<PlatformStats | null>(null)
   const [activeTab, setActiveTab] = useState<'all' | 'live' | 'upcoming'>('all')
   const [formatFilter, setFormatFilter] = useState<'all' | 'auction' | 'br_squad' | 'br_solo' | 'cs_norules' | 'cs_limited' | 'cs_onetap'>('all')
@@ -429,6 +408,29 @@ export default function LandingPage() {
   useEffect(() => {
     tournamentService.list().then(setTournaments)
     creatorService.getPlatformStats().then(setStats)
+    creatorService.list().then((dbList) => {
+      if (dbList && dbList.length > 0) {
+        const mapped = dbList.map((c, i) => ({
+          id: c.id,
+          name: c.name,
+          handle: c.handle,
+          title: 'Official Partner Creator',
+          photo:
+            c.avatar ||
+            'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+          subscribers: c.subscribers || 'Official Partner',
+          bio: c.bio,
+          games: Array.isArray(c.games) ? c.games : ['Free Fire', 'BGMI'],
+          activeTournaments: c.activeTournaments || 1,
+          totalTournaments: c.totalTournaments || 6,
+          verified: true,
+          rank: i + 1,
+          accentColor: i === 0 ? '#FF4D2D' : i === 1 ? '#8B5CF6' : '#F59E0B',
+          socials: c.socials || {},
+        }))
+        setCreators(mapped)
+      }
+    })
     const onScroll = () => setNavScrolled(window.scrollY > 40)
     window.addEventListener('scroll', onScroll)
 
@@ -836,7 +838,7 @@ export default function LandingPage() {
             variants={{ show: { transition: { staggerChildren: 0.1 } } }}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
           >
-            {OFFICIAL_CREATORS.map((c, i) => (
+            {creators.map((c, i) => (
               <CreatorCard key={c.id} creator={c} index={i} />
             ))}
           </motion.div>
