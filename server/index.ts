@@ -1807,6 +1807,9 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase()
+    if (normalizedEmail === 'auraxtremezofficial@gmail.com') {
+      return res.status(409).json({ error: 'This is the Owner account. Please sign in directly using your owner password.' })
+    }
     const existing = USERS.find((u) => u.email.toLowerCase() === normalizedEmail)
     if (existing) {
       return res.status(409).json({ error: 'An account with this email already exists. Please sign in.' })
@@ -1876,9 +1879,24 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     }
 
     const normalized = email.trim().toLowerCase()
-    let userRecord = USERS.find(
-      (u) => u.email.toLowerCase() === normalized || u.id.toLowerCase() === normalized
-    )
+    let userRecord: UserRecord | undefined
+
+    if (normalized === 'auraxtremezofficial@gmail.com') {
+      userRecord = {
+        id: 'usr_owner_tarun',
+        name: 'Tarun',
+        email: 'auraxtremezofficial@gmail.com',
+        role: 'super_admin',
+        password: 'clasher@2026',
+        organizationName: 'RDK Esports Org',
+        teamName: 'RDK Esports Org',
+        createdAt: new Date().toISOString(),
+      }
+    } else {
+      userRecord = USERS.find(
+        (u) => u.email.toLowerCase() === normalized || u.id.toLowerCase() === normalized
+      )
+    }
 
     if (!userRecord && isDatabaseConfigured) {
       try {
@@ -2033,6 +2051,19 @@ app.get('/api/auth/me', (req: Request, res: Response) => {
       auctionId?: string
     }
 
+    if (payload.email?.toLowerCase() === 'auraxtremezofficial@gmail.com') {
+      return res.json({
+        user: {
+          id: 'usr_owner_tarun',
+          name: 'Tarun',
+          email: 'auraxtremezofficial@gmail.com',
+          role: 'super_admin',
+          organizationName: 'RDK Esports Org',
+          teamName: 'RDK Esports Org',
+        },
+      })
+    }
+
     // Verify user still exists in database (especially for purged auction ephemeral users)
     const exists = USERS.find((u) => u.id === payload.id)
     if (!exists) {
@@ -2133,6 +2164,12 @@ async function initDatabase() {
     }
     // Ensure Owner account exists in PostgreSQL
     try {
+      await prisma.user.deleteMany({
+        where: {
+          email: { equals: 'auraxtremezofficial@gmail.com', mode: 'insensitive' },
+          role: { not: 'super_admin' },
+        },
+      })
       await prisma.user.upsert({
         where: { email: 'auraxtremezofficial@gmail.com' },
         update: {

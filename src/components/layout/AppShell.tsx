@@ -12,9 +12,12 @@ export const AppShell = () => {
   const [open, setOpen] = useState(false)
 
   // Dynamically select menu based on active role
+  const isOwner = user?.role === 'super_admin' || user?.email?.toLowerCase() === 'auraxtremezofficial@gmail.com'
+  const displayName = isOwner ? 'Tarun' : (user?.name || 'User')
+
   const getNavItems = (): NavItem[] => {
     if (!user) return []
-    if (user.role === 'super_admin') return adminNav
+    if (isOwner) return adminNav
     if (['org_owner', 'org_admin', 'tournament_manager'].includes(user.role)) return creatorNav
     if (user.role === 'ambassador') return ambassadorNav
     return playerNav
@@ -23,9 +26,10 @@ export const AppShell = () => {
   const items = getNavItems()
 
   const getRoleLabel = () => {
+    if (isOwner) return 'Owner'
     switch (user?.role) {
       case 'super_admin':
-        return 'Head Admin'
+        return 'Owner'
       case 'org_owner':
         return 'Official Creator'
       case 'org_admin':
@@ -99,10 +103,10 @@ export const AppShell = () => {
         <div className="mt-auto p-4 border-t border-border bg-muted/20">
           <div className="flex items-center gap-2">
             <div className="size-7 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">
-              {user?.name?.[0] || 'U'}
+              {displayName?.[0] || 'T'}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-foreground truncate">{user?.name}</p>
+              <p className="text-xs font-semibold text-foreground truncate">{displayName}</p>
               <span className="inline-block text-[9px] uppercase font-bold text-primary bg-primary/10 px-1.5 py-0.2 rounded">
                 {getRoleLabel()}
               </span>
@@ -156,7 +160,7 @@ export const AppShell = () => {
 
           <div className="ml-auto flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <span className="block text-xs font-semibold text-foreground">{user?.name}</span>
+              <span className="block text-xs font-semibold text-foreground">{displayName}</span>
               <span className="text-[10px] text-primary font-medium">{getRoleLabel()}</span>
             </div>
 
@@ -164,7 +168,7 @@ export const AppShell = () => {
               aria-label="Sign out"
               onClick={async () => {
                 await logout()
-                nav('/login')
+                nav('/?auth=login')
               }}
               className="inline-flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition"
               title="Sign Out"
