@@ -1,0 +1,7 @@
+# HTML files: never cache so updates appear immediately
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Hashed assets: cache aggressively
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
