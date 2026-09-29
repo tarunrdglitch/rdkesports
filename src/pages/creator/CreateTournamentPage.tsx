@@ -22,6 +22,7 @@ import {
   Target,
   Zap,
   Users,
+  UserCheck,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { useAuth } from '@/stores/authStore'
@@ -30,37 +31,9 @@ const GAMES = [
   {
     id: 'Free Fire',
     name: 'Free Fire MAX',
-    popularFormat: 'Battle Royale & Clash Squad',
+    popularFormat: 'Battle Royale, Clash Squad & IPL Auction',
     banner: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&q=80',
     color: 'from-amber-600 to-red-600',
-  },
-  {
-    id: 'BGMI',
-    name: 'BGMI (Battlegrounds Mobile)',
-    popularFormat: 'Classic Erangel & TDM',
-    banner: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=1200&q=80',
-    color: 'from-emerald-600 to-teal-800',
-  },
-  {
-    id: 'Valorant',
-    name: 'Valorant',
-    popularFormat: '5v5 Spike Rush & Competitive',
-    banner: 'https://images.unsplash.com/photo-1560253023-3ec5d502959f?auto=format&fit=crop&w=1200&q=80',
-    color: 'from-rose-600 to-pink-700',
-  },
-  {
-    id: 'CODM',
-    name: 'Call of Duty: Mobile',
-    popularFormat: 'Search & Destroy / Hardpoint',
-    banner: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=1200&q=80',
-    color: 'from-blue-600 to-indigo-800',
-  },
-  {
-    id: 'Pokemon Unite',
-    name: 'Pokemon Unite',
-    popularFormat: '5v5 MOBA Arena',
-    banner: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
-    color: 'from-yellow-500 to-amber-700',
   },
 ]
 
@@ -85,14 +58,14 @@ const FORMATS: TournamentFormatOption[] = [
     name: 'IPL-Style Live Player Auction',
     shortLabel: 'Auction Arena',
     category: 'primary',
-    badge: 'Auction Arena',
+    badge: 'Solo Draft Pool',
     badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-    desc: 'Franchise owners bid on registered players using an allocated purse before league play.',
-    defaultTeamSize: 4,
-    defaultMaxTeams: 8,
+    desc: 'Individual solo players register into the auction candidate pool. Franchise team owners bid with virtual purse tokens.',
+    defaultTeamSize: 1,
+    defaultMaxTeams: 48,
     rulesPreset:
-      '1. Franchise owners will bid on registered players using their allocated virtual token purse.\n2. Each franchise team drafts a full squad from the registered candidate pool.\n3. Trades and budget transfers require tournament director authorization.\n4. Toxic behaviour during live bidding results in instant purse penalty.',
-    highlights: ['Live Token Purse Bidding', 'Franchise Team Draft', 'Automated Hammer Sync'],
+      '1. Individual Solo Registration: All participants register as solo players (1 player per slot) into the auction candidate pool.\n2. Franchise owners bid on individual players using their allocated virtual token purse.\n3. Each franchise drafts players to form their final tournament squad.\n4. Toxic behaviour during live bidding results in instant purse penalty.',
+    highlights: ['1 Player / Slot (Solo)', 'Individual Auction Slots', 'Live Token Purse Draft'],
   },
   {
     id: 'BR Squad',
@@ -227,8 +200,8 @@ export default function CreateTournamentPage() {
   const [name, setName] = useState('')
   const [formatCategory, setFormatCategory] = useState<'primary' | 'classic'>('primary')
   const [format, setFormat] = useState('Auction Tournament')
-  const [maxTeams, setMaxTeams] = useState<number | string>(8)
-  const [teamSize, setTeamSize] = useState<number | string>(4)
+  const [maxTeams, setMaxTeams] = useState<number | string>(48)
+  const [teamSize, setTeamSize] = useState<number | string>(1)
   const [startDate, setStartDate] = useState(
     new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
   )
@@ -277,11 +250,15 @@ export default function CreateTournamentPage() {
         name: name.trim(),
         game,
         format,
-        maxTeams: Number(maxTeams) || 32,
-        teamSize: Number(teamSize) === 1 ? 'Solo' : Number(teamSize) === 2 ? 'Duo' : Number(teamSize) === 4 ? 'Squad' : `${teamSize} Players`,
-        playersPerTeam: Number(teamSize) || 4,
+        maxTeams: Number(maxTeams) || 48,
+        teamSize: format === 'Auction Tournament' || Number(teamSize) === 1 ? 'Solo' : Number(teamSize) === 2 ? 'Duo' : Number(teamSize) === 4 ? 'Squad' : `${teamSize} Players`,
+        playersPerTeam: format === 'Auction Tournament' ? 1 : (Number(teamSize) || 4),
         prizePool: prizePool ? `₹${prizePool}` : '₹0',
-        entryFee: isPaid ? `₹${entryFee} / Team` : 'Free',
+        entryFee: isPaid
+          ? format === 'Auction Tournament' || Number(teamSize) === 1
+            ? `₹${entryFee} / Player`
+            : `₹${entryFee} / Team`
+          : 'Free',
         startDate,
         banner: selectedGameData.banner,
         upiId: isPaid ? upiId : undefined,
@@ -392,7 +369,7 @@ export default function CreateTournamentPage() {
               <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
                 1. Select Game Title
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 max-w-md gap-3">
                 {GAMES.map((g) => {
                   const isSelected = game === g.id
                   return (
@@ -573,7 +550,9 @@ export default function CreateTournamentPage() {
                   <div>
                     <span className="font-bold text-foreground">{selectedFormatData.name}</span>
                     <span className="text-muted-foreground ml-2">
-                      (Recommended: {selectedFormatData.defaultTeamSize === 1 ? 'Solo' : 'Squad'}, {selectedFormatData.defaultMaxTeams} Teams)
+                      {format === 'Auction Tournament'
+                        ? `(Individual Solo Draft, ${maxTeams} Slots)`
+                        : `(Recommended: ${selectedFormatData.defaultTeamSize === 1 ? 'Solo' : 'Squad'}, ${selectedFormatData.defaultMaxTeams} Teams)`}
                     </span>
                   </div>
                 </div>
@@ -591,10 +570,14 @@ export default function CreateTournamentPage() {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Maximum Registered Teams
+                    {format === 'Auction Tournament'
+                      ? 'Total Auction Slots (Individual Players)'
+                      : format === 'BR Solo'
+                      ? 'Maximum Solo Players'
+                      : 'Maximum Registered Teams'}
                   </label>
                   <span className="text-[11px] font-mono font-bold text-primary">
-                    {maxTeams || 0} Teams
+                    {maxTeams || 0} {format === 'Auction Tournament' ? 'Individual Slots' : format === 'BR Solo' ? 'Solo Slots' : 'Teams'}
                   </span>
                 </div>
                 <input
@@ -603,15 +586,19 @@ export default function CreateTournamentPage() {
                   max="1000"
                   value={maxTeams}
                   onChange={(e) => setMaxTeams(e.target.value === '' ? '' : Math.max(1, Number(e.target.value)))}
-                  placeholder="Enter custom number of teams (e.g. 12, 16, 24, 32...)"
+                  placeholder={
+                    format === 'Auction Tournament'
+                      ? 'Enter number of individual player slots (e.g. 24, 48, 60, 80...)'
+                      : 'Enter custom number of teams (e.g. 12, 16, 24, 32...)'
+                  }
                   className="w-full bg-card border border-border rounded px-3 py-2 text-sm text-foreground font-semibold focus:outline-none focus:border-primary"
                 />
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                   <span className="text-[10px] text-muted-foreground uppercase font-bold">Quick Presets:</span>
-                  {(format === 'BR Squad' || format === 'BR Solo'
+                  {(format === 'Auction Tournament'
+                    ? [24, 48, 60, 80, 100, 120]
+                    : format === 'BR Squad' || format === 'BR Solo'
                     ? [12, 24, 48, 96]
-                    : format === 'Auction Tournament'
-                    ? [6, 8, 10, 12, 16]
                     : [8, 12, 16, 24, 32, 64]
                   ).map((num) => (
                     <button
@@ -624,7 +611,7 @@ export default function CreateTournamentPage() {
                           : 'border-border bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted'
                       }`}
                     >
-                      {num}
+                      {num} {format === 'Auction Tournament' ? 'Slots' : ''}
                     </button>
                   ))}
                 </div>
@@ -633,10 +620,14 @@ export default function CreateTournamentPage() {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Team Composition (Players per Team)
+                    {format === 'Auction Tournament'
+                      ? 'Auction Entry Type (Individual Solo Draft)'
+                      : 'Team Composition (Players per Team)'}
                   </label>
                   <span className="text-[11px] font-mono font-bold text-primary">
-                    {Number(teamSize) === 1
+                    {format === 'Auction Tournament'
+                      ? 'Solo Player (Individual Slot)'
+                      : Number(teamSize) === 1
                       ? 'Solo (1 Player)'
                       : Number(teamSize) === 2
                       ? 'Duo (2 Players)'
@@ -649,38 +640,56 @@ export default function CreateTournamentPage() {
                       : `${teamSize || 0} Players / Team`}
                   </span>
                 </div>
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={teamSize}
-                  onChange={(e) => setTeamSize(e.target.value === '' ? '' : Math.max(1, Number(e.target.value)))}
-                  placeholder="Enter custom number of players (e.g. 1, 2, 4, 5...)"
-                  className="w-full bg-card border border-border rounded px-3 py-2 text-sm text-foreground font-semibold focus:outline-none focus:border-primary"
-                />
-                <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold">Quick Presets:</span>
-                  {[
-                    { count: 1, label: '1 (Solo)' },
-                    { count: 2, label: '2 (Duo)' },
-                    { count: 3, label: '3 (Trio)' },
-                    { count: 4, label: '4 (Squad)' },
-                    { count: 5, label: '5 (5v5)' },
-                  ].map((p) => (
-                    <button
-                      key={p.count}
-                      type="button"
-                      onClick={() => setTeamSize(p.count)}
-                      className={`text-[11px] px-2 py-0.5 rounded border transition ${
-                        Number(teamSize) === p.count
-                          ? 'bg-primary text-background border-primary font-bold'
-                          : 'border-border bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted'
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
+                {format === 'Auction Tournament' ? (
+                  <div className="rounded border border-primary/30 bg-primary/10 p-3 flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-bold text-primary flex items-center gap-1.5">
+                        <UserCheck className="size-4" /> Individual Solo Registrations
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        All participants register as solo players into the draft candidate pool. Slots are individual.
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-bold bg-primary text-background px-2.5 py-1 rounded font-mono shrink-0">
+                      1 Player / Slot
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={teamSize}
+                      onChange={(e) => setTeamSize(e.target.value === '' ? '' : Math.max(1, Number(e.target.value)))}
+                      placeholder="Enter custom number of players (e.g. 1, 2, 4, 5...)"
+                      className="w-full bg-card border border-border rounded px-3 py-2 text-sm text-foreground font-semibold focus:outline-none focus:border-primary"
+                    />
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">Quick Presets:</span>
+                      {[
+                        { count: 1, label: '1 (Solo)' },
+                        { count: 2, label: '2 (Duo)' },
+                        { count: 3, label: '3 (Trio)' },
+                        { count: 4, label: '4 (Squad)' },
+                        { count: 5, label: '5 (5v5)' },
+                      ].map((p) => (
+                        <button
+                          key={p.count}
+                          type="button"
+                          onClick={() => setTeamSize(p.count)}
+                          className={`text-[11px] px-2 py-0.5 rounded border transition ${
+                            Number(teamSize) === p.count
+                              ? 'bg-primary text-background border-primary font-bold'
+                              : 'border-border bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -689,9 +698,9 @@ export default function CreateTournamentPage() {
               <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-3">
                 <Sparkles className="size-5 text-amber-400 shrink-0 mt-0.5" />
                 <div className="text-xs text-amber-200">
-                  <p className="font-bold text-amber-300">IPL-Style Auction Arena Activated</p>
+                  <p className="font-bold text-amber-300">IPL-Style Auction Arena: Individual Solo Player Draft</p>
                   <p className="mt-0.5 text-muted-foreground leading-relaxed">
-                    This tournament uses the RDK Live Auction Conductor. Franchise team bidder credentials can be generated automatically in the auction desk, and wiped permanently once the live auction concludes.
+                    All participants register as <strong>individual solo players</strong> with their own slot, IGN, Game UID, and role into the candidate pool. Franchise owners bid on registered candidates using purse tokens in the Live Auction Room.
                   </p>
                 </div>
               </div>
