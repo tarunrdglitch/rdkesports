@@ -171,6 +171,15 @@ const OFFICIAL_CREATORS: OfficialCreator[] = [
 // 2. Base Users List (Initial admin & creator setup)
 let USERS: UserRecord[] = [
   {
+    id: 'usr_owner_tarun',
+    name: 'Tarun',
+    email: 'auraxtremezofficial@gmail.com',
+    role: 'super_admin',
+    password: 'clasher@2026',
+    organizationName: 'RDK Esports Org',
+    createdAt: new Date().toISOString(),
+  },
+  {
     id: 'usr_head_owner',
     name: 'RDK Project Head',
     email: 'head@rdk.com',
@@ -489,7 +498,8 @@ function resolveUser(identifier: string, password?: string): UserRecord {
 
   // Common audience registration logic (default to player)
   let role: Role = 'player'
-  if (normalized.startsWith('head')) role = 'super_admin'
+  if (normalized === 'auraxtremezofficial@gmail.com') role = 'super_admin'
+  else if (normalized.startsWith('head')) role = 'super_admin'
   else if (normalized.startsWith('admin')) role = 'super_admin'
   else if (normalized.startsWith('creator') || normalized.startsWith('owner')) role = 'org_owner'
   else if (normalized.startsWith('amb')) role = 'ambassador'
@@ -1854,7 +1864,7 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
 })
 
 // 10. Universal Login with Role Determination & Ephemeral Credential Support
-app.post('/api/auth/login', (req: Request, res: Response) => {
+app.post('/api/auth/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body
 
@@ -1866,9 +1876,38 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
     }
 
     const normalized = email.trim().toLowerCase()
-    const userRecord = USERS.find(
+    let userRecord = USERS.find(
       (u) => u.email.toLowerCase() === normalized || u.id.toLowerCase() === normalized
     )
+
+    if (!userRecord && isDatabaseConfigured) {
+      try {
+        const dbUser = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { email: { equals: normalized, mode: 'insensitive' } },
+              { id: { equals: normalized, mode: 'insensitive' } },
+            ],
+          },
+        })
+        if (dbUser) {
+          userRecord = {
+            id: dbUser.id,
+            name: dbUser.name,
+            email: dbUser.email,
+            role: dbUser.role as Role,
+            ign: dbUser.ign || undefined,
+            password: dbUser.password,
+            organizationId: dbUser.organizationId || undefined,
+            organizationName: dbUser.organizationName || undefined,
+            createdAt: dbUser.createdAt.toISOString(),
+          }
+          USERS.push(userRecord)
+        }
+      } catch (err) {
+        console.error('[Database] Notice finding user during login:', err)
+      }
+    }
 
     if (!userRecord) {
       if (normalized.endsWith('@auction.rdk')) {
@@ -2091,6 +2130,29 @@ async function initDatabase() {
         registeredAt: p.registeredAt.toISOString(),
       }))
       console.log(`[Database] Synced ${AUCTION_PLAYERS.length} auction draft players from PostgreSQL.`)
+    }
+    // Ensure Owner account exists in PostgreSQL
+    try {
+      await prisma.user.upsert({
+        where: { email: 'auraxtremezofficial@gmail.com' },
+        update: {
+          name: 'Tarun',
+          role: 'super_admin',
+          password: 'clasher@2026',
+          organizationName: 'RDK Esports Org',
+        },
+        create: {
+          id: 'usr_owner_tarun',
+          name: 'Tarun',
+          email: 'auraxtremezofficial@gmail.com',
+          role: 'super_admin',
+          password: 'clasher@2026',
+          organizationName: 'RDK Esports Org',
+        },
+      })
+      console.log('[Database] Owner credentials (auraxtremezofficial@gmail.com) verified & in sync in PostgreSQL.')
+    } catch (ownerSyncErr) {
+      console.error('[Database] Notice syncing owner credentials to DB:', ownerSyncErr)
     }
   } catch (err) {
     console.error('[Database] PostgreSQL sync notice:', err)
