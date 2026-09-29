@@ -18,6 +18,7 @@ const TournamentManage = lazy(() => import('@/pages/creator/TournamentManagePage
 const PaymentsDesk = lazy(() => import('@/pages/creator/PaymentsManagementPage'))
 const AmbassadorBidderPortal = lazy(() => import('@/pages/ambassador/AmbassadorBidderPortal'))
 const PlayerDash = lazy(() => import('@/pages/player/PlayerDashboard'))
+const CreatorProfile = lazy(() => import('@/pages/creator/CreatorProfilePage'))
 const Soon = lazy(() => import('@/pages/misc/ComingSoon'))
 
 const S = (el: JSX.Element) => <Suspense fallback={<Skeleton className="m-6 h-40" />}>{el}</Suspense>
@@ -78,6 +79,7 @@ export const router = createBrowserRouter([
               { path: '/creator/payments', element: S(<PaymentsDesk />) },
               { path: '/creator/ambassadors', element: S(<AmbassadorDesk />) },
               { path: '/creator/auctions', element: S(<AuctionCredentials />) },
+              { path: '/creator/profile', element: S(<CreatorProfile />) },
               { path: '/creator/*', element: S(<Soon />) },
               { path: '/organization/dashboard', element: S(<OrgDash />) },
               { path: '/organization/tournaments', element: S(<OrgDash />) },
@@ -86,6 +88,7 @@ export const router = createBrowserRouter([
               { path: '/organization/payments', element: S(<PaymentsDesk />) },
               { path: '/organization/ambassadors', element: S(<AmbassadorDesk />) },
               { path: '/organization/auctions', element: S(<AuctionCredentials />) },
+              { path: '/organization/profile', element: S(<CreatorProfile />) },
               { path: '/organization/*', element: S(<Soon />) },
             ],
           },

@@ -31,6 +31,7 @@ export interface Tournament {
   id: string
   slug?: string
   name: string
+  creatorId?: string
   creatorName?: string
   creatorHandle?: string
   creatorAvatar?: string
