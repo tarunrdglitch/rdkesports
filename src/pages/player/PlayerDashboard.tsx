@@ -59,7 +59,7 @@ export default function PlayerDashboard() {
             value="Free Agent"
             hint="Ready for tournament entry"
             icon={<Users className="size-4" />}
-            accent="primary"
+            accent="white"
           />
         </motion.div>
         <motion.div {...fadeUp(0.06)}>
