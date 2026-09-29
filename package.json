@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "server": "tsx watch server/index.ts",
-    "start": "npx prisma generate && tsx server/index.ts",
+    "start": "npx prisma generate && tsx server/syncDb.ts && tsx server/index.ts",
     "db:push": "prisma db push",
     "dev:all": "concurrently -k -p \"[{name}]\" -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"npm run server\" \"npm run dev\"",
     "build": "tsc -b && vite build",
