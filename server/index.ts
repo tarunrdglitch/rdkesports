@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import jwt from 'jsonwebtoken'
+import { prisma, isDatabaseConfigured } from './db'
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -841,6 +842,43 @@ app.post('/api/tournaments', (req: Request, res: Response) => {
 
     TOURNAMENTS.unshift(newTournament)
     console.log(`[Tournaments] Created new tournament: ${newTournament.name} (${newTournament.id})`)
+
+    if (isDatabaseConfigured) {
+      prisma.tournament
+        .create({
+          data: {
+            id: newTournament.id,
+            slug: newTournament.slug,
+            name: newTournament.name,
+            creatorId: newTournament.creatorId,
+            creatorName: newTournament.creatorName,
+            creatorHandle: newTournament.creatorHandle,
+            creatorAvatar: newTournament.creatorAvatar,
+            game: newTournament.game,
+            format: newTournament.format,
+            banner: newTournament.banner,
+            teams: newTournament.teams,
+            maxTeams: newTournament.maxTeams,
+            status: newTournament.status,
+            startDate: newTournament.startDate,
+            prizePool: newTournament.prizePool,
+            entryFee: newTournament.entryFee,
+            registeredTeamsCount: newTournament.registeredTeamsCount,
+            isFeatured: newTournament.isFeatured || false,
+            upiId: newTournament.upiId,
+            upiName: newTournament.upiName,
+            upiQrUrl: newTournament.upiQrUrl,
+            rules: newTournament.rules,
+            roadmap: newTournament.roadmap ? JSON.stringify(newTournament.roadmap) : null,
+            streamUrl: newTournament.streamUrl,
+            streamTitle: newTournament.streamTitle,
+            streamStatus: newTournament.streamStatus || 'offline',
+            scheduledMatchInfo: newTournament.scheduledMatchInfo,
+            streamPlatform: newTournament.streamPlatform,
+          },
+        })
+        .catch((err) => console.error('[Database] Failed to persist tournament:', err))
+    }
 
     return res.status(201).json({ success: true, tournament: newTournament })
   } catch (error) {
@@ -1991,6 +2029,75 @@ app.post('/api/auth/logout', (_req: Request, res: Response) => {
   return res.json({ success: true, message: 'Logged out successfully' })
 })
 
-app.listen(PORT, () => {
-  console.log(`RDK Esports Tournament OS running on http://127.0.0.1:${PORT}`)
+async function initDatabase() {
+  if (!isDatabaseConfigured) {
+    console.log('[Database] Running in in-memory mode (No DATABASE_URL configured).')
+    console.log('[Database] To connect to PostgreSQL on Railway, add DATABASE_URL.')
+    return
+  }
+  try {
+    console.log('[Database] Connecting to PostgreSQL via Prisma...')
+    const dbTourneys = await prisma.tournament.findMany()
+    if (dbTourneys.length > 0) {
+      TOURNAMENTS = dbTourneys.map((t) => ({
+        ...t,
+        creatorId: t.creatorId || undefined,
+        creatorAvatar: t.creatorAvatar || undefined,
+        upiId: t.upiId || undefined,
+        upiName: t.upiName || undefined,
+        upiQrUrl: t.upiQrUrl || undefined,
+        rules: t.rules || undefined,
+        roomId: t.roomId || undefined,
+        roomPassword: t.roomPassword || undefined,
+        streamUrl: t.streamUrl || undefined,
+        streamTitle: t.streamTitle || undefined,
+        scheduledMatchInfo: t.scheduledMatchInfo || undefined,
+        status: t.status as any,
+        roadmap: t.roadmap ? JSON.parse(t.roadmap) : undefined,
+        streamStatus: t.streamStatus as any,
+        streamPlatform: t.streamPlatform as any,
+      }))
+      console.log(`[Database] Synced ${TOURNAMENTS.length} tournaments from PostgreSQL.`)
+    }
+
+    const dbTeams = await prisma.registeredTeam.findMany()
+    if (dbTeams.length > 0) {
+      REGISTERED_TEAMS = dbTeams.map((t) => ({
+        ...t,
+        utr: t.utr || undefined,
+        paymentProofUrl: t.paymentProofUrl || undefined,
+        status: t.status as any,
+        players: JSON.parse(t.players || '[]'),
+        registeredAt: t.registeredAt.toISOString(),
+      }))
+      console.log(`[Database] Synced ${REGISTERED_TEAMS.length} registered teams from PostgreSQL.`)
+    }
+
+    const dbPlayers = await prisma.auctionPlayer.findMany()
+    if (dbPlayers.length > 0) {
+      AUCTION_PLAYERS = dbPlayers.map((p) => ({
+        ...p,
+        clipUrl: p.clipUrl || undefined,
+        photoUrl: p.photoUrl || undefined,
+        soldPrice: p.soldPrice || undefined,
+        soldToTeam: p.soldToTeam || undefined,
+        paymentProofUrl: p.paymentProofUrl || undefined,
+        role: p.role as any,
+        tier: p.tier as any,
+        status: p.status as any,
+        paymentStatus: p.paymentStatus as any,
+        stats: p.stats ? JSON.parse(p.stats) : undefined,
+        registeredAt: p.registeredAt.toISOString(),
+      }))
+      console.log(`[Database] Synced ${AUCTION_PLAYERS.length} auction draft players from PostgreSQL.`)
+    }
+  } catch (err) {
+    console.error('[Database] PostgreSQL sync notice:', err)
+  }
+}
+
+initDatabase().then(() => {
+  app.listen(PORT, () => {
+    console.log(`RDK Esports Tournament OS running on http://127.0.0.1:${PORT}`)
+  })
 })
