@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import {
   Gamepad2,
   Users,
@@ -9,11 +10,21 @@ import {
   ShieldCheck,
   CheckCircle2,
   Calendar,
+  Zap,
+  Swords,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
+import { StatCard } from '@/components/common/StatCard'
+import { StatusBadge } from '@/components/common/StatusBadge'
 import { useAuth } from '@/stores/authStore'
 import { tournamentService } from '@/services/api/tournamentService'
 import type { Tournament } from '@/types'
+
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 16 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1], delay },
+})
 
 export default function PlayerDashboard() {
   const { user } = useAuth()
@@ -24,14 +35,15 @@ export default function PlayerDashboard() {
   }, [])
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7 page-enter">
       <PageHeader
-        title={`Welcome, ${user?.name || 'Gamer'}!`}
+        title={`Welcome back, ${user?.name || 'Gamer'}!`}
         description={`IGN: ${user?.ign || 'Active Competitor'} • Competitive Player`}
+        badge="Player Dashboard"
         actions={
           <Link
             to="/#tournaments"
-            className="inline-flex items-center gap-1.5 rounded bg-primary px-4 py-2 text-xs font-semibold text-background shadow hover:opacity-90 transition"
+            className="btn-primary cursor-pointer"
           >
             <Trophy className="size-4" />
             Join Tournaments
@@ -39,104 +51,144 @@ export default function PlayerDashboard() {
         }
       />
 
-      {/* Highlights / Quick Stats */}
+      {/* ── Stat Cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded border border-border bg-card p-4">
-          <div className="flex items-center justify-between text-muted-foreground text-xs">
-            <span>My Active Squad</span>
-            <Users className="size-4 text-primary" />
-          </div>
-          <p className="mt-2 text-xl font-bold text-foreground">
-            Free Agent / Available
-          </p>
-          <p className="mt-1 text-[11px] text-muted-foreground">Ready for tournament entry</p>
-        </div>
-
-        <div className="rounded border border-border bg-card p-4">
-          <div className="flex items-center justify-between text-muted-foreground text-xs">
-            <span>My Tournaments</span>
-            <Gamepad2 className="size-4 text-warning" />
-          </div>
-          <p className="mt-2 text-2xl font-bold text-foreground tabular-nums">2</p>
-          <p className="mt-1 text-[11px] text-muted-foreground">1 match scheduled today</p>
-        </div>
-
-        <div className="rounded border border-border bg-card p-4">
-          <div className="flex items-center justify-between text-muted-foreground text-xs">
-            <span>Payment Status</span>
-            <QrCode className="size-4 text-success" />
-          </div>
-          <p className="mt-2 text-xl font-bold text-success flex items-center gap-1.5">
-            <CheckCircle2 className="size-5" />
-            Verified
-          </p>
-          <p className="mt-1 text-[11px] text-muted-foreground">Clashers Championship 2026</p>
-        </div>
+        <motion.div {...fadeUp(0)}>
+          <StatCard
+            label="My Active Squad"
+            value="Free Agent"
+            hint="Ready for tournament entry"
+            icon={<Users className="size-4" />}
+            accent="primary"
+          />
+        </motion.div>
+        <motion.div {...fadeUp(0.06)}>
+          <StatCard
+            label="My Tournaments"
+            value="2"
+            hint="1 match scheduled today"
+            icon={<Gamepad2 className="size-4" />}
+            accent="warning"
+          />
+        </motion.div>
+        <motion.div {...fadeUp(0.12)}>
+          <StatCard
+            label="Payment Status"
+            value="Verified"
+            hint="Clashers Championship 2026"
+            icon={<CheckCircle2 className="size-4" />}
+            accent="success"
+          />
+        </motion.div>
       </div>
 
-      {/* Match Room Alert Box */}
-      <div className="rounded-lg border border-primary/40 bg-primary/10 p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="size-10 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shrink-0 animate-pulse">
-            <ShieldCheck className="size-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-foreground">Next Match: Clashers Championship (Round 2)</span>
-              <span className="rounded bg-danger/20 text-danger text-[10px] font-bold px-1.5 py-0.5 uppercase">Lobby Live</span>
+      {/* ── Match Room Alert ── */}
+      <motion.div
+        {...fadeUp(0.18)}
+        className="rdk-card bracket animate-border-glow"
+      >
+        <div className="p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="size-12 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex items-center justify-center text-primary shrink-0">
+              <ShieldCheck className="size-6" />
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Room ID: <code className="font-mono text-foreground font-semibold bg-muted px-1.5 py-0.5 rounded">8492011</code> • Pass: <code className="font-mono text-foreground font-semibold bg-muted px-1.5 py-0.5 rounded">rdk2026</code> • Map: Bermuda
-            </p>
+            <div>
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span className="font-semibold text-sm text-foreground font-body">
+                  Next Match: Clashers Championship (Round 2)
+                </span>
+                <StatusBadge status="live" />
+              </div>
+              <p className="text-xs text-muted-foreground font-body leading-relaxed">
+                Room ID:{' '}
+                <code className="font-mono text-foreground font-semibold bg-muted px-1.5 py-0.5 rounded text-[11px]">
+                  8492011
+                </code>
+                {' '}• Pass:{' '}
+                <code className="font-mono text-foreground font-semibold bg-muted px-1.5 py-0.5 rounded text-[11px]">
+                  rdk2026
+                </code>
+                {' '}• Map: Bermuda
+              </p>
+            </div>
           </div>
+          <button
+            onClick={() => alert('Credentials copied to clipboard!')}
+            className="btn-primary shrink-0 cursor-pointer"
+          >
+            <QrCode className="size-4" />
+            Copy Room Info
+          </button>
         </div>
-        <button
-          onClick={() => alert('Credentials copied to clipboard!')}
-          className="rounded border border-primary bg-primary px-3 py-1.5 text-xs font-bold text-background hover:opacity-90 shrink-0"
-        >
-          Copy Room Info
-        </button>
-      </div>
+      </motion.div>
 
-      {/* Recommended Live Tournaments */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-sm text-foreground">Featured Tournaments for Your Squad</h2>
-          <Link to="/#tournaments" className="text-xs text-primary hover:underline flex items-center gap-1">
+      {/* ── Featured Tournaments ── */}
+      <motion.div {...fadeUp(0.24)}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Swords className="size-4 text-primary" />
+            <h2 className="font-display text-sm tracking-wide text-foreground">
+              Featured Tournaments
+            </h2>
+          </div>
+          <Link
+            to="/#tournaments"
+            className="flex items-center gap-1 text-xs text-primary hover:text-primary-glow transition-colors font-body"
+          >
             Browse all <ArrowRight className="size-3" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {tournaments.slice(0, 2).map((t) => (
-            <div key={t.id} className="rounded border border-border bg-card p-4 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-primary">{t.game}</span>
-                  <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                    <Calendar className="size-3" /> {t.startDate}
-                  </span>
-                </div>
-                <h3 className="font-bold text-base text-foreground mt-1">{t.name}</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">Hosted by {t.creatorName || 'Official Partner'}</p>
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
+        {tournaments.length === 0 ? (
+          <div className="rdk-card-flat p-8 text-center text-muted-foreground text-sm font-body">
+            <Zap className="size-8 mx-auto mb-2 text-primary/40" />
+            No tournaments available right now. Check back soon!
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {tournaments.slice(0, 2).map((t, idx) => (
+              <motion.div
+                key={t.id}
+                className="rdk-card bracket p-4 flex flex-col justify-between gap-4 cursor-default"
+                {...fadeUp(0.1 * idx)}
+              >
                 <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Prize Pool</span>
-                  <span className="text-xs font-bold text-foreground">{t.prizePool || '₹25,000'}</span>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="badge-primary">{t.game}</span>
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-1 font-body">
+                      <Calendar className="size-3" />
+                      {t.startDate}
+                    </span>
+                  </div>
+                  <h3 className="font-display text-base text-foreground leading-snug tracking-wide">
+                    {t.name}
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1 font-body">
+                    Hosted by {t.creatorName || 'Official Partner'}
+                  </p>
                 </div>
-                <Link
-                  to="/#tournaments"
-                  className="rounded bg-muted px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-primary hover:text-background transition"
-                >
-                  View Tournament
-                </Link>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+
+                <div className="pt-3 border-t border-border/30 flex items-center justify-between">
+                  <div>
+                    <span className="block text-[9px] text-muted-foreground uppercase tracking-[0.15em] font-display">
+                      Prize Pool
+                    </span>
+                    <span className="text-sm font-semibold gradient-text-gold font-body">
+                      {t.prizePool || '₹25,000'}
+                    </span>
+                  </div>
+                  <Link
+                    to="/#tournaments"
+                    className="btn-ghost text-xs gap-1.5 cursor-pointer"
+                  >
+                    View Details <ArrowRight className="size-3" />
+                  </Link>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </motion.div>
     </div>
   )
 }

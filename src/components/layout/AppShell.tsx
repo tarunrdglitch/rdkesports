@@ -1,17 +1,28 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, X, LogOut, ExternalLink } from 'lucide-react'
+import { Menu, X, LogOut, ExternalLink, ChevronRight, Shield } from 'lucide-react'
 import { useAuth } from '@/stores/authStore'
 import { adminNav, creatorNav, ambassadorNav, playerNav, NavItem } from '@/app/config/roles'
 import { cn } from '@/utils/cn'
+
+const sidebarVariants = {
+  hidden: { x: -260, opacity: 0 },
+  show: {
+    x: 0, opacity: 1,
+    transition: { type: 'spring', damping: 28, stiffness: 300 },
+  },
+  exit: {
+    x: -260, opacity: 0,
+    transition: { duration: 0.22, ease: 'easeIn' },
+  },
+}
 
 export const AppShell = () => {
   const { user, logout } = useAuth()
   const nav = useNavigate()
   const [open, setOpen] = useState(false)
 
-  // Dynamically select menu based on active role
   const isOwner = user?.role === 'super_admin' || user?.email?.toLowerCase() === 'auraxtremezofficial@gmail.com'
   const displayName = isOwner ? 'Tarun' : (user?.name || 'User')
 
@@ -26,156 +37,283 @@ export const AppShell = () => {
   const items = getNavItems()
 
   const getRoleLabel = () => {
-    if (isOwner) return 'Owner'
+    if (isOwner) return 'Platform Owner'
     switch (user?.role) {
-      case 'super_admin':
-        return 'Owner'
+      case 'super_admin': return 'Platform Owner'
       case 'creator':
-      case 'org_owner':
-        return 'Official Creator'
-      case 'ambassador':
-        return 'Temp Ambassador'
+      case 'org_owner':   return 'Official Creator'
+      case 'ambassador':  return 'Ambassador'
       case 'player':
-      default:
-        return 'User'
+      default:            return 'Competitive Player'
     }
   }
 
-  const Links = () => (
-    <nav aria-label="Primary Navigation" className="flex flex-col gap-1 p-3">
-      {items.map((i) => (
-        <NavLink
-          key={i.to}
-          to={i.to}
-          onClick={() => setOpen(false)}
-          className={({ isActive }) =>
-            cn(
-              'flex items-center justify-between rounded px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
-              isActive && 'bg-muted text-foreground border-l-2 border-primary font-bold'
-            )
-          }
-        >
-          <span>{i.label}</span>
-          {i.badge && (
-            <span className="rounded bg-primary/20 text-primary px-1.5 py-0.5 text-[10px] font-bold">
-              {i.badge}
-            </span>
-          )}
-        </NavLink>
-      ))}
+  const getRoleBadgeColor = () => {
+    if (isOwner) return '#E53935'
+    switch (user?.role) {
+      case 'creator':
+      case 'org_owner': return '#E53935'
+      case 'ambassador': return '#FF8F00'
+      default:           return '#ffffff'
+    }
+  }
 
-      <div className="pt-4 mt-2 border-t border-border">
-        <Link
-          to="/"
-          className="flex items-center gap-2 rounded px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-        >
-          <ExternalLink className="size-3.5" />
-          <span>Public Tournament Hub</span>
+  const avatarLetter = displayName?.[0]?.toUpperCase() || 'R'
+
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full">
+      {/* ── Logo ── */}
+      <div className="px-4 pt-5 pb-4" style={{ borderBottom: '1px solid #1A1A1A' }}>
+        <Link to="/" className="flex items-center gap-3 group">
+          <img
+            src="/logo.png"
+            alt="RDK Esports"
+            className="h-10 w-auto logo-glow transition-transform duration-300 group-hover:scale-105"
+          />
+          <div className="flex flex-col leading-none">
+            <span className="font-display text-sm tracking-[0.15em] text-white">
+              RDK ESPORTS
+            </span>
+            <span className="text-[9px] tracking-[0.1em] mt-0.5 font-body uppercase"
+              style={{ color: '#444' }}>
+              Tournament OS
+            </span>
+          </div>
         </Link>
       </div>
-    </nav>
+
+      {/* ── Nav ── */}
+      <nav
+        aria-label="Primary Navigation"
+        className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto"
+      >
+        {items.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            onClick={() => setOpen(false)}
+            className={({ isActive }) =>
+              cn('nav-item group cursor-pointer', isActive && 'active')
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <span className="flex-1 truncate text-xs">{item.label}</span>
+                {item.badge && (
+                  <span className="badge-red text-[9px] px-1.5 py-0.5">{item.badge}</span>
+                )}
+                {isActive && (
+                  <ChevronRight className="size-3 shrink-0 ml-1" style={{ color: '#E53935' }} />
+                )}
+              </>
+            )}
+          </NavLink>
+        ))}
+
+        <div className="rdk-divider my-3" />
+
+        <Link
+          to="/"
+          className="nav-item group cursor-pointer"
+          onClick={() => setOpen(false)}
+        >
+          <ExternalLink className="size-3.5 transition-colors"
+            style={{ color: '#444' }} />
+          <span className="flex-1 text-xs">Public Tournament Hub</span>
+        </Link>
+      </nav>
+
+      {/* ── User Footer ── */}
+      <div className="p-3" style={{ borderTop: '1px solid #1A1A1A' }}>
+        <motion.div
+          className="flex items-center gap-3 p-2.5 rounded-xl"
+          style={{ background: '#111', border: '1px solid #1E1E1E' }}
+          whileHover={{ borderColor: 'rgba(229,57,53,0.3)' }}
+          transition={{ duration: 0.2 }}
+        >
+          {/* Avatar */}
+          <div
+            className="size-9 rounded-lg flex items-center justify-center text-white font-display text-sm shrink-0"
+            style={{
+              background: 'linear-gradient(135deg, #E53935, #C62828)',
+              boxShadow: '0 0 10px rgba(229,57,53,0.3)',
+            }}
+          >
+            {avatarLetter}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-white truncate font-body">{displayName}</p>
+            <div
+              className="inline-flex items-center gap-1 mt-0.5 text-[9px] font-body"
+              style={{ color: getRoleBadgeColor() }}
+            >
+              <Shield className="size-2.5" />
+              {getRoleLabel()}
+            </div>
+          </div>
+        </motion.div>
+        <p className="text-[9px] text-center mt-2 tracking-wider font-body uppercase" style={{ color: '#2A2A2A' }}>
+          Powered by RDK Technologies
+        </p>
+      </div>
+    </div>
   )
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
-      {/* Desktop Sidebar */}
-      <aside className="hidden border-r border-border bg-card lg:flex lg:flex-col">
-        <div className="p-4 border-b border-border">
-          <Link to="/" className="flex items-center gap-2.5">
-            <img
-              src="/logo.png"
-              alt="RDK Esports"
-              className="h-9 w-auto drop-shadow-[0_0_8px_rgba(255,180,0,0.4)]"
-            />
-            <div className="flex flex-col leading-none">
-              <span className="font-heading font-black text-sm tracking-widest text-foreground">RDK ESPORTS</span>
-              <span className="text-[9px] text-muted-foreground font-medium">Tournament OS</span>
-            </div>
-          </Link>
-        </div>
-
-        <Links />
-
-        <div className="mt-auto p-4 border-t border-border bg-muted/20">
-          <div className="flex items-center gap-2">
-            <div className="size-7 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">
-              {displayName?.[0] || 'T'}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-foreground truncate">{displayName}</p>
-              <span className="inline-block text-[9px] uppercase font-bold text-primary bg-primary/10 px-1.5 py-0.2 rounded">
-                {getRoleLabel()}
-              </span>
-            </div>
-          </div>
-          <p className="mt-3 text-[10px] text-muted-foreground text-center">Powered by RDK Technologies</p>
+    <div
+      className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]"
+      style={{ backgroundColor: '#0A0A0A' }}
+    >
+      {/* ─── Desktop Sidebar ─── */}
+      <aside
+        className="hidden lg:flex lg:flex-col relative overflow-hidden"
+        style={{ backgroundColor: '#0D0D0D', borderRight: '1px solid #1A1A1A' }}
+      >
+        {/* Subtle grid */}
+        <div className="absolute inset-0 bg-grid-pattern opacity-30 pointer-events-none" />
+        {/* Red glow at top */}
+        <div className="absolute top-0 left-0 right-0 h-40 pointer-events-none"
+          style={{ background: 'radial-gradient(ellipse at top, rgba(229,57,53,0.06) 0%, transparent 70%)' }}
+        />
+        <div className="relative z-10 flex flex-col h-full">
+          <SidebarContent />
         </div>
       </aside>
 
-      {/* Mobile Drawer */}
+      {/* ─── Mobile Drawer ─── */}
       <AnimatePresence>
         {open && (
           <>
             <motion.div
+              key="overlay"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/60 lg:hidden"
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-40 lg:hidden"
+              style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)' }}
               onClick={() => setOpen(false)}
             />
             <motion.aside
-              initial={{ x: -260 }}
-              animate={{ x: 0 }}
-              exit={{ x: -260 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 320 }}
-              className="fixed inset-y-0 left-0 z-50 w-64 bg-card lg:hidden flex flex-col"
+              key="drawer"
+              variants={sidebarVariants}
+              initial="hidden"
+              animate="show"
+              exit="exit"
+              className="fixed inset-y-0 left-0 z-50 w-64 flex flex-col lg:hidden overflow-hidden"
+              style={{ backgroundColor: '#0D0D0D', borderRight: '1px solid #1A1A1A' }}
             >
-              <div className="p-4 border-b border-border flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <img src="/logo.png" alt="RDK Esports" className="h-7 w-auto" />
-                  <span className="font-heading font-black text-sm tracking-widest">RDK ESPORTS</span>
+              <div className="absolute inset-0 bg-grid-pattern opacity-20 pointer-events-none" />
+              <div className="relative z-10 flex flex-col h-full">
+                {/* Close */}
+                <div className="absolute top-4 right-4 z-20">
+                  <motion.button
+                    onClick={() => setOpen(false)}
+                    aria-label="Close menu"
+                    className="p-1.5 rounded-lg cursor-pointer transition-colors"
+                    style={{ background: '#1A1A1A' }}
+                    whileHover={{ background: '#222' }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <X className="size-4" style={{ color: '#666' }} />
+                  </motion.button>
                 </div>
-                <button onClick={() => setOpen(false)}><X className="size-5" /></button>
+                <SidebarContent />
               </div>
-              <Links />
             </motion.aside>
           </>
         )}
       </AnimatePresence>
 
-      {/* Main Content Area */}
+      {/* ─── Main ─── */}
       <div className="min-w-0 flex flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-border px-4 lg:px-8 bg-card/40 backdrop-blur sticky top-0 z-30">
-          <button
-            className="lg:hidden p-1.5 rounded hover:bg-muted"
+        {/* ── Header ── */}
+        <header
+          className="flex h-14 items-center justify-between px-4 lg:px-6 sticky top-0 z-30"
+          style={{
+            backgroundColor: 'rgba(10,10,10,0.9)',
+            backdropFilter: 'blur(20px) saturate(1.5)',
+            borderBottom: '1px solid #1A1A1A',
+          }}
+        >
+          {/* Mobile toggle */}
+          <motion.button
+            className="lg:hidden p-2 rounded-lg cursor-pointer"
             aria-label={open ? 'Close menu' : 'Open menu'}
             onClick={() => setOpen((o) => !o)}
+            whileTap={{ scale: 0.9 }}
           >
-            {open ? <X className="size-5" /> : <Menu className="size-5" />}
-          </button>
+            <AnimatePresence mode="wait">
+              {open ? (
+                <motion.div key="x" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <X className="size-5 text-white" />
+                </motion.div>
+              ) : (
+                <motion.div key="m" initial={{ rotate: 90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: -90, opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <Menu className="size-5 text-white" />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.button>
 
+          {/* Breadcrumb */}
+          <div className="hidden lg:flex items-center gap-2 text-[11px] font-body tracking-wider"
+            style={{ color: '#444' }}>
+            <span style={{ color: '#E53935' }} className="font-semibold">RDK</span>
+            <ChevronRight className="size-3" />
+            <span className="capitalize" style={{ color: '#666' }}>{getRoleLabel()}</span>
+          </div>
+
+          {/* Right */}
           <div className="ml-auto flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <span className="block text-xs font-semibold text-foreground">{displayName}</span>
-              <span className="text-[10px] text-primary font-medium">{getRoleLabel()}</span>
+            {/* Live indicator */}
+            <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-body"
+              style={{ color: '#444' }}>
+              <span className="live-dot" />
+              <span style={{ color: '#555' }}>System Online</span>
             </div>
 
-            <button
+            {/* User chip */}
+            <div
+              className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg"
+              style={{ background: '#111', border: '1px solid #1E1E1E' }}
+            >
+              <div
+                className="size-6 rounded flex items-center justify-center text-white text-[10px] font-display"
+                style={{ background: 'linear-gradient(135deg, #E53935, #C62828)' }}
+              >
+                {avatarLetter}
+              </div>
+              <div>
+                <span className="block text-[11px] font-semibold text-white font-body leading-none">
+                  {displayName}
+                </span>
+                <span className="text-[9px] font-body" style={{ color: '#E53935' }}>
+                  {getRoleLabel()}
+                </span>
+              </div>
+            </div>
+
+            {/* Sign out */}
+            <motion.button
               aria-label="Sign out"
               onClick={async () => {
                 await logout()
                 nav('/?auth=login')
               }}
-              className="inline-flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition"
+              className="btn-ghost text-xs gap-1.5 px-2.5 py-1.5 cursor-pointer"
               title="Sign Out"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
             >
               <LogOut className="size-3.5" />
               <span className="hidden sm:inline">Sign Out</span>
-            </button>
+            </motion.button>
           </div>
         </header>
 
-        <main className="p-4 lg:p-8 flex-1">
+        {/* ── Content ── */}
+        <main className="p-4 lg:p-6 flex-1 page-enter">
           <Outlet />
         </main>
       </div>

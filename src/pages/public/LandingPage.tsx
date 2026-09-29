@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion, useInView, AnimatePresence } from 'framer-motion'
 import {
   Trophy,
@@ -26,7 +26,7 @@ import {
 import { tournamentService } from '@/services/api/tournamentService'
 import { creatorService } from '@/services/api/creatorService'
 import { useAuth } from '@/stores/authStore'
-import { useAuthModal } from '@/stores/authModalStore'
+import { useAuthModal, setAuthModalNavigate } from '@/stores/authModalStore'
 import { AuthModal } from '@/components/auth/AuthModal'
 import { homeFor } from '@/app/config/roles'
 import type { Tournament, PlatformStats } from '@/types'
@@ -101,9 +101,9 @@ const cardVariant = {
 
 function SectionLabel({ icon: Icon, text }: { icon: React.ElementType; text: string }) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 mb-4">
-      <Icon className="size-3.5 text-primary" />
-      <span className="text-xs font-bold uppercase tracking-widest text-primary">{text}</span>
+    <div className="badge-primary inline-flex mb-4 text-xs">
+      <Icon className="size-3.5" />
+      {text}
     </div>
   )
 }
@@ -203,7 +203,7 @@ function CreatorCard({ creator, index }: { creator: typeof OFFICIAL_CREATORS[0];
       <div className="flex-1 flex flex-col p-5">
         {/* Name & handle */}
         <div className="mb-3">
-          <h3 className="font-heading font-black text-xl text-foreground leading-tight tracking-tight">
+          <h3 className="font-display text-xl text-foreground leading-tight">
             {creator.name}
           </h3>
           <div className="flex items-center gap-2 mt-0.5">
@@ -349,7 +349,7 @@ function TournamentCard({ t, user, index }: { t: Tournament; user: any; index: n
       </div>
 
       <div className="p-5 flex-1 flex flex-col">
-        <h3 className="font-heading font-black text-base text-foreground leading-snug line-clamp-2">{t.name}</h3>
+        <h3 className="font-display text-base text-foreground leading-snug line-clamp-2">{t.name}</h3>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${fb.color}`}>
             {fb.label}
@@ -398,12 +398,18 @@ function TournamentCard({ t, user, index }: { t: Tournament; user: any; index: n
 export default function LandingPage() {
   const { user } = useAuth()
   const { openLogin, openRegister } = useAuthModal()
+  const nav = useNavigate()
   const [tournaments, setTournaments] = useState<Tournament[]>([])
   const [creators, setCreators] = useState<any[]>(DEFAULT_CREATORS)
   const [stats, setStats] = useState<PlatformStats | null>(null)
   const [activeTab, setActiveTab] = useState<'all' | 'live' | 'upcoming'>('all')
   const [formatFilter, setFormatFilter] = useState<'all' | 'auction' | 'br_squad' | 'br_solo' | 'cs_norules' | 'cs_limited' | 'cs_onetap'>('all')
   const [navScrolled, setNavScrolled] = useState(false)
+
+  // Register navigate so authModalStore redirects use SPA routing
+  useEffect(() => {
+    setAuthModalNavigate(nav)
+  }, [nav])
 
   useEffect(() => {
     tournamentService.list().then(setTournaments)
@@ -467,25 +473,25 @@ export default function LandingPage() {
       <header
         className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
         style={{
-          background: navScrolled ? 'hsl(220 20% 5% / 0.97)' : 'transparent',
-          backdropFilter: navScrolled ? 'blur(20px)' : 'none',
-          borderBottom: navScrolled ? '1px solid hsl(220 14% 16%)' : 'none',
+          background: navScrolled ? 'rgba(10,10,10,0.97)' : 'transparent',
+          backdropFilter: navScrolled ? 'blur(20px) saturate(1.5)' : 'none',
+          borderBottom: navScrolled ? '1px solid #1A1A1A' : 'none',
         }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
+          <Link to="/" className="flex items-center gap-2.5 group">
             <img
               src="/logo.png"
               alt="RDK Esports Logo"
-              className="h-10 w-auto drop-shadow-[0_0_8px_rgba(255,180,0,0.35)]"
+              className="h-10 w-auto logo-glow group-hover:scale-105 transition-transform"
             />
             <div className="flex flex-col leading-none">
-              <span className="font-heading font-black text-lg tracking-widest text-foreground">RDK ESPORTS</span>
-              <span className="text-[9px] font-medium tracking-wider text-muted-foreground uppercase">Powered by RDK Technologies</span>
+              <span className="font-display text-lg tracking-[0.15em] text-foreground">RDK ESPORTS</span>
+              <span className="text-[9px] tracking-[0.1em] text-muted-foreground font-body uppercase">Powered by RDK Technologies</span>
             </div>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-muted-foreground">
+          <nav className="hidden md:flex items-center gap-8 text-sm font-body font-medium text-muted-foreground">
             {['What We Do', 'Tournaments', 'Creators', 'Features'].map((label, i) => {
               const href = ['#what-we-do', '#tournaments', '#creators', '#features'][i]
               return (
@@ -498,7 +504,7 @@ export default function LandingPage() {
             {user ? (
               <Link
                 to={homeFor(user.role)}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-xs font-black text-white hover:opacity-90 transition glow-red-sm"
+                className="btn-primary cursor-pointer"
               >
                 <Crown className="size-3.5" />
                 Dashboard
@@ -508,14 +514,14 @@ export default function LandingPage() {
                 <button
                   type="button"
                   onClick={openLogin}
-                  className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-muted transition cursor-pointer"
+                  className="btn-ghost text-sm cursor-pointer"
                 >
                   Sign In
                 </button>
                 <button
                   type="button"
                   onClick={openRegister}
-                  className="hidden sm:inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-black text-white hover:opacity-90 transition glow-red-sm cursor-pointer"
+                  className="btn-accent hidden sm:inline-flex cursor-pointer"
                 >
                   Register <ArrowRight className="size-3.5" />
                 </button>
@@ -528,20 +534,18 @@ export default function LandingPage() {
       {/* ── HERO ── */}
       <section className="relative min-h-screen flex items-center pt-16 overflow-hidden">
         {/* Background grid */}
-        <div
-          className="absolute inset-0 animate-grid-pulse pointer-events-none"
-          style={{
-            backgroundImage: 'linear-gradient(hsl(220 14% 16% / 0.4) 1px, transparent 1px), linear-gradient(90deg, hsl(220 14% 16% / 0.4) 1px, transparent 1px)',
-            backgroundSize: '48px 48px',
-          }}
-        />
-        {/* Red glow orb top-left */}
+        <div className="absolute inset-0 bg-grid-pattern animate-grid-pulse pointer-events-none" />
+        {/* Primary glow orb top-left */}
         <div className="absolute -top-40 -left-40 w-[700px] h-[700px] rounded-full pointer-events-none"
-          style={{ background: 'radial-gradient(circle, hsl(8 95% 58% / 0.12) 0%, transparent 70%)' }}
+          style={{ background: 'radial-gradient(circle, rgba(229,57,53,0.12) 0%, transparent 70%)' }}
         />
-        {/* Purple orb bottom-right */}
+        {/* Accent orb bottom-right */}
         <div className="absolute -bottom-60 -right-40 w-[600px] h-[600px] rounded-full pointer-events-none"
-          style={{ background: 'radial-gradient(circle, hsl(270 80% 65% / 0.08) 0%, transparent 70%)' }}
+          style={{ background: 'radial-gradient(circle, rgba(229,57,53,0.06) 0%, transparent 70%)' }}
+        />
+        {/* Secondary ambient */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] rounded-full pointer-events-none opacity-20"
+          style={{ background: 'radial-gradient(ellipse, rgba(229,57,53,0.08) 0%, transparent 70%)' }}
         />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full py-20">
@@ -553,25 +557,20 @@ export default function LandingPage() {
               animate="show"
               variants={{ show: { transition: { staggerChildren: 0.12 } } }}
             >
-              <motion.div variants={stagger(0)}>
-                <div className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 mb-6">
-                  <span className="size-1.5 rounded-full bg-primary animate-pulse" />
-                  <span className="text-xs font-bold uppercase tracking-widest text-primary">Enterprise Esports OS</span>
-                </div>
-              </motion.div>
+
 
               <motion.h1
                 variants={stagger(0.1)}
-                className="font-heading font-black text-5xl sm:text-6xl lg:text-7xl leading-[1.05] tracking-tight text-foreground"
+                className="font-display text-5xl sm:text-6xl lg:text-7xl leading-[1.05] tracking-wide text-foreground"
               >
                 Run Every
                 <br />
-                <span className="gradient-text text-glow-red">Tournament.</span>
+                <span className="gradient-text">Tournament.</span>
                 <br />
-                <span className="text-foreground/70">From Reg to Final.</span>
+                <span className="text-foreground/60">From Reg to Final.</span>
               </motion.h1>
 
-              <motion.p variants={stagger(0.2)} className="mt-6 text-base text-muted-foreground leading-relaxed max-w-xl">
+              <motion.p variants={stagger(0.2)} className="mt-6 text-base text-muted-foreground leading-relaxed max-w-xl font-body">
                 RDK Technologies powers creator-led competitive gaming — UPI payments, IPL-style player auctions,
                 automated brackets, and real-time public leaderboards in one unified control center.
               </motion.p>
@@ -579,7 +578,7 @@ export default function LandingPage() {
               <motion.div variants={stagger(0.3)} className="mt-8 flex flex-wrap gap-4">
                 <a
                   href="#tournaments"
-                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-7 py-3.5 text-sm font-black text-white shadow-lg hover:opacity-90 transition glow-red"
+                  className="btn-primary cursor-pointer"
                 >
                   <Trophy className="size-4" />
                   Explore Tournaments
@@ -587,7 +586,7 @@ export default function LandingPage() {
                 <button
                   type="button"
                   onClick={openRegister}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-card/80 px-7 py-3.5 text-sm font-semibold text-foreground hover:bg-card hover:border-border-strong transition cursor-pointer"
+                  className="btn-ghost cursor-pointer"
                 >
                   <Users className="size-4" />
                   Join as Gamer
@@ -597,17 +596,17 @@ export default function LandingPage() {
               {/* Stats bar */}
               <motion.div
                 variants={stagger(0.4)}
-                className="mt-14 pt-8 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-6"
+                className="mt-14 pt-8 border-t border-border/30 grid grid-cols-2 sm:grid-cols-4 gap-6"
               >
                 {[
-                  { label: 'Tournaments', value: stats?.totalTournamentsHosted ?? '36+', color: 'text-foreground' },
+                  { label: 'Tournaments', value: stats?.totalTournamentsHosted ?? '36+', color: 'gradient-text' },
                   { label: 'Prize Given', value: stats?.totalPrizeDistributed ?? '₹8.75L+', color: 'text-primary' },
-                  { label: 'Gamers', value: stats?.registeredGamers ?? '12K+', color: 'text-foreground' },
-                  { label: 'Partners', value: `${OFFICIAL_CREATORS.length}`, color: 'text-yellow-400' },
+                  { label: 'Gamers', value: stats?.registeredGamers ?? '12K+', color: 'gradient-text' },
+                  { label: 'Partners', value: `${OFFICIAL_CREATORS.length}`, color: 'gradient-text-gold' },
                 ].map((s) => (
                   <div key={s.label}>
-                    <p className={`stat-number text-3xl font-black ${s.color}`}>{s.value}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">{s.label}</p>
+                    <p className={`stat-number text-3xl ${s.color}`}>{s.value}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 font-body tracking-wide">{s.label}</p>
                   </div>
                 ))}
               </motion.div>
@@ -622,11 +621,11 @@ export default function LandingPage() {
             >
               <div className="relative">
                 {/* Corner decoration */}
-                <div className="corner-border relative rounded-2xl overflow-hidden"
+                <div className="bracket relative rounded-2xl overflow-hidden"
                   style={{
                     width: '360px',
-                    boxShadow: '0 0 40px hsl(8 95% 58% / 0.2), 0 20px 60px rgba(0,0,0,0.5)',
-                    border: '1px solid hsl(8 95% 58% / 0.25)',
+                    boxShadow: '0 0 40px hsl(263 82% 58% / 0.25), 0 20px 60px rgba(0,0,0,0.5)',
+                    border: '1px solid hsl(263 82% 58% / 0.3)',
                   }}
                 >
                   <img
@@ -639,12 +638,12 @@ export default function LandingPage() {
                   <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
                   {/* Info bar */}
                   <div className="absolute bottom-0 left-0 right-0 p-5">
-                    <div className="inline-flex items-center gap-2 rounded-full bg-primary/20 border border-primary/40 px-3 py-1 mb-2">
-                      <Crown className="size-3.5 text-primary" />
-                      <span className="text-xs font-bold text-primary">Platform Head</span>
+                    <div className="badge-primary inline-flex mb-2 text-[9px]">
+                      <Crown className="size-3" />
+                      Platform Head
                     </div>
-                    <p className="font-heading font-black text-xl text-white">RDK Esports</p>
-                    <p className="text-xs text-white/60 font-mono">@rdkesports</p>
+                    <p className="font-display text-xl text-white">RDK Esports</p>
+                    <p className="text-xs text-white/50 font-body font-mono">@rdkesports</p>
                   </div>
                 </div>
 
@@ -678,10 +677,10 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div variants={fadeUp} className="text-center max-w-2xl mx-auto mb-16">
             <SectionLabel icon={Target} text="What We Do" />
-            <h2 className="font-heading font-black text-4xl text-foreground tracking-tight">
+            <h2 className="font-display text-4xl text-foreground tracking-wide">
               Everything for Professional Esports
             </h2>
-            <p className="mt-4 text-sm text-muted-foreground leading-relaxed">
+            <p className="mt-4 text-sm text-muted-foreground leading-relaxed font-body">
               We eliminated the chaos of WhatsApp groups, lost Google Forms, and unverified UPI payments.
             </p>
           </motion.div>
@@ -743,7 +742,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-end justify-between mb-10 gap-4">
             <div>
-              <SectionLabel icon={Flame} text="Competitive Action" />
+
               <h2 className="font-heading font-black text-4xl text-foreground tracking-tight">
                 Live & Upcoming Tournaments
               </h2>
@@ -824,7 +823,7 @@ export default function LandingPage() {
       <AnimatedSection id="creators" className="py-24 border-t border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div variants={fadeUp} className="text-center max-w-2xl mx-auto mb-16">
-            <SectionLabel icon={Star} text="Verified Partners" />
+
             <h2 className="font-heading font-black text-4xl text-foreground tracking-tight">
               Our Official Creators & Organizers
             </h2>
@@ -883,7 +882,7 @@ export default function LandingPage() {
       <AnimatedSection id="features" className="py-24 border-t border-border bg-card/20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div variants={fadeUp} className="text-center max-w-2xl mx-auto mb-16">
-            <SectionLabel icon={TrendingUp} text="Engine Capabilities" />
+
             <h2 className="font-heading font-black text-4xl text-foreground tracking-tight">
               Built for Serious Tournament Ops
             </h2>
@@ -961,7 +960,7 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      {/* Global Auth Pop-Up Modal */}
+      {/* Auth Modal */}
       <AuthModal />
     </div>
   )

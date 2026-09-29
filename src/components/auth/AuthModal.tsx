@@ -1,365 +1,521 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod'
 import {
-  X,
-  Mail,
-  Lock,
-  User as UserIcon,
-  Gamepad2,
-  Eye,
-  EyeOff,
-  AlertCircle,
-  ArrowRight,
+  motion,
+  AnimatePresence,
+  useMotionValue,
+  useTransform,
+} from 'framer-motion'
+import {
+  X, Eye, EyeOff, AlertCircle,
+  Mail, Lock, User, Gamepad2,
+  ArrowRight, CheckCircle2,
+  LogIn, UserPlus,
 } from 'lucide-react'
+
 import { useAuth } from '@/stores/authStore'
 import { useAuthModal } from '@/stores/authModalStore'
 import { authService } from '@/services/api/authService'
 import { homeFor } from '@/app/config/roles'
 
-export function AuthModal() {
-  const { isOpen, mode, setMode, close } = useAuthModal()
+/* ── Schemas ────────────────────────────────────────────── */
+const loginSchema = z.object({
+  email:    z.string().email('Enter a valid email'),
+  password: z.string().min(8, 'Minimum 8 characters'),
+})
+const registerSchema = z.object({
+  name:     z.string().min(2, 'At least 2 characters'),
+  ign:      z.string().min(2, 'At least 2 characters'),
+  email:    z.string().email('Enter a valid email'),
+  password: z
+    .string()
+    .min(8, 'Min 8 characters')
+    .regex(/[A-Z]/, 'Add an uppercase letter')
+    .regex(/\d/, 'Add a number'),
+})
+type LoginForm    = z.infer<typeof loginSchema>
+type RegisterForm = z.infer<typeof registerSchema>
+
+/* ── Password strength ──────────────────────────────────── */
+function strength(pw: string) {
+  let s = 0
+  if (pw.length >= 8) s++
+  if (/[A-Z]/.test(pw)) s++
+  if (/\d/.test(pw)) s++
+  if (/[^A-Za-z0-9]/.test(pw)) s++
+  const colors = ['', '#E53935', '#FF8F00', '#29B6F6', '#66BB6A']
+  const labels = ['', 'Weak', 'Fair', 'Good', 'Strong']
+  return { level: s, color: colors[s], label: labels[s] }
+}
+
+/* ── Input with icon ─────────────────────────────────────── */
+function Field({
+  icon: Icon, type = 'text', placeholder, register, error,
+  showToggle, showPassword, onToggle, hint,
+}: {
+  icon: React.ElementType
+  type?: string
+  placeholder: string
+  register: object
+  error?: string
+  showToggle?: boolean
+  showPassword?: boolean
+  onToggle?: () => void
+  hint?: React.ReactNode
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="input-icon-wrap">
+        <Icon className="input-icon size-4" />
+        <input
+          type={showToggle ? (showPassword ? 'text' : 'password') : type}
+          placeholder={placeholder}
+          className="rdk-input"
+          style={{ paddingRight: showToggle ? '3rem' : undefined }}
+          {...(register as React.InputHTMLAttributes<HTMLInputElement>)}
+          aria-invalid={!!error}
+        />
+        {showToggle && (
+          <motion.button
+            type="button"
+            onClick={onToggle}
+            className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
+            style={{ color: '#555' }}
+            whileTap={{ scale: 0.85 }}
+            whileHover={{ color: '#fff' }}
+            aria-label="Toggle password"
+          >
+            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </motion.button>
+        )}
+      </div>
+      {hint}
+      <AnimatePresence>
+        {error && (
+          <motion.p
+            role="alert"
+            className="text-[11px] font-body flex items-center gap-1"
+            style={{ color: '#ff6b6b' }}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+          >
+            <AlertCircle className="size-3 shrink-0" />{error}
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+/* ── Login Panel ────────────────────────────────────────── */
+function LoginPanel({ onSwitch }: { onSwitch: () => void }) {
+  const [showPw, setShowPw] = useState(false)
+  const [serverErr, setServerErr] = useState('')
+  const [done, setDone] = useState(false)
   const { login } = useAuth()
-  const navigate = useNavigate()
+  const { close } = useAuthModal()
+  const nav = useNavigate()
 
-  // Login form state
-  const [loginEmail, setLoginEmail] = useState('')
-  const [loginPassword, setLoginPassword] = useState('')
-  const [showLoginPassword, setShowLoginPassword] = useState(false)
-  const [loginError, setLoginError] = useState('')
-  const [isLoginSubmitting, setIsLoginSubmitting] = useState(false)
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginForm>({
+    resolver: zodResolver(loginSchema),
+  })
 
-  // Register form state
-  const [regName, setRegName] = useState('')
-  const [regEmail, setRegEmail] = useState('')
-  const [regIgn, setRegIgn] = useState('')
-  const [regPassword, setRegPassword] = useState('')
-  const [showRegPassword, setShowRegPassword] = useState(false)
-  const [regError, setRegError] = useState('')
-  const [isRegSubmitting, setIsRegSubmitting] = useState(false)
-
-  if (!isOpen) return null
-
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoginError('')
-    setIsLoginSubmitting(true)
-
+  const onSubmit = async (data: LoginForm) => {
+    setServerErr('')
     try {
-      const data = await authService.login(loginEmail, loginPassword)
-      login(data.user)
-      close()
-      navigate(homeFor(data.user.role))
-    } catch (err: unknown) {
-      if (err instanceof Error) setLoginError(err.message)
-      else setLoginError('Login failed')
-    } finally {
-      setIsLoginSubmitting(false)
-    }
-  }
-
-
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setRegError('')
-    setIsRegSubmitting(true)
-
-    try {
-      const data = await authService.register({
-        name: regName,
-        email: regEmail,
-        ign: regIgn || regName,
-        role: 'player',
-        password: regPassword,
-      })
-      login(data.user)
-      close()
-      navigate('/player/dashboard')
-    } catch (err: unknown) {
-      if (err instanceof Error) setRegError(err.message)
-      else setRegError('Registration failed')
-    } finally {
-      setIsRegSubmitting(false)
+      const res = await authService.login(data.email, data.password)
+      setDone(true)
+      setTimeout(() => { close(); login(res.user); nav(homeFor(res.user.role)) }, 600)
+    } catch (e: unknown) {
+      setServerErr(e instanceof Error ? e.message : 'Login failed')
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        transition={{ duration: 0.2, ease: 'easeOut' }}
-        className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden my-auto"
-      >
-        {/* Top Decorative Header */}
-        <div className="relative p-6 pb-4 border-b border-border bg-gradient-to-b from-muted/40 to-transparent">
-          <button
-            onClick={close}
-            aria-label="Close modal"
-            className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+    <motion.div
+      key="login"
+      initial={{ opacity: 0, x: -24 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 24 }}
+      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      className="space-y-5"
+    >
+      <AnimatePresence>
+        {serverErr && (
+          <motion.div
+            className="alert-box alert-danger"
+            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
           >
-            <X className="size-4" />
+            <AlertCircle className="size-4 shrink-0" />{serverErr}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        <Field
+          icon={Mail}
+          type="email"
+          placeholder="Email address"
+          register={register('email')}
+          error={errors.email?.message}
+        />
+        <Field
+          icon={Lock}
+          placeholder="Password"
+          register={register('password')}
+          error={errors.password?.message}
+          showToggle
+          showPassword={showPw}
+          onToggle={() => setShowPw(s => !s)}
+        />
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="text-xs font-body transition-colors hover:text-white"
+            style={{ color: '#E53935' }}
+            onClick={() => alert('Password recovery managed by RDK Technologies.')}
+          >
+            Forgot password?
           </button>
-
-          <div className="flex items-center gap-3">
-            <img
-              src="/logo.png"
-              alt="RDK Esports"
-              className="h-10 w-auto drop-shadow-[0_0_12px_rgba(255,180,0,0.5)]"
-            />
-            <div>
-              <div className="font-heading font-black text-lg tracking-wider text-foreground">
-                RDK ESPORTS
-              </div>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">
-                Tournament Operating System
-              </p>
-            </div>
-          </div>
-
-          {/* Mode Switcher Tabs */}
-          <div className="grid grid-cols-2 gap-1 bg-muted/40 p-1 rounded-lg border border-border mt-4">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('login')
-                setLoginError('')
-              }}
-              className={`py-1.5 text-xs font-bold rounded-md transition-all ${
-                mode === 'login'
-                  ? 'bg-primary text-background shadow-md'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('register')
-                setRegError('')
-              }}
-              className={`py-1.5 text-xs font-bold rounded-md transition-all ${
-                mode === 'register'
-                  ? 'bg-primary text-background shadow-md'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Create Account
-            </button>
-          </div>
         </div>
 
-        {/* Content Body */}
-        <div className="p-6 pt-5">
-          {mode === 'login' ? (
-            /* ═══ LOGIN TAB ═══ */
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              {loginError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-xs flex items-center gap-2">
-                  <AlertCircle className="size-4 shrink-0" />
-                  <span>{loginError}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                  Email or Identifier
-                </label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="name@rdk.com"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    className="w-full bg-background border border-border rounded-lg pl-9 pr-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Password
-                  </label>
-                </div>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-                  <input
-                    type={showLoginPassword ? 'text' : 'password'}
-                    required
-                    placeholder="••••••••"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full bg-background border border-border rounded-lg pl-9 pr-9 py-2 text-xs text-foreground focus:outline-none focus:border-primary transition-colors font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowLoginPassword(!showLoginPassword)}
-                    className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
-                  >
-                    {showLoginPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoginSubmitting}
-                className="w-full py-2.5 rounded-lg font-heading font-black text-xs text-background bg-primary hover:bg-primary/90 disabled:opacity-50 transition-all shadow-[0_0_15px_rgba(255,46,0,0.3)] flex items-center justify-center gap-2"
-              >
-                {isLoginSubmitting ? (
-                  <div className="size-4 border-2 border-background border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <span>SIGN IN TO PORTAL</span>
-                    <ArrowRight className="size-3.5" />
-                  </>
-                )}
-              </button>
-
-
-            </form>
-          ) : (
-            /* ═══ REGISTER TAB ═══ */
-            <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
-              {regError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-xs flex items-center gap-2">
-                  <AlertCircle className="size-4 shrink-0" />
-                  <span>{regError}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <UserIcon className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="Praveen Kumar"
-                    value={regName}
-                    onChange={(e) => setRegName(e.target.value)}
-                    className="w-full bg-background border border-border rounded-lg pl-9 pr-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                  Email Address
-                </label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-                  <input
-                    type="email"
-                    required
-                    placeholder="praveen@gmail.com"
-                    value={regEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
-                    className="w-full bg-background border border-border rounded-lg pl-9 pr-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                  In-Game Name (IGN) / Gamer Tag
-                </label>
-                <div className="relative">
-                  <Gamepad2 className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="e.g. VIPER_OP"
-                    value={regIgn}
-                    onChange={(e) => setRegIgn(e.target.value)}
-                    className="w-full bg-background border border-border rounded-lg pl-9 pr-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary transition-colors font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                  Create Password (min 8 chars)
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-                  <input
-                    type={showRegPassword ? 'text' : 'password'}
-                    required
-                    minLength={8}
-                    placeholder="••••••••"
-                    value={regPassword}
-                    onChange={(e) => setRegPassword(e.target.value)}
-                    className="w-full bg-background border border-border rounded-lg pl-9 pr-9 py-2 text-xs text-foreground focus:outline-none focus:border-primary transition-colors font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowRegPassword(!showRegPassword)}
-                    className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
-                  >
-                    {showRegPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isRegSubmitting}
-                className="w-full py-2.5 rounded-lg font-heading font-black text-xs text-background bg-primary hover:bg-primary/90 disabled:opacity-50 transition-all shadow-[0_0_15px_rgba(255,46,0,0.3)] flex items-center justify-center gap-2"
-              >
-                {isRegSubmitting ? (
-                  <div className="size-4 border-2 border-background border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <span>CREATE FREE ACCOUNT</span>
-                    <ArrowRight className="size-3.5" />
-                  </>
-                )}
-              </button>
-            </form>
-          )}
-
-          {/* Footer toggle note */}
-          <div className="mt-4 text-center text-xs text-muted-foreground">
-            {mode === 'login' ? (
-              <p>
-                Don't have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('register')
-                    setRegError('')
-                  }}
-                  className="font-bold text-primary hover:underline"
-                >
-                  Create one now
-                </button>
-              </p>
+        <motion.button
+          type="submit"
+          disabled={isSubmitting || done}
+          className="btn-primary w-full justify-center"
+          whileHover={!isSubmitting ? { scale: 1.01 } : {}}
+          whileTap={!isSubmitting ? { scale: 0.98 } : {}}
+        >
+          <AnimatePresence mode="wait">
+            {done ? (
+              <motion.span key="d" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <CheckCircle2 className="size-4" /> Signing you in…
+              </motion.span>
+            ) : isSubmitting ? (
+              <motion.span key="l" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <span className="size-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                Verifying…
+              </motion.span>
             ) : (
-              <p>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('login')
-                    setLoginError('')
-                  }}
-                  className="font-bold text-primary hover:underline"
-                >
-                  Sign in here
-                </button>
-              </p>
+              <motion.span key="i" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                Sign In <ArrowRight className="size-4" />
+              </motion.span>
             )}
-          </div>
+          </AnimatePresence>
+        </motion.button>
+      </form>
+
+      <p className="text-center text-xs font-body" style={{ color: '#555' }}>
+        Don't have an account?{' '}
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="font-semibold transition-colors hover:text-white cursor-pointer"
+          style={{ color: '#E53935' }}
+        >
+          Create one now
+        </button>
+      </p>
+    </motion.div>
+  )
+}
+
+/* ── Register Panel ──────────────────────────────────────── */
+function RegisterPanel({ onSwitch }: { onSwitch: () => void }) {
+  const [showPw, setShowPw] = useState(false)
+  const [serverErr, setServerErr] = useState('')
+  const [done, setDone] = useState(false)
+  const { login } = useAuth()
+  const { close } = useAuthModal()
+  const nav = useNavigate()
+
+  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<RegisterForm>({
+    resolver: zodResolver(registerSchema),
+  })
+
+  const pw = watch('password') || ''
+  const str = strength(pw)
+
+  const onSubmit = async (data: RegisterForm) => {
+    setServerErr('')
+    try {
+      const res = await authService.register({ ...data, role: 'player' })
+      setDone(true)
+      setTimeout(() => { close(); login(res.user); nav(homeFor(res.user.role)) }, 700)
+    } catch (e: unknown) {
+      setServerErr(e instanceof Error ? e.message : 'Registration failed')
+    }
+  }
+
+  return (
+    <motion.div
+      key="register"
+      initial={{ opacity: 0, x: 24 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -24 }}
+      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      className="space-y-4"
+    >
+      <AnimatePresence>
+        {serverErr && (
+          <motion.div
+            className="alert-box alert-danger"
+            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+          >
+            <AlertCircle className="size-4 shrink-0" />{serverErr}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+        {/* Name + IGN row */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field icon={User} placeholder="Full name" register={register('name')} error={errors.name?.message} />
+          <Field icon={Gamepad2} placeholder="IGN (in-game)" register={register('ign')} error={errors.ign?.message} />
         </div>
-      </motion.div>
-    </div>
+
+        <Field icon={Mail} type="email" placeholder="Email address" register={register('email')} error={errors.email?.message} />
+
+        <Field
+          icon={Lock}
+          placeholder="Password (min 8 chars)"
+          register={register('password')}
+          error={errors.password?.message}
+          showToggle
+          showPassword={showPw}
+          onToggle={() => setShowPw(s => !s)}
+          hint={
+            pw ? (
+              <div className="space-y-1 mt-1">
+                <div className="flex gap-1">
+                  {[1,2,3,4].map(seg => (
+                    <motion.div
+                      key={seg}
+                      className="h-0.5 flex-1 rounded-full"
+                      animate={{ backgroundColor: seg <= str.level ? str.color : '#1E1E1E' }}
+                      transition={{ duration: 0.25 }}
+                    />
+                  ))}
+                </div>
+                {str.label && (
+                  <p className="text-[10px] font-body" style={{ color: str.color }}>
+                    {str.label} password
+                  </p>
+                )}
+              </div>
+            ) : null
+          }
+        />
+
+        <motion.button
+          type="submit"
+          disabled={isSubmitting || done}
+          className="btn-primary w-full justify-center mt-1"
+          whileHover={!isSubmitting ? { scale: 1.01 } : {}}
+          whileTap={!isSubmitting ? { scale: 0.98 } : {}}
+        >
+          <AnimatePresence mode="wait">
+            {done ? (
+              <motion.span key="d" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <CheckCircle2 className="size-4" /> Setting up profile…
+              </motion.span>
+            ) : isSubmitting ? (
+              <motion.span key="l" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <span className="size-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                Creating account…
+              </motion.span>
+            ) : (
+              <motion.span key="i" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                Create Free Account <ArrowRight className="size-4" />
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </motion.button>
+      </form>
+
+      <p className="text-center text-xs font-body" style={{ color: '#555' }}>
+        Already have an account?{' '}
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="font-semibold transition-colors hover:text-white cursor-pointer"
+          style={{ color: '#E53935' }}
+        >
+          Sign in instead
+        </button>
+      </p>
+    </motion.div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Main AuthModal
+═══════════════════════════════════════════════════════════ */
+export function AuthModal() {
+  const { isOpen, mode, setMode, close } = useAuthModal()
+
+  // Lock body scroll when open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => { document.body.style.overflow = '' }
+  }, [isOpen])
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [close])
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* ── Backdrop ── */}
+          <motion.div
+            key="backdrop"
+            className="fixed inset-0 z-50"
+            style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            onClick={close}
+          />
+
+          {/* ── Modal ── */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              key="modal"
+              className="relative w-full max-w-md overflow-hidden"
+              style={{
+                background: '#111111',
+                border: '1px solid #1E1E1E',
+                borderRadius: '16px',
+                boxShadow: '0 0 0 1px rgba(229,57,53,0.15), 0 24px 80px rgba(0,0,0,0.8), 0 0 60px rgba(229,57,53,0.06)',
+              }}
+              initial={{ opacity: 0, scale: 0.92, y: 24 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 24 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Red top accent line */}
+              <motion.div
+                className="absolute top-0 left-0 right-0 h-px"
+                style={{ background: 'linear-gradient(90deg, transparent, #E53935, transparent)' }}
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                transition={{ delay: 0.2, duration: 0.5 }}
+              />
+
+              {/* Subtle grid background */}
+              <div
+                className="absolute inset-0 opacity-30 pointer-events-none"
+                style={{
+                  backgroundImage: 'linear-gradient(rgba(229,57,53,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(229,57,53,0.04) 1px, transparent 1px)',
+                  backgroundSize: '32px 32px',
+                }}
+              />
+
+              {/* Glow orb */}
+              <div
+                className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-40 pointer-events-none"
+                style={{
+                  background: 'radial-gradient(ellipse, rgba(229,57,53,0.08) 0%, transparent 70%)',
+                  filter: 'blur(20px)',
+                }}
+              />
+
+              <div className="relative z-10 p-6">
+                {/* ── Header ── */}
+                <div className="flex items-start justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <img src="/logo.png" alt="RDK Esports" className="h-9 w-auto logo-glow" />
+                    <div>
+                      <p className="font-display text-sm tracking-[0.15em] text-white">
+                        RDK ESPORTS
+                      </p>
+                      <p className="text-[9px] font-body tracking-widest mt-0.5"
+                        style={{ color: '#444' }}>
+                        TOURNAMENT OPERATING SYSTEM
+                      </p>
+                    </div>
+                  </div>
+                  <motion.button
+                    onClick={close}
+                    className="p-1.5 rounded-lg cursor-pointer transition-colors"
+                    style={{ color: '#555', background: '#1A1A1A' }}
+                    whileHover={{ background: '#222', color: '#fff' }}
+                    whileTap={{ scale: 0.9 }}
+                    aria-label="Close"
+                  >
+                    <X className="size-4" />
+                  </motion.button>
+                </div>
+
+                {/* ── Tab switcher ── */}
+                <div
+                  className="flex items-center mb-6 relative"
+                  style={{
+                    background: '#0D0D0D',
+                    border: '1px solid #1E1E1E',
+                    borderRadius: '10px',
+                    padding: '3px',
+                  }}
+                >
+                  {/* Sliding indicator */}
+                  <motion.div
+                    className="absolute top-[3px] bottom-[3px] rounded-lg"
+                    style={{ background: '#E53935', width: 'calc(50% - 3px)' }}
+                    animate={{ x: mode === 'login' ? 3 : 'calc(100% + 3px)' }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setMode('login')}
+                    className="relative z-10 flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-body font-semibold transition-colors cursor-pointer"
+                    style={{ color: mode === 'login' ? '#ffffff' : '#555' }}
+                  >
+                    <LogIn className="size-3.5" />
+                    Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode('register')}
+                    className="relative z-10 flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-body font-semibold transition-colors cursor-pointer"
+                    style={{ color: mode === 'register' ? '#ffffff' : '#555' }}
+                  >
+                    <UserPlus className="size-3.5" />
+                    Create Account
+                  </button>
+                </div>
+
+                {/* ── Panel ── */}
+                <AnimatePresence mode="wait">
+                  {mode === 'login' ? (
+                    <LoginPanel key="login" onSwitch={() => setMode('register')} />
+                  ) : (
+                    <RegisterPanel key="register" onSwitch={() => setMode('login')} />
+                  )}
+                </AnimatePresence>
+
+
+              </div>
+            </motion.div>
+          </div>
+        </>
+      )}
+    </AnimatePresence>
   )
 }
 
