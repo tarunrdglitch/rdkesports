@@ -56,3 +56,9 @@ export const useAuth = create<AuthStoreState>((set) => ({
     }
   },
 }))
+
+// Eagerly restore user session on page load / browser refresh
+if (typeof window !== 'undefined') {
+  useAuth.getState().checkAuth()
+}
+
