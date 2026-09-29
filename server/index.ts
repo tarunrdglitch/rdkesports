@@ -657,7 +657,12 @@ const updateCreatorHandler = async (req: Request, res: Response) => {
     const id = String(req.params.id)
     const { name, handle, organizationName, bio, subscribers, games, socials, avatar, email, password } = req.body
 
-    const creatorIndex = OFFICIAL_CREATORS.findIndex((c) => c.id === id)
+    const creatorIndex = OFFICIAL_CREATORS.findIndex(
+      (c) =>
+        c.id === id ||
+        c.handle.toLowerCase().replace('@', '') === id.toLowerCase().replace('@', '') ||
+        (c.socials?.loginEmail && c.socials.loginEmail.toLowerCase() === id.toLowerCase())
+    )
     if (creatorIndex === -1) {
       return res.status(404).json({ error: 'Creator not found' })
     }
@@ -668,7 +673,7 @@ const updateCreatorHandler = async (req: Request, res: Response) => {
       name: name !== undefined ? name.trim() : current.name,
       handle: handle !== undefined ? (handle.startsWith('@') ? handle.trim() : `@${handle.trim()}`) : current.handle,
       organizationName: organizationName !== undefined ? organizationName.trim() : current.organizationName,
-      avatar: avatar !== undefined ? avatar : current.avatar,
+      avatar: avatar !== undefined && avatar.trim() ? avatar.trim() : current.avatar,
       bio: bio !== undefined ? bio : current.bio,
       subscribers: subscribers !== undefined ? subscribers : current.subscribers,
       games: Array.isArray(games) ? games : current.games,
@@ -678,18 +683,23 @@ const updateCreatorHandler = async (req: Request, res: Response) => {
     OFFICIAL_CREATORS[creatorIndex] = updatedCreator
 
     // Update corresponding user record
-    const userIndex = USERS.findIndex((u) => u.organizationId === id)
+    const userIndex = USERS.findIndex(
+      (u) =>
+        u.organizationId === current.id ||
+        (u.email && u.email.toLowerCase() === current.socials?.loginEmail?.toLowerCase())
+    )
     if (userIndex !== -1) {
       USERS[userIndex].name = updatedCreator.name
       USERS[userIndex].organizationName = updatedCreator.organizationName
       USERS[userIndex].creatorProfile = updatedCreator
+      if (updatedCreator.avatar) (USERS[userIndex] as any).avatar = updatedCreator.avatar
       if (email) USERS[userIndex].email = email.trim().toLowerCase()
       if (password) USERS[userIndex].password = password
     }
 
     if (isDatabaseConfigured) {
       await prisma.officialCreator.updateMany({
-        where: { id },
+        where: { id: current.id },
         data: {
           name: updatedCreator.name,
           handle: updatedCreator.handle,
@@ -702,18 +712,16 @@ const updateCreatorHandler = async (req: Request, res: Response) => {
         },
       }).catch((err) => console.error('[Database] Notice updating creator:', err))
 
-      if (email || password || name || organizationName) {
-        await prisma.user.updateMany({
-          where: { organizationId: id },
-          data: {
-            role: 'creator',
-            name: updatedCreator.name,
-            organizationName: updatedCreator.organizationName,
-            ...(email ? { email: email.trim().toLowerCase() } : {}),
-            ...(password ? { password } : {}),
-          },
-        }).catch((err) => console.error('[Database] Notice updating creator user in DB:', err))
-      }
+      await prisma.user.updateMany({
+        where: { organizationId: current.id },
+        data: {
+          role: 'creator',
+          name: updatedCreator.name,
+          organizationName: updatedCreator.organizationName,
+          ...(email ? { email: email.trim().toLowerCase() } : {}),
+          ...(password ? { password } : {}),
+        },
+      }).catch((err) => console.error('[Database] Notice updating creator user in DB:', err))
     }
 
     return res.json({ success: true, creator: updatedCreator })

@@ -52,6 +52,7 @@ export interface User {
   id: string
   name: string
   email?: string
+  avatar?: string
   role: Role
   ign?: string
   organizationId?: string

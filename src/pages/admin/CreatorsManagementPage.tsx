@@ -13,6 +13,8 @@ import {
   Check,
   Trash2,
   Pencil,
+  Camera,
+  Upload,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { creatorService } from '@/services/api/creatorService'
@@ -77,6 +79,16 @@ export default function CreatorsManagementPage() {
     setFormData(initialForm)
     setErrorMsg('')
     setIsOpen(true)
+  }
+
+  const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      setFormData((prev) => ({ ...prev, avatar: reader.result as string }))
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleDelete = async (id: string, name: string) => {
@@ -219,11 +231,21 @@ export default function CreatorsManagementPage() {
               >
                 <div>
                   <div className="flex items-center gap-3 mb-3">
-                    <img
-                      src={c.avatar}
-                      alt={c.name}
-                      className="size-12 rounded-full border border-border object-cover"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => handleStartEdit(c)}
+                      className="group/avatar relative size-12 rounded-full border border-border overflow-hidden shrink-0 cursor-pointer"
+                      title="Click to edit creator or update DP"
+                    >
+                      <img
+                        src={c.avatar}
+                        alt={c.name}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center transition-opacity">
+                        <Camera className="size-4 text-primary" />
+                      </div>
+                    </button>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-sm text-foreground truncate">{c.name}</span>
@@ -418,16 +440,42 @@ export default function CreatorsManagementPage() {
                 </label>
               </div>
 
-              <label className="block text-xs font-medium text-foreground">
-                Avatar Image URL (optional)
-                <input
-                  type="url"
-                  placeholder="https://... (image URL)"
-                  className={field}
-                  value={formData.avatar}
-                  onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
-                />
-              </label>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-foreground">
+                  Creator DP (Profile Avatar)
+                </label>
+                <div className="flex items-center gap-3">
+                  <div className="size-14 rounded-xl overflow-hidden border border-border bg-muted shrink-0">
+                    <img
+                      src={
+                        formData.avatar ||
+                        'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=200&q=80'
+                      }
+                      alt="Avatar preview"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <label className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted hover:bg-muted/80 px-3 py-1.5 text-xs font-semibold text-foreground cursor-pointer transition">
+                      <Upload className="size-3.5 text-primary" />
+                      <span>Upload DP File</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarFile}
+                        className="hidden"
+                      />
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="Or paste image URL (https://...)"
+                      className={field}
+                      value={formData.avatar}
+                      onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
 
               <label className="block text-xs font-medium text-foreground">
                 Bio / Tournament Focus

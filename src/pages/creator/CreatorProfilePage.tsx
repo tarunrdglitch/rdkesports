@@ -14,6 +14,11 @@ import {
   Coins,
   Play,
   Lock,
+  Camera,
+  Upload,
+  X,
+  Image as ImageIcon,
+  AlertCircle,
 } from 'lucide-react'
 import { useAuth } from '@/stores/authStore'
 import { creatorService } from '@/services/api/creatorService'
@@ -22,11 +27,18 @@ import type { OfficialCreator, Tournament } from '@/types'
 import { StatusBadge } from '@/components/common/StatusBadge'
 
 export default function CreatorProfilePage() {
-  const { user } = useAuth()
+  const { user, updateUser } = useAuth()
   const [creator, setCreator] = useState<OfficialCreator | null>(null)
   const [tournaments, setTournaments] = useState<Tournament[]>([])
   const [loading, setLoading] = useState(true)
   const [copiedLink, setCopiedLink] = useState(false)
+
+  // DP (Avatar) modal state
+  const [isChangeDpOpen, setIsChangeDpOpen] = useState(false)
+  const [newAvatarUrl, setNewAvatarUrl] = useState('')
+  const [avatarPreview, setAvatarPreview] = useState('')
+  const [isSavingDp, setIsSavingDp] = useState(false)
+  const [dpMsg, setDpMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
 
   useEffect(() => {
     loadProfileAndTournaments()
@@ -102,6 +114,58 @@ export default function CreatorProfilePage() {
     setTimeout(() => setCopiedLink(false), 2500)
   }
 
+  const handleOpenDpModal = () => {
+    const current = creator?.avatar || ''
+    setNewAvatarUrl(current)
+    setAvatarPreview(current)
+    setDpMsg(null)
+    setIsChangeDpOpen(true)
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      setDpMsg({ text: 'Image file size must be under 5MB', type: 'error' })
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      setAvatarPreview(dataUrl)
+      setNewAvatarUrl(dataUrl)
+      setDpMsg(null)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleSaveDp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const targetUrl = newAvatarUrl.trim()
+    if (!targetUrl) {
+      setDpMsg({ text: 'Please select an image file or provide an image link', type: 'error' })
+      return
+    }
+    setIsSavingDp(true)
+    setDpMsg(null)
+    try {
+      const creatorId = creator?.id || 'cr_tamil_aura_zoner'
+      await creatorService.update(creatorId, { avatar: targetUrl })
+      setCreator((prev) => (prev ? { ...prev, avatar: targetUrl } : null))
+      updateUser({ avatar: targetUrl })
+      setDpMsg({ text: 'Display Picture (DP) updated successfully!', type: 'success' })
+      setTimeout(() => {
+        setIsChangeDpOpen(false)
+        setDpMsg(null)
+      }, 1200)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update DP'
+      setDpMsg({ text: msg, type: 'error' })
+    } finally {
+      setIsSavingDp(false)
+    }
+  }
+
   // Calculate dynamic stats
   const totalTourneys = tournaments.length
   const activeTourneys = tournaments.filter(
@@ -148,15 +212,35 @@ export default function CreatorProfilePage() {
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 -mt-16 md:-mt-20">
             {/* Avatar & Main Titles */}
             <div className="flex flex-col sm:flex-row sm:items-end gap-5">
-              <div className="relative size-28 md:size-32 rounded-2xl overflow-hidden border-4 border-card bg-muted shadow-2xl shrink-0 ring-2 ring-primary/40">
-                <img
-                  src={
-                    creator?.avatar ||
-                    'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80'
-                  }
-                  alt={creator?.name}
-                  className="w-full h-full object-cover"
-                />
+              <div className="flex flex-col items-center sm:items-start gap-2 shrink-0">
+                <div className="group/avatar relative size-28 md:size-32 rounded-2xl overflow-hidden border-4 border-card bg-muted shadow-2xl shrink-0 ring-2 ring-primary/40">
+                  <img
+                    src={
+                      creator?.avatar ||
+                      'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80'
+                    }
+                    alt={creator?.name}
+                    className="w-full h-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleOpenDpModal}
+                    className="absolute inset-0 bg-black/65 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-white text-[11px] font-bold cursor-pointer"
+                    title="Change Profile Picture (DP)"
+                  >
+                    <Camera className="size-5 text-primary" />
+                    <span>Change DP</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleOpenDpModal}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-primary hover:text-primary/90 transition cursor-pointer bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-lg px-2.5 py-1"
+                >
+                  <Camera className="size-3" />
+                  <span>Change DP</span>
+                </button>
               </div>
 
               <div className="space-y-1.5">
@@ -327,9 +411,11 @@ export default function CreatorProfilePage() {
             <Coins className="size-4 text-amber-400" />
           </div>
           <div className="font-heading font-black text-2xl text-amber-400">
-            ₹{totalPrizePool > 0 ? totalPrizePool.toLocaleString() : '50,000+'}
+            ₹{totalPrizePool.toLocaleString('en-IN')}
           </div>
-          <p className="text-[11px] text-muted-foreground">Committed rewards & pools</p>
+          <p className="text-[11px] text-muted-foreground">
+            {totalTourneys === 0 ? 'No tournaments hosted yet' : 'Committed rewards & pools'}
+          </p>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-4 space-y-1 shadow-sm">
@@ -451,6 +537,116 @@ export default function CreatorProfilePage() {
           </div>
         )}
       </div>
+
+      {/* ── CHANGE DP MODAL ── */}
+      {isChangeDpOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <Camera className="size-5 text-primary" />
+                <h3 className="font-heading font-black text-lg text-foreground">
+                  Update Profile Picture (DP)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsChangeDpOpen(false)}
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {dpMsg && (
+              <div
+                className={`p-3 rounded-lg text-xs font-semibold flex items-center gap-2 border ${
+                  dpMsg.type === 'success'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : 'bg-red-500/10 border-red-500/30 text-red-400'
+                }`}
+              >
+                {dpMsg.type === 'success' ? (
+                  <CheckCircle2 className="size-4 shrink-0" />
+                ) : (
+                  <AlertCircle className="size-4 shrink-0" />
+                )}
+                <span>{dpMsg.text}</span>
+              </div>
+            )}
+
+            {/* Live Preview */}
+            <div className="flex flex-col items-center gap-2 py-2">
+              <div className="size-24 rounded-2xl overflow-hidden border-2 border-primary/50 shadow-lg bg-muted relative">
+                <img
+                  src={
+                    avatarPreview ||
+                    'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=300&q=80'
+                  }
+                  alt="Avatar Preview"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <span className="text-[11px] text-muted-foreground font-medium">Live Preview</span>
+            </div>
+
+            <form onSubmit={handleSaveDp} className="space-y-4 text-xs">
+              {/* Option A: File Upload */}
+              <div className="space-y-1.5">
+                <label className="block font-bold text-foreground">
+                  1. Upload from Device (Photo / Logo)
+                </label>
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-border hover:border-primary/50 rounded-xl p-4 cursor-pointer bg-muted/30 hover:bg-muted/60 transition group">
+                  <Upload className="size-6 text-muted-foreground group-hover:text-primary transition mb-1" />
+                  <span className="text-xs font-semibold text-foreground">Click to browse file</span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">Supports PNG, JPG, WEBP (Max 5MB)</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {/* Option B: Direct Image URL */}
+              <div className="space-y-1.5">
+                <label className="block font-bold text-foreground">
+                  2. Or Paste Image URL
+                </label>
+                <input
+                  type="url"
+                  value={newAvatarUrl}
+                  onChange={(e) => {
+                    setNewAvatarUrl(e.target.value)
+                    setAvatarPreview(e.target.value)
+                  }}
+                  placeholder="https://images.unsplash.com/... or cloud image link"
+                  className="w-full rounded-lg border border-border bg-muted p-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setIsChangeDpOpen(false)}
+                  className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingDp}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-xs font-bold text-background shadow hover:opacity-90 transition disabled:opacity-50"
+                >
+                  <Camera className="size-3.5" />
+                  {isSavingDp ? 'Saving DP...' : 'Save Profile Picture'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

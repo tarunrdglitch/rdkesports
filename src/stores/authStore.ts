@@ -9,6 +9,7 @@ interface AuthStoreState {
   login: (u: User) => void
   logout: () => Promise<void>
   checkAuth: () => Promise<User | null>
+  updateUser: (partial: Partial<User>) => void
 }
 
 // Session lives in an httpOnly cookie set by the backend, with authorization token backup.
@@ -16,6 +17,8 @@ export const useAuth = create<AuthStoreState>((set) => ({
   user: null,
   isLoading: true,
   isInitialized: false,
+  updateUser: (partial) =>
+    set((state) => ({ user: state.user ? { ...state.user, ...partial } : null })),
   login: (user) => {
     const isOwner = user?.email?.toLowerCase() === 'auraxtremezofficial@gmail.com'
     const isCreator =
