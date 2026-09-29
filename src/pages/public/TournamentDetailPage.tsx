@@ -43,6 +43,7 @@ import { useAuth } from '@/stores/authStore'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { parseStreamEmbed } from '@/utils/stream'
 import { TournamentRoadmapTree, TournamentRoadmap } from '@/components/tournament/TournamentRoadmapTree'
+import { compressImageFile } from '@/utils/imageCompressor'
 
 interface Tournament {
   id: string
@@ -388,18 +389,23 @@ export default function TournamentDetailPage() {
     }
   }
 
-  // Handle Screenshot Upload with Instant Base64 Data URL Preview
-  const handleScreenshotFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Screenshot Upload with Instant Client-Side Compression & Data URL Preview
+  const handleScreenshotFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setScreenshotFileName(file.name)
+    setRegisterError('')
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      setScreenshotPreview(reader.result as string)
-      setRegisterError('')
+    try {
+      const compressedDataUrl = await compressImageFile(file, 1200, 1200, 0.75)
+      setScreenshotPreview(compressedDataUrl)
+    } catch {
+      const reader = new FileReader()
+      reader.onload = () => {
+        setScreenshotPreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
     }
-    reader.readAsDataURL(file)
   }
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -496,8 +502,29 @@ export default function TournamentDetailPage() {
         body: JSON.stringify(payload),
       })
 
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Registration failed')
+      let data: any = {}
+      const contentType = res.headers.get('content-type')
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json()
+      } else {
+        const text = await res.text()
+        if (!res.ok) {
+          throw new Error(
+            res.status === 413
+              ? 'Payment screenshot is too large. Please upload a smaller image file.'
+              : res.status === 404
+              ? 'Tournament not found or registration is currently closed.'
+              : `Server error (${res.status}). Please try again.`
+          )
+        }
+        try {
+          data = JSON.parse(text)
+        } catch {
+          data = { message: 'Registration submitted successfully!' }
+        }
+      }
+
+      if (!res.ok) throw new Error(data?.error || data?.message || 'Registration failed')
 
       setRegisterSuccess(data.message)
 

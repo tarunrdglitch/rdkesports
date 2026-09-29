@@ -25,6 +25,7 @@ import { creatorService } from '@/services/api/creatorService'
 import { tournamentService } from '@/services/api/tournamentService'
 import type { OfficialCreator, Tournament } from '@/types'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import { compressImageFile } from '@/utils/imageCompressor'
 
 export default function CreatorProfilePage() {
   const { user, updateUser } = useAuth()
@@ -122,21 +123,28 @@ export default function CreatorProfilePage() {
     setIsChangeDpOpen(true)
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 5 * 1024 * 1024) {
-      setDpMsg({ text: 'Image file size must be under 5MB', type: 'error' })
+    if (file.size > 8 * 1024 * 1024) {
+      setDpMsg({ text: 'Image file size must be under 8MB', type: 'error' })
       return
     }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result as string
+    try {
+      const dataUrl = await compressImageFile(file, 500, 500, 0.82)
       setAvatarPreview(dataUrl)
       setNewAvatarUrl(dataUrl)
       setDpMsg(null)
+    } catch {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        setAvatarPreview(dataUrl)
+        setNewAvatarUrl(dataUrl)
+        setDpMsg(null)
+      }
+      reader.readAsDataURL(file)
     }
-    reader.readAsDataURL(file)
   }
 
   const handleSaveDp = async (e: React.FormEvent) => {

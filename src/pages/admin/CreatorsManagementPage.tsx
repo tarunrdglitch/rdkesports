@@ -19,6 +19,7 @@ import {
 import { PageHeader } from '@/components/common/PageHeader'
 import { creatorService } from '@/services/api/creatorService'
 import type { OfficialCreator } from '@/types'
+import { compressImageFile } from '@/utils/imageCompressor'
 
 const initialForm = {
   name: '',
@@ -81,14 +82,19 @@ export default function CreatorsManagementPage() {
     setIsOpen(true)
   }
 
-  const handleAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setFormData((prev) => ({ ...prev, avatar: reader.result as string }))
+    try {
+      const dataUrl = await compressImageFile(file, 500, 500, 0.82)
+      setFormData((prev) => ({ ...prev, avatar: dataUrl }))
+    } catch {
+      const reader = new FileReader()
+      reader.onload = () => {
+        setFormData((prev) => ({ ...prev, avatar: reader.result as string }))
+      }
+      reader.readAsDataURL(file)
     }
-    reader.readAsDataURL(file)
   }
 
   const handleDelete = async (id: string, name: string) => {
