@@ -1,0 +1,2 @@
+# Netlify SPA routing (prevents 404 on refresh)
+/*    /index.html   200

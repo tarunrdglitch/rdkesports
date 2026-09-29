@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(cuid())
+  name             String
+  email            String   @unique
+  role             String   @default("player")
+  ign              String?
+  password         String
+  organizationId   String?
+  organizationName String?
+  createdAt        DateTime @default(now())
+}
+
+model OfficialCreator {
+  id               String   @id @default(cuid())
+  name             String
+  handle           String
+  organizationName String
+  avatar           String
+  bio              String
+  subscribers      String   @default("Official Partner")
+  verified         Boolean  @default(true)
+  games            String   @default("[]")
+  socials          String   @default("{}")
+  createdAt        DateTime @default(now())
+}
+
+model Tournament {
+  id                   String   @id @default(cuid())
+  slug                 String   @unique
+  name                 String
+  creatorId            String?
+  creatorName          String
+  creatorHandle        String
+  creatorAvatar        String?
+  game                 String
+  format               String
+  banner               String
+  teams                Int      @default(0)
+  maxTeams             Int      @default(32)
+  status               String   @default("registration_open")
+  startDate            String
+  prizePool            String
+  entryFee             String
+  registeredTeamsCount Int      @default(0)
+  isFeatured           Boolean  @default(false)
+  auctionConfigured    Boolean  @default(false)
+  upiId                String?
+  upiName              String?
+  upiQrUrl             String?
+  rules                String?
+  roomId               String?
+  roomPassword         String?
+  roadmap              String?
+  streamUrl            String?
+  streamTitle          String?
+  streamStatus         String   @default("offline")
+  scheduledMatchInfo   String?
+  streamPlatform       String?
+  createdAt            DateTime @default(now())
+}
+
+model RegisteredTeam {
+  id              String   @id @default(cuid())
+  tournamentId    String
+  name            String
+  captainName     String
+  captainEmail    String
+  captainPhone    String
+  captainIgn      String
+  players         String   @default("[]")
+  status          String   @default("pending")
+  utr             String?
+  paymentProofUrl String?
+  registeredAt    DateTime @default(now())
+}
+
+model PaymentSubmission {
+  id              String    @id @default(cuid())
+  tournamentId    String
+  tournamentName  String
+  teamId          String
+  teamName        String
+  captainName     String
+  amount          String
+  utr             String
+  screenshotUrl   String?
+  status          String    @default("pending")
+  submittedAt     DateTime  @default(now())
+  verifiedAt      DateTime?
+  rejectionReason String?
+}
+
+model AuctionPlayer {
+  id              String   @id @default(cuid())
+  auctionId       String
+  tournamentId    String
+  name            String
+  ign             String
+  gameUid         String
+  role            String   @default("Rusher")
+  basePrice       Int      @default(5000)
+  tier            String   @default("Tier 2 (Pro)")
+  phone           String
+  email           String
+  clipUrl         String?
+  photoUrl        String?
+  stats           String?
+  status          String   @default("available")
+  soldPrice       Int?
+  soldToTeam      String?
+  paymentProofUrl String?
+  paymentStatus   String   @default("verified")
+  registeredAt    DateTime @default(now())
+}
+
+model EphemeralAuctionBidder {
+  id             String   @id @default(cuid())
+  auctionId      String
+  teamName       String
+  loginCode      String
+  passkey        String
+  allocatedPurse Int      @default(100000)
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+}
+
+model Ambassador {
+  id                String   @id @default(cuid())
+  name              String
+  email             String
+  creatorId         String
+  tournamentId      String
+  tournamentName    String
+  assignedTeamRange String
+  phone             String?
+  createdAt         DateTime @default(now())
+}

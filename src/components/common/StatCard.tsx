@@ -1,0 +1,2 @@
+import { cn } from '@/utils/cn'
+export const StatCard=({label,value,hint,warn}:{label:string;value:string;hint?:string;warn?:boolean})=>(<div className="rounded border border-border bg-card p-4"><p className="text-sm text-muted-foreground">{label}</p><p className="mt-1 text-3xl font-bold tabular-nums">{value}</p>{hint&&<p className={cn('mt-1 text-xs',warn?'text-warning':'text-muted-foreground')}>{hint}</p>}</div>)

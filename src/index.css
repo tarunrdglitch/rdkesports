@@ -1,0 +1,174 @@
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Barlow:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Dark esports color palette */
+  --background: 220 20% 5%;
+  --foreground: 210 25% 95%;
+  --card: 220 18% 8%;
+  --card-elevated: 220 16% 10%;
+  --border: 220 14% 16%;
+  --border-strong: 220 14% 22%;
+
+  /* Brand accent - electric red/orange like gaming brands */
+  --primary: 8 95% 58%;
+  --primary-glow: 8 100% 65%;
+
+  --muted: 220 16% 13%;
+  --muted-foreground: 220 10% 55%;
+
+  --success: 152 60% 45%;
+  --warning: 38 95% 58%;
+  --danger: 0 78% 62%;
+
+  /* Extra custom */
+  --accent-blue: 220 90% 60%;
+  --accent-purple: 270 80% 65%;
+  --accent-gold: 45 95% 58%;
+}
+
+/* Base body */
+body {
+  @apply bg-background text-foreground antialiased;
+  font-family: 'Manrope', 'system-ui', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Barlow', 'system-ui', sans-serif;
+}
+
+.font-heading { font-family: 'Barlow', sans-serif; }
+.font-display { font-family: 'Rajdhani', sans-serif; }
+
+/* Focus */
+:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: hsl(var(--muted)); }
+::-webkit-scrollbar-thumb { background: hsl(var(--border-strong)); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.6); }
+
+/* Text selection */
+::selection { background: hsl(var(--primary) / 0.25); color: hsl(var(--foreground)); }
+
+/* Glow effects */
+.glow-red {
+  box-shadow: 0 0 20px hsl(var(--primary) / 0.4), 0 0 60px hsl(var(--primary) / 0.15);
+}
+.glow-red-sm {
+  box-shadow: 0 0 10px hsl(var(--primary) / 0.3);
+}
+.text-glow-red {
+  text-shadow: 0 0 20px hsl(var(--primary) / 0.6);
+}
+
+/* Noise texture overlay */
+.noise::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Scan line animation */
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+/* Grid pulse */
+@keyframes gridPulse {
+  0%, 100% { opacity: 0.06; }
+  50% { opacity: 0.12; }
+}
+
+.animate-grid-pulse {
+  animation: gridPulse 4s ease-in-out infinite;
+}
+
+/* Corner border */
+.corner-border {
+  position: relative;
+}
+.corner-border::before,
+.corner-border::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: hsl(var(--primary) / 0.7);
+  border-style: solid;
+}
+.corner-border::before {
+  top: 0; left: 0;
+  border-width: 2px 0 0 2px;
+}
+.corner-border::after {
+  bottom: 0; right: 0;
+  border-width: 0 2px 2px 0;
+}
+
+/* Creator card special */
+.creator-card {
+  position: relative;
+  overflow: hidden;
+}
+.creator-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.06) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.creator-card:hover::before {
+  opacity: 1;
+}
+
+/* Animated underline */
+.nav-link-underline {
+  position: relative;
+}
+.nav-link-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -2px; left: 0;
+  width: 0; height: 2px;
+  background: hsl(var(--primary));
+  transition: width 0.25s ease;
+  border-radius: 1px;
+}
+.nav-link-underline:hover::after { width: 100%; }
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, #ff8c42 50%, hsl(var(--primary-glow)) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Stats counter */
+.stat-number {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
