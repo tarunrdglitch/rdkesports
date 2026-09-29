@@ -37,4 +37,14 @@ export const creatorService = {
     }
     return json.creator
   },
+
+  async delete(id: string): Promise<void> {
+    const res = await fetch(`/api/creators/${id}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      throw new Error(json.error || 'Failed to remove creator')
+    }
+  },
 }

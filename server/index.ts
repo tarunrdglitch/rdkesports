@@ -37,16 +37,11 @@ app.use(express.json())
 app.use(cookieParser())
 
 export type Role =
-  | 'super_admin' // Head / Project Owner (Platform Authority)
-  | 'org_owner' // Official Creator / Verified Partner
-  | 'org_admin' // Creator Organization Co-Admin
-  | 'tournament_manager' // Tournament Director
-  | 'auction_conductor' // Live Auction Host
-  | 'match_operator' // Room & Score Manager
-  | 'ambassador' // College / Community Field Staff (Created by Official Creators)
-  | 'team_captain' // Registered Team Leader
-  | 'player' // Common Audience / Player
-  | 'public'
+  | 'super_admin' // Platform Owner / Head Authority
+  | 'creator' // Official Creator
+  | 'org_owner' // Creator alias
+  | 'ambassador' // Temporary Ambassador (only for creator's respected tournament, deleted after)
+  | 'player' // Normal User
 
 export interface OfficialCreator {
   id: string
@@ -110,65 +105,10 @@ export interface EphemeralAuctionBidder {
   createdAt: string
 }
 
-// 1. Seeded Official Creators (Partners)
-const OFFICIAL_CREATORS: OfficialCreator[] = [
-  {
-    id: 'cr_clashers',
-    name: 'Clashers Live',
-    handle: '@clasherslive',
-    organizationName: 'Clashers Esports Org',
-    avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=300&q=80',
-    bio: 'Premier Free Fire esports caster, community builder, and tournament organizer hosting high-stakes tier-1 championships.',
-    subscribers: '480K Subscribers',
-    verified: true,
-    games: ['Free Fire', 'BGMI'],
-    socials: {
-      youtube: 'https://youtube.com/@clasherslive',
-      instagram: 'https://instagram.com/clasherslive',
-      discord: 'https://discord.gg/clashers',
-    },
-    activeTournaments: 2,
-    totalTournaments: 14,
-  },
-  {
-    id: 'cr_tamil_titans',
-    name: 'Tamil Titans Gaming',
-    handle: '@tamiltitansgaming',
-    organizationName: 'Tamil Titans Esports',
-    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
-    bio: 'Official South India gaming creator known for daily BGMI competitive scrims, LAN events, and collegiate tournaments.',
-    subscribers: '320K Followers',
-    verified: true,
-    games: ['BGMI', 'Valorant'],
-    socials: {
-      youtube: 'https://youtube.com/@tamiltitans',
-      instagram: 'https://instagram.com/tamiltitans',
-      discord: 'https://discord.gg/tamiltitans',
-    },
-    activeTournaments: 1,
-    totalTournaments: 9,
-  },
-  {
-    id: 'cr_phoenix',
-    name: 'Phoenix Esports Club',
-    handle: '@phoenixclub',
-    organizationName: 'Phoenix Gaming Network',
-    avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=300&q=80',
-    bio: 'Pioneers of IPL-style Esports Player Auctions and custom collegiate draft leagues across South Asia.',
-    subscribers: '195K Community',
-    verified: true,
-    games: ['Free Fire', 'Valorant', 'Pokemon Unite'],
-    socials: {
-      youtube: 'https://youtube.com/@phoenixclub',
-      instagram: 'https://instagram.com/phoenixclub',
-      discord: 'https://discord.gg/phoenixclub',
-    },
-    activeTournaments: 1,
-    totalTournaments: 6,
-  },
-]
+// 1. Official Creators (Partners) - dynamic, onboarded by super_admin
+let OFFICIAL_CREATORS: OfficialCreator[] = []
 
-// 2. Base Users List (Initial admin & creator setup)
+// 2. Base Users List (Platform Authority)
 let USERS: UserRecord[] = [
   {
     id: 'usr_owner_tarun',
@@ -192,17 +132,6 @@ let USERS: UserRecord[] = [
     name: 'RDK Super Admin',
     email: 'admin@x.com',
     role: 'super_admin',
-    password: 'password123',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'usr_creator_clashers',
-    name: 'Clashers Live (Partner)',
-    email: 'creator@clashers.com',
-    role: 'org_owner',
-    organizationId: 'cr_clashers',
-    organizationName: 'Clashers Esports Org',
-    creatorProfile: OFFICIAL_CREATORS[0],
     password: 'password123',
     createdAt: new Date().toISOString(),
   },
@@ -496,14 +425,12 @@ function resolveUser(identifier: string, password?: string): UserRecord {
     return existing
   }
 
-  // Common audience registration logic (default to player)
+  // Only allowed roles: super_admin, creator, ambassador, player
   let role: Role = 'player'
   if (normalized === 'auraxtremezofficial@gmail.com') role = 'super_admin'
-  else if (normalized.startsWith('head')) role = 'super_admin'
-  else if (normalized.startsWith('admin')) role = 'super_admin'
-  else if (normalized.startsWith('creator') || normalized.startsWith('owner')) role = 'org_owner'
+  else if (normalized.startsWith('head') || normalized.startsWith('admin')) role = 'super_admin'
+  else if (normalized.startsWith('creator')) role = 'creator'
   else if (normalized.startsWith('amb')) role = 'ambassador'
-  else if (normalized.startsWith('captain')) role = 'team_captain'
 
   const newUser: UserRecord = {
     id: `usr_${Date.now()}`,
@@ -575,12 +502,29 @@ app.post('/api/creators', (req: Request, res: Response) => {
 
     OFFICIAL_CREATORS.push(newCreator)
 
+    if (isDatabaseConfigured) {
+      prisma.officialCreator.create({
+        data: {
+          id: newCreator.id,
+          name: newCreator.name,
+          handle: newCreator.handle,
+          organizationName: newCreator.organizationName,
+          avatar: newCreator.avatar,
+          bio: newCreator.bio,
+          subscribers: newCreator.subscribers,
+          verified: newCreator.verified,
+          games: JSON.stringify(newCreator.games),
+          socials: JSON.stringify(newCreator.socials),
+        },
+      }).catch((err) => console.error('[Database] Notice saving creator to DB:', err))
+    }
+
     if (email) {
       const creatorUser: UserRecord = {
         id: `usr_${Date.now()}`,
         name,
         email: email.trim().toLowerCase(),
-        role: 'org_owner',
+        role: 'creator',
         organizationId: newCreator.id,
         organizationName,
         creatorProfile: newCreator,
@@ -594,6 +538,23 @@ app.post('/api/creators', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error creating creator:', error)
     return res.status(500).json({ error: 'Internal server error while creating creator' })
+  }
+})
+
+// 4b. Remove / Delete an Official Creator (Head Admin only)
+app.delete('/api/creators/:id', async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id)
+    OFFICIAL_CREATORS = OFFICIAL_CREATORS.filter((c) => c.id !== id)
+    USERS = USERS.filter((u) => u.organizationId !== id)
+    if (isDatabaseConfigured) {
+      await prisma.officialCreator.deleteMany({ where: { id } }).catch(() => {})
+      await prisma.user.deleteMany({ where: { organizationId: id } }).catch(() => {})
+    }
+    return res.json({ success: true, message: 'Creator removed successfully' })
+  } catch (error) {
+    console.error('Error removing creator:', error)
+    return res.status(500).json({ error: 'Failed to remove creator' })
   }
 })
 
@@ -709,13 +670,13 @@ app.post('/api/auctions/:id/credentials/generate', (req: Request, res: Response)
       generated.push(bidderRecord)
       AUCTION_EPHEMERAL_BIDDERS.push(bidderRecord)
 
-      // Create ephemeral user in USERS database with team_captain authority for live bidding
+      // Create ephemeral user in USERS database with ambassador authority for live bidding
       const ephemeralUser: UserRecord = {
         id: bidderRecord.id,
         name: `${team} (Bidder)`,
         email: loginCode,
-        role: 'team_captain',
-        ign: `${team} Captain`,
+        role: 'ambassador',
+        ign: `${team} Ambassador`,
         organizationName: team,
         password: passkey,
         isEphemeralAuctionBidder: true,
@@ -1815,8 +1776,8 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
       return res.status(409).json({ error: 'An account with this email already exists. Please sign in.' })
     }
 
-    // Explicit constraint: Common audience can only register as player or team_captain
-    const assignedRole: Role = role === 'team_captain' ? 'team_captain' : 'player'
+    // Explicit constraint: Common audience can only register as normal player
+    const assignedRole: Role = 'player'
 
     const newUser: UserRecord = {
       id: `usr_${Date.now()}`,
@@ -2107,7 +2068,32 @@ async function initDatabase() {
     return
   }
   try {
-    console.log('[Database] Connecting to PostgreSQL via Prisma...')
+    // Purge mock creators if present
+    await prisma.officialCreator.deleteMany({
+      where: {
+        id: { in: ['cr_clashers', 'cr_tamil_titans', 'cr_phoenix'] },
+      },
+    }).catch(() => {})
+
+    const dbCreators = await prisma.officialCreator.findMany()
+    if (dbCreators.length > 0) {
+      OFFICIAL_CREATORS = dbCreators.map((c) => ({
+        id: c.id,
+        name: c.name,
+        handle: c.handle,
+        organizationName: c.organizationName,
+        avatar: c.avatar,
+        bio: c.bio,
+        subscribers: c.subscribers,
+        verified: c.verified,
+        games: JSON.parse(c.games || '[]'),
+        socials: JSON.parse(c.socials || '{}'),
+        activeTournaments: 0,
+        totalTournaments: 0,
+      }))
+      console.log(`[Database] Synced ${OFFICIAL_CREATORS.length} official creators from PostgreSQL.`)
+    }
+
     const dbTourneys = await prisma.tournament.findMany()
     if (dbTourneys.length > 0) {
       TOURNAMENTS = dbTourneys.map((t) => ({

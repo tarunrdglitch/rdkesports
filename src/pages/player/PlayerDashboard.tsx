@@ -27,7 +27,7 @@ export default function PlayerDashboard() {
     <div className="space-y-6">
       <PageHeader
         title={`Welcome, ${user?.name || 'Gamer'}!`}
-        description={`IGN: ${user?.ign || 'Active Competitor'} • Role: ${user?.role === 'team_captain' ? 'Team Captain' : 'Competitive Player'}`}
+        description={`IGN: ${user?.ign || 'Active Competitor'} • Competitive Player`}
         actions={
           <Link
             to="/#tournaments"
@@ -47,7 +47,7 @@ export default function PlayerDashboard() {
             <Users className="size-4 text-primary" />
           </div>
           <p className="mt-2 text-xl font-bold text-foreground">
-            {user?.role === 'team_captain' ? 'Aura Esports (Captain)' : 'Free Agent / Available'}
+            Free Agent / Available
           </p>
           <p className="mt-1 text-[11px] text-muted-foreground">Ready for tournament entry</p>
         </div>

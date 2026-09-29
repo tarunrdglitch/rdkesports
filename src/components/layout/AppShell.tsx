@@ -18,7 +18,7 @@ export const AppShell = () => {
   const getNavItems = (): NavItem[] => {
     if (!user) return []
     if (isOwner) return adminNav
-    if (['org_owner', 'org_admin', 'tournament_manager'].includes(user.role)) return creatorNav
+    if (user.role === 'creator' || user.role === 'org_owner') return creatorNav
     if (user.role === 'ambassador') return ambassadorNav
     return playerNav
   }
@@ -30,18 +30,14 @@ export const AppShell = () => {
     switch (user?.role) {
       case 'super_admin':
         return 'Owner'
+      case 'creator':
       case 'org_owner':
         return 'Official Creator'
-      case 'org_admin':
-        return 'Org Admin'
       case 'ambassador':
-        return 'Ambassador'
-      case 'team_captain':
-        return 'Team Captain'
+        return 'Temp Ambassador'
       case 'player':
-        return 'Player'
       default:
-        return 'Member'
+        return 'User'
     }
   }
 

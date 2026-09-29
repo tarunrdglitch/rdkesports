@@ -1,14 +1,9 @@
 export type Role =
   | 'super_admin'
+  | 'creator'
   | 'org_owner'
-  | 'org_admin'
-  | 'tournament_manager'
-  | 'auction_conductor'
-  | 'match_operator'
   | 'ambassador'
-  | 'team_captain'
   | 'player'
-  | 'public'
 
 export type TournamentStatus = 'draft' | 'registration_open' | 'live' | 'completed' | 'paused'
 

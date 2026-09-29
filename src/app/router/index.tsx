@@ -38,13 +38,9 @@ export const router = createBrowserRouter([
       <RouteGuard
         allow={[
           'super_admin',
+          'creator',
           'org_owner',
-          'org_admin',
-          'tournament_manager',
-          'auction_conductor',
-          'match_operator',
           'ambassador',
-          'team_captain',
           'player',
         ]}
       />
@@ -71,7 +67,7 @@ export const router = createBrowserRouter([
           {
             element: (
               <RouteGuard
-                allow={['super_admin', 'org_owner', 'org_admin', 'tournament_manager', 'auction_conductor']}
+                allow={['super_admin', 'creator', 'org_owner']}
               />
             ),
             children: [
@@ -105,9 +101,9 @@ export const router = createBrowserRouter([
             ],
           },
 
-          // 4. Audience / Registered Gamer / Captain
+          // 4. Audience / Registered Gamer / Player
           {
-            element: <RouteGuard allow={['player', 'team_captain', 'super_admin']} />,
+            element: <RouteGuard allow={['player', 'super_admin']} />,
             children: [
               { path: '/player/dashboard', element: S(<PlayerDash />) },
               { path: '/player/*', element: S(<Soon />) },

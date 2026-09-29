@@ -11,6 +11,7 @@ import {
   X,
   Sparkles,
   Check,
+  Trash2,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { creatorService } from '@/services/api/creatorService'
@@ -44,6 +45,18 @@ export default function CreatorsManagementPage() {
 
   const loadCreators = () => {
     creatorService.list().then(setCreators)
+  }
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to remove creator "${name}"?`)) return
+    try {
+      await creatorService.delete(id)
+      setSuccessMsg(`Creator "${name}" removed successfully.`)
+      loadCreators()
+    } catch (err: unknown) {
+      if (err instanceof Error) setErrorMsg(err.message)
+      else setErrorMsg('Failed to remove creator')
+    }
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -161,86 +174,103 @@ export default function CreatorsManagementPage() {
           <span className="text-xs text-muted-foreground">{creators.length} active partners</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
-          {creators.map((c) => (
-            <div
-              key={c.id}
-              className="rounded border border-border bg-muted/30 p-4 flex flex-col justify-between hover:border-primary/40 transition"
-            >
-              <div>
-                <div className="flex items-center gap-3 mb-3">
-                  <img
-                    src={c.avatar}
-                    alt={c.name}
-                    className="size-12 rounded-full border border-border object-cover"
-                  />
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-sm text-foreground">{c.name}</span>
-                      <span className="size-3.5 rounded-full bg-primary flex items-center justify-center">
-                        <Check className="size-2.5 text-background stroke-[3]" />
-                      </span>
+        {creators.length === 0 ? (
+          <div className="p-12 text-center text-muted-foreground">
+            <Users className="size-8 mx-auto mb-2 opacity-40" />
+            <p className="font-semibold text-sm text-foreground">No creators onboarded yet</p>
+            <p className="text-xs mt-1">Use the "Onboard Official Creator" button above to add authorized tournament organizers.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
+            {creators.map((c) => (
+              <div
+                key={c.id}
+                className="rounded border border-border bg-muted/30 p-4 flex flex-col justify-between hover:border-primary/40 transition"
+              >
+                <div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <img
+                      src={c.avatar}
+                      alt={c.name}
+                      className="size-12 rounded-full border border-border object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-sm text-foreground truncate">{c.name}</span>
+                        <span className="size-3.5 rounded-full bg-primary flex items-center justify-center shrink-0">
+                          <Check className="size-2.5 text-background stroke-[3]" />
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground font-mono truncate">{c.handle}</p>
+                      <p className="text-[10px] text-primary mt-0.5 font-medium truncate">{c.organizationName}</p>
                     </div>
-                    <p className="text-[11px] text-muted-foreground font-mono">{c.handle}</p>
-                    <p className="text-[10px] text-primary mt-0.5 font-medium">{c.organizationName}</p>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground line-clamp-2">{c.bio}</p>
+
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {c.games.map((g) => (
+                      <span
+                        key={g}
+                        className="rounded bg-card border border-border px-1.5 py-0.5 text-[10px] text-foreground font-medium"
+                      >
+                        {g}
+                      </span>
+                    ))}
                   </div>
                 </div>
 
-                <p className="text-xs text-muted-foreground line-clamp-2">{c.bio}</p>
+                <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-[11px]">
+                  <span className="text-muted-foreground">Tournaments: <strong className="text-foreground">{c.totalTournaments}</strong></span>
+                  <div className="flex items-center gap-1.5">
+                    {c.socials.youtube && (
+                      <a
+                        href={c.socials.youtube}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded p-1 text-muted-foreground hover:text-danger hover:bg-muted"
+                        title="YouTube"
+                      >
+                        <Play className="size-3.5" />
+                      </a>
+                    )}
+                    {c.socials.instagram && (
+                      <a
+                        href={c.socials.instagram}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded p-1 text-muted-foreground hover:text-purple-400 hover:bg-muted"
+                        title="Instagram"
+                      >
+                        <Share2 className="size-3.5" />
+                      </a>
+                    )}
+                    {c.socials.discord && (
+                      <a
+                        href={c.socials.discord}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded p-1 text-muted-foreground hover:text-indigo-400 hover:bg-muted"
+                        title="Discord"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </a>
+                    )}
 
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {c.games.map((g) => (
-                    <span
-                      key={g}
-                      className="rounded bg-card border border-border px-1.5 py-0.5 text-[10px] text-foreground font-medium"
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(c.id, c.name)}
+                      className="rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors ml-1"
+                      title={`Remove ${c.name}`}
                     >
-                      {g}
-                    </span>
-                  ))}
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
-
-              <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-[11px]">
-                <span className="text-muted-foreground">Tournaments: <strong className="text-foreground">{c.totalTournaments}</strong></span>
-                <div className="flex items-center gap-1.5">
-                  {c.socials.youtube && (
-                    <a
-                      href={c.socials.youtube}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded p-1 text-muted-foreground hover:text-danger hover:bg-muted"
-                      title="YouTube"
-                    >
-                      <Play className="size-3.5" />
-                    </a>
-                  )}
-                  {c.socials.instagram && (
-                    <a
-                      href={c.socials.instagram}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded p-1 text-muted-foreground hover:text-purple-400 hover:bg-muted"
-                      title="Instagram"
-                    >
-                      <Share2 className="size-3.5" />
-                    </a>
-                  )}
-                  {c.socials.discord && (
-                    <a
-                      href={c.socials.discord}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded p-1 text-muted-foreground hover:text-indigo-400 hover:bg-muted"
-                      title="Discord"
-                    >
-                      <ExternalLink className="size-3.5" />
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Onboard Creator Modal */}
