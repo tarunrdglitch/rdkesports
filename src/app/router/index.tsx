@@ -5,21 +5,47 @@ import { RouteGuard } from '@/components/layout/RouteGuard'
 import { Skeleton } from '@/components/common/Skeleton'
 import { NotFoundPage, UnauthorizedPage } from '@/pages/misc/StatusPages'
 
-const LandingPage = lazy(() => import('@/pages/public/LandingPage'))
-const TournamentDetailPage = lazy(() => import('@/pages/public/TournamentDetailPage'))
-const Login = lazy(() => import('@/pages/auth/LoginPage'))
-const Register = lazy(() => import('@/pages/auth/RegisterPage'))
-const OrgDash = lazy(() => import('@/pages/organization/DashboardPage'))
-const CreatorsAdmin = lazy(() => import('@/pages/admin/CreatorsManagementPage'))
-const AmbassadorDesk = lazy(() => import('@/pages/creator/AmbassadorManagementPage'))
-const AuctionCredentials = lazy(() => import('@/pages/creator/AuctionCredentialsPage'))
-const CreateTournament = lazy(() => import('@/pages/creator/CreateTournamentPage'))
-const TournamentManage = lazy(() => import('@/pages/creator/TournamentManagePage'))
-const PaymentsDesk = lazy(() => import('@/pages/creator/PaymentsManagementPage'))
-const AmbassadorBidderPortal = lazy(() => import('@/pages/ambassador/AmbassadorBidderPortal'))
-const PlayerDash = lazy(() => import('@/pages/player/PlayerDashboard'))
-const CreatorProfile = lazy(() => import('@/pages/creator/CreatorProfilePage'))
-const Soon = lazy(() => import('@/pages/misc/ComingSoon'))
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  factory: () => Promise<{ default: T }>
+) {
+  return lazy(async () => {
+    try {
+      return await factory()
+    } catch (error: any) {
+      const isChunkError =
+        error?.message?.includes('dynamically imported module') ||
+        error?.message?.includes('Importing a module script failed') ||
+        error?.name === 'ChunkLoadError'
+
+      if (isChunkError) {
+        const lastReload = sessionStorage.getItem('chunk_reload_ts')
+        const now = Date.now()
+        if (!lastReload || now - Number(lastReload) > 8000) {
+          sessionStorage.setItem('chunk_reload_ts', String(now))
+          window.location.reload()
+          return new Promise(() => {})
+        }
+      }
+      throw error
+    }
+  })
+}
+
+const LandingPage = lazyWithRetry(() => import('@/pages/public/LandingPage'))
+const TournamentDetailPage = lazyWithRetry(() => import('@/pages/public/TournamentDetailPage'))
+const Login = lazyWithRetry(() => import('@/pages/auth/LoginPage'))
+const Register = lazyWithRetry(() => import('@/pages/auth/RegisterPage'))
+const OrgDash = lazyWithRetry(() => import('@/pages/organization/DashboardPage'))
+const CreatorsAdmin = lazyWithRetry(() => import('@/pages/admin/CreatorsManagementPage'))
+const AmbassadorDesk = lazyWithRetry(() => import('@/pages/creator/AmbassadorManagementPage'))
+const AuctionCredentials = lazyWithRetry(() => import('@/pages/creator/AuctionCredentialsPage'))
+const CreateTournament = lazyWithRetry(() => import('@/pages/creator/CreateTournamentPage'))
+const TournamentManage = lazyWithRetry(() => import('@/pages/creator/TournamentManagePage'))
+const PaymentsDesk = lazyWithRetry(() => import('@/pages/creator/PaymentsManagementPage'))
+const AmbassadorBidderPortal = lazyWithRetry(() => import('@/pages/ambassador/AmbassadorBidderPortal'))
+const PlayerDash = lazyWithRetry(() => import('@/pages/player/PlayerDashboard'))
+const CreatorProfile = lazyWithRetry(() => import('@/pages/creator/CreatorProfilePage'))
+const Soon = lazyWithRetry(() => import('@/pages/misc/ComingSoon'))
 
 const S = (el: JSX.Element) => <Suspense fallback={<Skeleton className="m-6 h-40" />}>{el}</Suspense>
 
