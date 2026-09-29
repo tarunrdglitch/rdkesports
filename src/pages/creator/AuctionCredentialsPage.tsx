@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams, Link } from 'react-router-dom'
 import {
   Gavel,
   ShieldAlert,
@@ -26,6 +27,7 @@ import {
   Crown,
   Shield,
   Crosshair,
+  Plus,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 
@@ -68,9 +70,45 @@ interface AuctionPlayer {
   registeredAt: string
 }
 
+interface MiniTournament {
+  id: string
+  name: string
+  game: string
+  format: string
+}
+
 export default function AuctionCredentialsPage() {
-  const auctionId = 't3'
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [tournaments, setTournaments] = useState<MiniTournament[]>([])
+  const [selectedTournamentId, setSelectedTournamentId] = useState<string>(
+    searchParams.get('tournamentId') || ''
+  )
   const [activeTab, setActiveTab] = useState<'stage' | 'sheets' | 'credentials'>('stage')
+
+  useEffect(() => {
+    fetch('/api/tournaments')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setTournaments(data)
+          const auctionList = data.filter(
+            (t: MiniTournament) =>
+              t.format === 'Auction Tournament' || t.format?.toLowerCase().includes('auction')
+          )
+          if (!selectedTournamentId && auctionList.length > 0) {
+            setSelectedTournamentId(auctionList[0].id)
+          }
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const auctionTournaments = tournaments.filter(
+    (t) => t.format === 'Auction Tournament' || t.format?.toLowerCase().includes('auction')
+  )
+  const activeAuctionTournament =
+    auctionTournaments.find((t) => t.id === selectedTournamentId) || auctionTournaments[0]
+  const auctionId = activeAuctionTournament?.id || selectedTournamentId || 't3'
 
   // Bidder accounts state
   const [bidders, setBidders] = useState<Bidder[]>([])
@@ -99,9 +137,11 @@ export default function AuctionCredentialsPage() {
   const [isImporting, setIsImporting] = useState(false)
 
   useEffect(() => {
-    loadCredentials()
-    loadPlayers()
-  }, [])
+    if (auctionId) {
+      loadCredentials()
+      loadPlayers()
+    }
+  }, [auctionId])
 
   const loadCredentials = async () => {
     try {
@@ -363,27 +403,48 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
         title="Live Auction Conductor Studio & Draft Engine"
         description="Official Creator Desk: Conduct live player auctions with video gameplay clips, manage Google Sheets draft candidate sync, and control franchise accounts."
         actions={
-          <div className="flex items-center gap-2">
-            <a
-              href={`/api/auctions/${auctionId}/sheets/export`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted transition"
-            >
-              <FileSpreadsheet className="size-4 text-emerald-400" />
-              Export to Google Sheets
-            </a>
-            {bidders.length > 0 && (
-              <button
-                onClick={handleFinalizeAndWipe}
-                disabled={isFinalizing}
-                className="inline-flex items-center gap-1.5 rounded bg-danger px-3.5 py-2 text-xs font-bold text-white shadow hover:opacity-90 transition disabled:opacity-60"
+          auctionTournaments.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {auctionTournaments.length > 1 && (
+                <div className="flex items-center gap-1.5 bg-muted/60 border border-border rounded-lg px-2.5 py-1.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase">Auction:</span>
+                  <select
+                    value={auctionId}
+                    onChange={(e) => {
+                      setSelectedTournamentId(e.target.value)
+                      setSearchParams({ tournamentId: e.target.value })
+                    }}
+                    className="bg-transparent text-xs font-bold text-foreground focus:outline-none"
+                  >
+                    {auctionTournaments.map((t) => (
+                      <option key={t.id} value={t.id} className="bg-card text-foreground">
+                        {t.name} ({t.game})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <a
+                href={`/api/auctions/${auctionId}/sheets/export`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted transition"
               >
-                <Trash2 className="size-4" />
-                {isFinalizing ? 'Purging Accounts…' : 'Finalize & Wipe Credentials'}
-              </button>
-            )}
-          </div>
+                <FileSpreadsheet className="size-4 text-emerald-400" />
+                Export to Google Sheets
+              </a>
+              {bidders.length > 0 && (
+                <button
+                  onClick={handleFinalizeAndWipe}
+                  disabled={isFinalizing}
+                  className="inline-flex items-center gap-1.5 rounded bg-danger px-3.5 py-2 text-xs font-bold text-white shadow hover:opacity-90 transition disabled:opacity-60"
+                >
+                  <Trash2 className="size-4" />
+                  {isFinalizing ? 'Purging Accounts…' : 'Finalize & Wipe Credentials'}
+                </button>
+              )}
+            </div>
+          )
         }
       />
 
@@ -401,22 +462,42 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
         </div>
       )}
 
-      {/* Primary Navigation Tabs */}
-      <div className="flex border-b border-border text-xs font-semibold">
-        <button
-          onClick={() => setActiveTab('stage')}
-          className={`flex items-center gap-2 px-5 py-3 border-b-2 transition ${
-            activeTab === 'stage'
-              ? 'border-primary text-primary bg-primary/5'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Gavel className="size-4" />
-          Live Auction Stage & Video Spotlight
-          <span className="rounded bg-primary/20 text-primary px-1.5 py-0.5 text-[10px] font-bold">
-            LIVE
-          </span>
-        </button>
+      {/* When no auction tournaments exist */}
+      {auctionTournaments.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center">
+          <Gavel className="size-12 text-amber-500/60 mx-auto mb-3" />
+          <h3 className="font-heading font-black text-base text-foreground uppercase tracking-wide">
+            No Auction Tournaments Created
+          </h3>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto mt-1 mb-5">
+            The Live Auction Arena and Franchise Bidder desk are only available for IPL-Style Auction tournaments. You currently do not have any auction-based tournaments created.
+          </p>
+          <Link
+            to="/creator/tournaments/create"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-background shadow hover:opacity-90 transition"
+          >
+            <Plus className="size-4" />
+            Create Auction Tournament
+          </Link>
+        </div>
+      ) : (
+        <>
+          {/* Primary Navigation Tabs */}
+          <div className="flex border-b border-border text-xs font-semibold">
+            <button
+              onClick={() => setActiveTab('stage')}
+              className={`flex items-center gap-2 px-5 py-3 border-b-2 transition ${
+                activeTab === 'stage'
+                  ? 'border-primary text-primary bg-primary/5'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Gavel className="size-4" />
+              Live Auction Stage & Video Spotlight
+              <span className="rounded bg-primary/20 text-primary px-1.5 py-0.5 text-[10px] font-bold">
+                LIVE
+              </span>
+            </button>
 
         <button
           onClick={() => setActiveTab('sheets')}
@@ -1179,6 +1260,8 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   )

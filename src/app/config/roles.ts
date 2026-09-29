@@ -19,10 +19,6 @@ export const creatorNav: NavItem[] = [
   { label: 'Creator Hub', to: '/creator/dashboard', roles: ['super_admin', 'creator', 'org_owner'] },
   { label: 'My Tournaments', to: '/creator/tournaments', roles: ['super_admin', 'creator', 'org_owner'] },
   { label: 'Create Tournament', to: '/creator/tournaments/create', roles: ['super_admin', 'creator', 'org_owner'] },
-  { label: 'Teams & Rosters', to: '/creator/teams', roles: ['super_admin', 'creator', 'org_owner'] },
-  { label: 'UPI Verifications', to: '/creator/payments', roles: ['super_admin', 'creator', 'org_owner'] },
-  { label: 'Ambassadors', to: '/creator/ambassadors', roles: ['super_admin', 'creator', 'org_owner'] },
-  { label: 'Live Auction', to: '/creator/auctions', roles: ['super_admin', 'creator', 'org_owner'] },
   { label: 'Creator Profile', to: '/creator/profile', roles: ['super_admin', 'creator', 'org_owner'] },
 ]
 

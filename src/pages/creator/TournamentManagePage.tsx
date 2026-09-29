@@ -30,6 +30,9 @@ import {
   Tv,
   Video,
   Globe,
+  Gavel,
+  ShieldAlert,
+  Mail,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
@@ -105,13 +108,38 @@ export default function TournamentManagePage() {
     }
   }, [user, navigate])
 
+  interface TournamentAmbassador {
+    id: string
+    name: string
+    email: string
+    tournamentId: string
+    tournamentName: string
+    assignedTeamRange: string
+    phone?: string
+    createdAt: string
+  }
+
+  type TabType = 'teams' | 'room' | 'live' | 'roadmap' | 'payments' | 'auction' | 'ambassadors'
+
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
-  const [activeTab, setActiveTab] = useState<'payments' | 'live' | 'roadmap' | 'room' | 'teams'>('payments')
+  const [activeTab, setActiveTab] = useState<TabType>('teams')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
+
+  // Ambassador state for this tournament (Auction only)
+  const [ambassadors, setAmbassadors] = useState<TournamentAmbassador[]>([])
+  const [isAmbassadorModalOpen, setIsAmbassadorModalOpen] = useState(false)
+  const [isSubmittingAmbassador, setIsSubmittingAmbassador] = useState(false)
+  const [ambassadorForm, setAmbassadorForm] = useState({
+    name: '',
+    email: '',
+    password: 'password123',
+    assignedTeamRange: 'Teams 1 to 16',
+    phone: '',
+  })
 
   // Live Stream Broadcast Studio State
   const [streamUrl, setStreamUrl] = useState('')
@@ -146,6 +174,20 @@ export default function TournamentManagePage() {
     loadData()
   }, [id])
 
+  const loadAmbassadors = async () => {
+    try {
+      const res = await fetch('/api/creators/ambassadors')
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          setAmbassadors(data.filter((a: TournamentAmbassador) => a.tournamentId === id || a.tournamentName === tournament?.name))
+        }
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
   const loadData = async () => {
     setIsLoading(true)
     try {
@@ -157,16 +199,29 @@ export default function TournamentManagePage() {
 
       if (!tRes.ok) throw new Error('Tournament not found')
       const tData = await tRes.json()
-      setTournament(tData.tournament)
+      const t = tData.tournament
+      setTournament(t)
       setTeams(tData.teams || [])
-      setRoomId(tData.tournament.roomId || '')
-      setRoomPassword(tData.tournament.roomPassword || '')
-      setTourneyStatus(tData.tournament.status)
-      setRulesText(tData.tournament.rules || '')
-      setStreamUrl(tData.tournament.streamUrl || '')
-      setStreamTitle(tData.tournament.streamTitle || '')
-      setStreamStatus(tData.tournament.streamStatus || 'offline')
-      setScheduledMatchInfo(tData.tournament.scheduledMatchInfo || '')
+      setRoomId(t.roomId || '')
+      setRoomPassword(t.roomPassword || '')
+      setTourneyStatus(t.status)
+      setRulesText(t.rules || '')
+      setStreamUrl(t.streamUrl || '')
+      setStreamTitle(t.streamTitle || '')
+      setStreamStatus(t.streamStatus || 'offline')
+      setScheduledMatchInfo(t.scheduledMatchInfo || '')
+
+      const isAuctionTournament = t.format === 'Auction Tournament' || t.format?.toLowerCase().includes('auction')
+      const isPaidTournament = Number(t.entryFee || 0) > 0
+
+      // Only show applicable tab as default
+      if (isAuctionTournament) {
+        setActiveTab('auction')
+      } else if (isPaidTournament) {
+        setActiveTab('payments')
+      } else {
+        setActiveTab('teams')
+      }
 
       if (pRes.ok) {
         const pData = await pRes.json()
@@ -177,6 +232,16 @@ export default function TournamentManagePage() {
         const rData = await rRes.json()
         setRoadmap(rData.roadmap)
       }
+
+      // Load ambassadors assigned strictly to this tournament
+      fetch('/api/creators/ambassadors')
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setAmbassadors(data.filter((a: TournamentAmbassador) => a.tournamentId === id || a.tournamentName === t.name))
+          }
+        })
+        .catch(() => {})
     } catch (err: unknown) {
       if (err instanceof Error) setError(err.message)
       else setError('Failed to load tournament data')
@@ -267,6 +332,64 @@ export default function TournamentManagePage() {
       loadData()
     } catch (err: unknown) {
       if (err instanceof Error) setError(err.message)
+    }
+  }
+
+  const handleCreateAmbassador = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!tournament) return
+    setIsSubmittingAmbassador(true)
+    setError('')
+    try {
+      const res = await fetch('/api/creators/ambassadors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: ambassadorForm.name,
+          email: ambassadorForm.email,
+          password: ambassadorForm.password,
+          tournamentId: tournament.id,
+          tournamentName: tournament.name,
+          assignedTeamRange: ambassadorForm.assignedTeamRange,
+          phone: ambassadorForm.phone,
+        }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || 'Failed to create ambassador')
+      }
+      setSuccessMsg(`Temp Ambassador "${ambassadorForm.name}" created for ${tournament.name}! Access credentials issued.`)
+      setTimeout(() => setSuccessMsg(''), 4000)
+      setIsAmbassadorModalOpen(false)
+      setAmbassadorForm({
+        name: '',
+        email: '',
+        password: 'password123',
+        assignedTeamRange: 'Teams 1 to 16',
+        phone: '',
+      })
+      loadAmbassadors()
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to provision ambassador')
+    } finally {
+      setIsSubmittingAmbassador(false)
+    }
+  }
+
+  const handleDeleteAmbassador = async (ambId: string, ambName: string) => {
+    if (!confirm(`Revoke temporary ambassador access for ${ambName}? Their login will be immediately disabled.`)) return
+    try {
+      const res = await fetch(`/api/creators/ambassadors/${ambId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setSuccessMsg(`Ambassador ${ambName} revoked successfully.`)
+        setTimeout(() => setSuccessMsg(''), 3000)
+        loadAmbassadors()
+      } else {
+        throw new Error('Failed to revoke ambassador')
+      }
+    } catch {
+      setError('Failed to revoke ambassador')
     }
   }
 
@@ -368,6 +491,8 @@ export default function TournamentManagePage() {
     return <div className="p-8 text-center text-muted-foreground">Tournament not found</div>
   }
 
+  const isAuction = tournament.format === 'Auction Tournament' || tournament.format?.toLowerCase().includes('auction')
+  const isPaid = Number(tournament.entryFee || 0) > 0
   const pendingPayments = payments.filter((p) => p.status === 'pending')
 
   return (
@@ -417,11 +542,31 @@ export default function TournamentManagePage() {
 
       {/* Quick Status Bar */}
       <div className="p-4 rounded-xl border border-border bg-card flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Current Status:
+            Status:
           </span>
           <StatusBadge status={tourneyStatus} />
+          <span className="text-xs text-muted-foreground">|</span>
+          <span className="text-xs font-bold text-muted-foreground uppercase">Format:</span>
+          <span
+            className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+              isAuction
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                : 'bg-muted text-foreground border border-border'
+            }`}
+          >
+            {tournament.format}
+          </span>
+          <span
+            className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+              isPaid
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'bg-muted text-muted-foreground border border-border'
+            }`}
+          >
+            {isPaid ? `Entry Fee: ₹${tournament.entryFee}` : 'Free Entry (₹0)'}
+          </span>
         </div>
 
         {/* Change Status Control */}
@@ -442,23 +587,86 @@ export default function TournamentManagePage() {
         </div>
       </div>
 
-      {/* Navigation Tabs */}
+      {/* Navigation Tabs - Dynamically filtered according to tournament type */}
       <div className="flex items-center gap-2 border-b border-border pb-px overflow-x-auto">
         <button
-          onClick={() => setActiveTab('payments')}
+          onClick={() => setActiveTab('teams')}
           className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
-            activeTab === 'payments'
+            activeTab === 'teams'
               ? 'border-primary text-primary bg-primary/5'
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
-          <ShieldCheck className="size-4" />
-          <span>UPI Payment Verification</span>
-          {pendingPayments.length > 0 && (
-            <span className="size-4 rounded-full bg-primary text-background flex items-center justify-center text-[10px] font-black">
-              {pendingPayments.length}
-            </span>
-          )}
+          <Users className="size-4" />
+          <span>Registered Teams ({teams.length})</span>
+        </button>
+
+        {/* AUCTION TOURNAMENT ONLY TABS */}
+        {isAuction && (
+          <>
+            <button
+              onClick={() => setActiveTab('auction')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+                activeTab === 'auction'
+                  ? 'border-amber-500 text-amber-400 bg-amber-500/10'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Gavel className="size-4 text-amber-400" />
+              <span>Live Auction Stage</span>
+              <span className="rounded bg-amber-500/20 text-amber-300 px-1.5 py-0.5 text-[9px] font-bold">
+                AUCTION
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('ambassadors')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+                activeTab === 'ambassadors'
+                  ? 'border-purple-500 text-purple-400 bg-purple-500/10'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <ShieldAlert className="size-4 text-purple-400" />
+              <span>Franchise Ambassadors ({ambassadors.length})</span>
+              <span className="rounded bg-purple-500/20 text-purple-300 px-1.5 py-0.5 text-[9px] font-bold">
+                STAFF
+              </span>
+            </button>
+          </>
+        )}
+
+        {/* PAID ENTRY TOURNAMENT ONLY TAB */}
+        {isPaid && (
+          <button
+            onClick={() => setActiveTab('payments')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+              activeTab === 'payments'
+                ? 'border-primary text-primary bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <ShieldCheck className="size-4" />
+            <span>UPI Payment Verification</span>
+            {pendingPayments.length > 0 && (
+              <span className="size-4 rounded-full bg-primary text-background flex items-center justify-center text-[10px] font-black">
+                {pendingPayments.length}
+              </span>
+            )}
+          </button>
+        )}
+
+        <button
+          onClick={() => setActiveTab('room')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+            activeTab === 'room'
+              ? 'border-primary text-primary bg-primary/5'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <KeyRound className="size-4" />
+          <span>Match Room Credentials</span>
+          {tournament.roomId && <span className="size-2 rounded-full bg-emerald-400" />}
         </button>
 
         <button
@@ -491,31 +699,6 @@ export default function TournamentManagePage() {
           <span className="rounded bg-blue-500/20 text-blue-400 px-1.5 py-0.5 text-[9px] font-bold">
             CUSTOMIZER
           </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('room')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
-            activeTab === 'room'
-              ? 'border-primary text-primary bg-primary/5'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <KeyRound className="size-4" />
-          <span>Match Room Credentials</span>
-          {tournament.roomId && <span className="size-2 rounded-full bg-emerald-400" />}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('teams')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
-            activeTab === 'teams'
-              ? 'border-primary text-primary bg-primary/5'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Users className="size-4" />
-          <span>Registered Teams ({teams.length})</span>
         </button>
       </div>
 
@@ -1359,6 +1542,283 @@ export default function TournamentManagePage() {
                 </div>
               ))}
           </div>
+        </div>
+      )}
+
+      {/* TAB: LIVE AUCTION ARENA (ONLY FOR AUCTION TOURNAMENTS) */}
+      {activeTab === 'auction' && isAuction && (
+        <div className="space-y-6">
+          <div className="p-6 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-background to-card shadow-xl">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-amber-400">
+                  <Gavel className="size-4 animate-bounce" />
+                  <span>IPL-STYLE LIVE PLAYER AUCTION DESK</span>
+                </div>
+                <h3 className="mt-1 font-heading text-xl font-black uppercase text-foreground">
+                  {tournament.name} • Live Auction Stage
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Franchise owners bid on registered players using an allocated virtual token purse. Conduct bidding, hammer sync, and squad allocation.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Link
+                  to={`/creator/auctions?tournamentId=${tournament.id}`}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-5 py-2.5 text-xs font-heading font-black text-black shadow-lg shadow-amber-500/30 hover:scale-[1.02] transition"
+                >
+                  <Gavel className="size-4" />
+                  Launch Full Screen Auction Stage
+                  <ExternalLink className="size-3.5" />
+                </Link>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-4 border-t border-border">
+              <div className="rounded-lg bg-card/60 border border-border p-3">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground">Format</span>
+                <p className="text-sm font-black text-amber-400 mt-1">IPL Player Auction</p>
+              </div>
+              <div className="rounded-lg bg-card/60 border border-border p-3">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground">Team Purse</span>
+                <p className="text-sm font-black text-foreground mt-1">100,000 Pts / Team</p>
+              </div>
+              <div className="rounded-lg bg-card/60 border border-border p-3">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground">Franchise Teams</span>
+                <p className="text-sm font-black text-foreground mt-1">{teams.length} Registered</p>
+              </div>
+              <div className="rounded-lg bg-card/60 border border-border p-3">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground">Franchise Ambassadors</span>
+                <p className="text-sm font-black text-purple-400 mt-1">{ambassadors.length} Active</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-5 rounded-xl border border-border bg-card space-y-3">
+              <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                <ShieldAlert className="size-4 text-purple-400" />
+                Franchise Owner & Ambassador Access
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                Franchise ambassadors have access to their assigned team's bidding screen during the live auction. Only authorized accounts created under this tournament can place bids.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveTab('ambassadors')}
+                className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+              >
+                Manage Franchise Ambassadors ({ambassadors.length}) &rarr;
+              </button>
+            </div>
+
+            <div className="p-5 rounded-xl border border-border bg-card space-y-3">
+              <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                <Users className="size-4 text-blue-400" />
+                Player Draft Pool ({teams.reduce((acc, t) => acc + (t.players?.length || 0), 0)} Players)
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                Registered solo candidates who entered the draft pool for franchise selection.
+              </p>
+              <Link
+                to={`/creator/auctions?tournamentId=${tournament.id}`}
+                className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+              >
+                Inspect Player Cards & Google Sheets Import &rarr;
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: FRANCHISE AMBASSADORS (ONLY FOR AUCTION TOURNAMENTS) */}
+      {activeTab === 'ambassadors' && isAuction && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="font-heading font-black text-sm uppercase tracking-wider text-foreground flex items-center gap-2">
+                <Users className="size-4 text-purple-400" />
+                Franchise Ambassadors & Bidders for {tournament.name}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Temporary ambassador accounts can ONLY access this tournament's auction & squad desk, and will be deleted after tournament completion.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setIsAmbassadorModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-background shadow hover:opacity-90 transition"
+            >
+              <Plus className="size-4" />
+              Provision Ambassador
+            </button>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-muted/50 border-b border-border text-muted-foreground">
+                  <tr>
+                    <th className="p-3 font-semibold">Ambassador Name</th>
+                    <th className="p-3 font-semibold">Login Email</th>
+                    <th className="p-3 font-semibold">Assigned Team / Franchise</th>
+                    <th className="p-3 font-semibold">Contact Phone</th>
+                    <th className="p-3 font-semibold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {ambassadors.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                        No temporary ambassadors created for this tournament yet. Click "Provision Ambassador" to add franchise bidders.
+                      </td>
+                    </tr>
+                  ) : (
+                    ambassadors.map((a) => (
+                      <tr key={a.id} className="hover:bg-muted/30 transition">
+                        <td className="p-3 font-medium text-foreground flex items-center gap-2">
+                          <div className="size-6 rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center text-[10px] font-bold">
+                            {a.name[0]}
+                          </div>
+                          {a.name}
+                        </td>
+                        <td className="p-3 font-mono text-muted-foreground">
+                          <span className="flex items-center gap-1.5">
+                            <Mail className="size-3 text-muted-foreground" />
+                            {a.email}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className="rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-primary font-semibold text-[11px]">
+                            {a.assignedTeamRange}
+                          </span>
+                        </td>
+                        <td className="p-3 text-muted-foreground">{a.phone || '—'}</td>
+                        <td className="p-3 text-right">
+                          <button
+                            onClick={() => handleDeleteAmbassador(a.id, a.name)}
+                            className="rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition"
+                            title="Revoke Ambassador"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Provision Ambassador Modal */}
+          {isAmbassadorModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
+                  <div>
+                    <h3 className="font-bold text-base text-foreground">Provision Franchise Ambassador</h3>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Restricted strictly to {tournament.name}</p>
+                  </div>
+                  <button onClick={() => setIsAmbassadorModalOpen(false)} className="rounded p-1 text-muted-foreground hover:text-foreground">
+                    <X className="size-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleCreateAmbassador} className="space-y-3">
+                  <label className="block text-xs font-medium text-foreground">
+                    Ambassador / Bidder Full Name *
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Praveen Kumar"
+                      className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                      value={ambassadorForm.name}
+                      onChange={(e) => setAmbassadorForm({ ...ambassadorForm, name: e.target.value })}
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block text-xs font-medium text-foreground">
+                      Login Email Address *
+                      <input
+                        type="email"
+                        required
+                        placeholder="ambassador@org.com"
+                        className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                        value={ambassadorForm.email}
+                        onChange={(e) => setAmbassadorForm({ ...ambassadorForm, email: e.target.value })}
+                      />
+                    </label>
+
+                    <label className="block text-xs font-medium text-foreground">
+                      Temporary Password *
+                      <input
+                        type="text"
+                        required
+                        className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                        value={ambassadorForm.password}
+                        onChange={(e) => setAmbassadorForm({ ...ambassadorForm, password: e.target.value })}
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block text-xs font-medium text-foreground">
+                    Assigned Tournament (Locked)
+                    <input
+                      type="text"
+                      disabled
+                      value={tournament.name}
+                      className="mt-1 w-full rounded border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground cursor-not-allowed font-semibold"
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block text-xs font-medium text-foreground">
+                      Team / Franchise Assigned *
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Tamil Titans or Team 1"
+                        className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                        value={ambassadorForm.assignedTeamRange}
+                        onChange={(e) => setAmbassadorForm({ ...ambassadorForm, assignedTeamRange: e.target.value })}
+                      />
+                    </label>
+
+                    <label className="block text-xs font-medium text-foreground">
+                      Phone (WhatsApp)
+                      <input
+                        type="tel"
+                        placeholder="+91 98765 43210"
+                        className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                        value={ambassadorForm.phone}
+                        onChange={(e) => setAmbassadorForm({ ...ambassadorForm, phone: e.target.value })}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="pt-3 flex justify-end gap-2 border-t border-border mt-4">
+                    <button
+                      type="button"
+                      onClick={() => setIsAmbassadorModalOpen(false)}
+                      className="rounded border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingAmbassador}
+                      className="rounded bg-primary px-4 py-1.5 text-xs font-bold text-background hover:opacity-90 disabled:opacity-60"
+                    >
+                      {isSubmittingAmbassador ? 'Creating…' : 'Issue Ambassador Account'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
