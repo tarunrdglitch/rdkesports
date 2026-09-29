@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   X,
   Mail,
@@ -10,25 +10,12 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
-  CheckCircle2,
-  Sparkles,
-  Shield,
-  Crown,
-  Trophy,
   ArrowRight,
 } from 'lucide-react'
 import { useAuth } from '@/stores/authStore'
 import { useAuthModal } from '@/stores/authModalStore'
 import { authService } from '@/services/api/authService'
 import { homeFor } from '@/app/config/roles'
-
-const DEMO_ACCOUNTS = [
-  { role: 'super_admin', label: 'Head Admin', email: 'head@rdk.com', icon: Crown, color: 'text-amber-400 border-amber-500/30 bg-amber-500/10' },
-  { role: 'org_owner', label: 'Official Creator', email: 'creator@clashers.com', icon: Trophy, color: 'text-primary border-primary/30 bg-primary/10' },
-  { role: 'ambassador', label: 'Ambassador', email: 'amb@x.com', icon: Shield, color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
-  { role: 'team_captain', label: 'Captain', email: 'captain@x.com', icon: Gamepad2, color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
-  { role: 'player', label: 'Audience / Gamer', email: 'player@x.com', icon: UserIcon, color: 'text-purple-400 border-purple-500/30 bg-purple-500/10' },
-]
 
 export function AuthModal() {
   const { isOpen, mode, setMode, close } = useAuthModal()
@@ -71,11 +58,6 @@ export function AuthModal() {
     }
   }
 
-  const handleQuickDemoLogin = (email: string) => {
-    setLoginEmail(email)
-    setLoginPassword('password123')
-    setLoginError('')
-  }
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -203,7 +185,6 @@ export function AuthModal() {
                   <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                     Password
                   </label>
-                  <span className="text-[10px] text-muted-foreground">Demo: password123</span>
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
@@ -240,34 +221,7 @@ export function AuthModal() {
                 )}
               </button>
 
-              {/* 1-Click Demo Accounts Selector */}
-              <div className="pt-3 border-t border-border space-y-2">
-                <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground block text-center">
-                  Quick Demo Access (1-Click)
-                </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {DEMO_ACCOUNTS.map((d) => {
-                    const Icon = d.icon
-                    const isSelected = loginEmail === d.email
-                    return (
-                      <button
-                        key={d.role}
-                        type="button"
-                        onClick={() => handleQuickDemoLogin(d.email)}
-                        className={`p-2 rounded-lg border text-left transition-all flex items-center gap-2 text-[11px] ${
-                          isSelected ? `${d.color} ring-1 ring-primary` : 'border-border bg-muted/20 hover:bg-muted/50 text-foreground'
-                        }`}
-                      >
-                        <Icon className="size-3.5 shrink-0" />
-                        <div className="truncate">
-                          <span className="font-bold block truncate">{d.label}</span>
-                          <span className="text-[9px] text-muted-foreground block truncate">{d.email}</span>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
+
             </form>
           ) : (
             /* ═══ REGISTER TAB ═══ */

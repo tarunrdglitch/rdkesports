@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Eye, EyeOff, ShieldCheck, AlertCircle, Crown, Star, Gavel, Gamepad2 } from 'lucide-react'
+import { Eye, EyeOff, ShieldCheck, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/stores/authStore'
 import { authService } from '@/services/api/authService'
 import { homeFor } from '@/app/config/roles'
@@ -30,8 +30,8 @@ export default function LoginPage() {
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      email: 'head@rdk.com',
-      password: 'password123',
+      email: '',
+      password: '',
       remember: true,
     },
   })
@@ -65,11 +65,6 @@ export default function LoginPage() {
     }
   }
 
-  const setPreset = (email: string, pass = 'password123') => {
-    setValue('email', email, { shouldValidate: true })
-    setValue('password', pass, { shouldValidate: true })
-    setServerError('')
-  }
 
   const field =
     'mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none transition-colors'
@@ -207,59 +202,7 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          {/* Quick preset account switcher */}
-          <div className="pt-2 border-t border-border">
-            <p className="text-[11px] font-medium text-muted-foreground mb-2">1-Click Station Presets:</p>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setPreset('head@rdk.com')}
-                className="rounded border border-primary/40 bg-primary/5 p-2 text-left hover:border-primary hover:bg-primary/10 transition-colors"
-              >
-                <div className="font-bold text-primary flex items-center gap-1.5">
-                  <Crown className="size-3.5" />
-                  <span>Project Head</span>
-                </div>
-                <div className="text-[10px] text-muted-foreground truncate">head@rdk.com</div>
-              </button>
 
-              <button
-                type="button"
-                onClick={() => setPreset('creator@clashers.com')}
-                className="rounded border border-border bg-card p-2 text-left hover:border-primary/50 hover:bg-muted transition-colors"
-              >
-                <div className="font-semibold text-foreground flex items-center gap-1.5">
-                  <Star className="size-3.5 text-yellow-400" />
-                  <span>Official Creator</span>
-                </div>
-                <div className="text-[10px] text-muted-foreground truncate">creator@clashers.com</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPreset('aura_xtremez@auction.rdk', 'AUCTION#AURA26')}
-                className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-left hover:border-amber-500 hover:bg-amber-500/20 transition-colors"
-              >
-                <div className="font-semibold text-amber-400 flex items-center gap-1.5">
-                  <Gavel className="size-3.5" />
-                  <span>Auction Ambassador</span>
-                </div>
-                <div className="text-[10px] text-muted-foreground truncate">aura_xtremez@auction.rdk</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPreset('captain@x.com')}
-                className="rounded border border-border bg-card p-2 text-left hover:border-primary/50 hover:bg-muted transition-colors"
-              >
-                <div className="font-semibold text-foreground flex items-center gap-1.5">
-                  <Gamepad2 className="size-3.5 text-muted-foreground" />
-                  <span>Captain / Gamer</span>
-                </div>
-                <div className="text-[10px] text-muted-foreground truncate">captain@x.com</div>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
