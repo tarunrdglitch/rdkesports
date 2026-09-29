@@ -558,6 +558,80 @@ app.delete('/api/creators/:id', async (req: Request, res: Response) => {
   }
 })
 
+// 4c. Update / Edit an Official Creator (Head Admin only)
+const updateCreatorHandler = async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id)
+    const { name, handle, organizationName, bio, subscribers, games, socials, avatar, email, password } = req.body
+
+    const creatorIndex = OFFICIAL_CREATORS.findIndex((c) => c.id === id)
+    if (creatorIndex === -1) {
+      return res.status(404).json({ error: 'Creator not found' })
+    }
+
+    const current = OFFICIAL_CREATORS[creatorIndex]
+    const updatedCreator: OfficialCreator = {
+      ...current,
+      name: name !== undefined ? name.trim() : current.name,
+      handle: handle !== undefined ? (handle.startsWith('@') ? handle.trim() : `@${handle.trim()}`) : current.handle,
+      organizationName: organizationName !== undefined ? organizationName.trim() : current.organizationName,
+      avatar: avatar !== undefined ? avatar : current.avatar,
+      bio: bio !== undefined ? bio : current.bio,
+      subscribers: subscribers !== undefined ? subscribers : current.subscribers,
+      games: Array.isArray(games) ? games : current.games,
+      socials: socials !== undefined ? socials : current.socials,
+    }
+
+    OFFICIAL_CREATORS[creatorIndex] = updatedCreator
+
+    // Update corresponding user record
+    const userIndex = USERS.findIndex((u) => u.organizationId === id)
+    if (userIndex !== -1) {
+      USERS[userIndex].name = updatedCreator.name
+      USERS[userIndex].organizationName = updatedCreator.organizationName
+      USERS[userIndex].creatorProfile = updatedCreator
+      if (email) USERS[userIndex].email = email.trim().toLowerCase()
+      if (password) USERS[userIndex].password = password
+    }
+
+    if (isDatabaseConfigured) {
+      await prisma.officialCreator.updateMany({
+        where: { id },
+        data: {
+          name: updatedCreator.name,
+          handle: updatedCreator.handle,
+          organizationName: updatedCreator.organizationName,
+          avatar: updatedCreator.avatar,
+          bio: updatedCreator.bio,
+          subscribers: updatedCreator.subscribers,
+          games: JSON.stringify(updatedCreator.games),
+          socials: JSON.stringify(updatedCreator.socials),
+        },
+      }).catch((err) => console.error('[Database] Notice updating creator:', err))
+
+      if (email || password || name || organizationName) {
+        await prisma.user.updateMany({
+          where: { organizationId: id },
+          data: {
+            name: updatedCreator.name,
+            organizationName: updatedCreator.organizationName,
+            ...(email ? { email: email.trim().toLowerCase() } : {}),
+            ...(password ? { password } : {}),
+          },
+        }).catch((err) => console.error('[Database] Notice updating creator user in DB:', err))
+      }
+    }
+
+    return res.json({ success: true, creator: updatedCreator })
+  } catch (error) {
+    console.error('Error updating creator:', error)
+    return res.status(500).json({ error: 'Failed to update creator' })
+  }
+}
+
+app.put('/api/creators/:id', updateCreatorHandler)
+app.patch('/api/creators/:id', updateCreatorHandler)
+
 // 5. Creator Ambassador Management Desk (Created ONLY by Official Creators)
 app.get('/api/creators/ambassadors', (_req: Request, res: Response) => {
   res.json(AMBASSADORS)

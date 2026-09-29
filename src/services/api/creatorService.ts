@@ -38,6 +38,19 @@ export const creatorService = {
     return json.creator
   },
 
+  async update(id: string, data: Partial<OfficialCreator> & { email?: string; password?: string }): Promise<OfficialCreator> {
+    const res = await fetch(`/api/creators/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    const json = await res.json()
+    if (!res.ok) {
+      throw new Error(json.error || 'Failed to update creator')
+    }
+    return json.creator
+  },
+
   async delete(id: string): Promise<void> {
     const res = await fetch(`/api/creators/${id}`, {
       method: 'DELETE',

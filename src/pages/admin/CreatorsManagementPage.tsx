@@ -12,32 +12,37 @@ import {
   Sparkles,
   Check,
   Trash2,
+  Pencil,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { creatorService } from '@/services/api/creatorService'
 import type { OfficialCreator } from '@/types'
 
+const initialForm = {
+  name: '',
+  handle: '',
+  organizationName: '',
+  email: '',
+  password: 'password123',
+  avatar: '',
+  subscribers: '100K Followers',
+  bio: '',
+  games: 'Free Fire, BGMI',
+  youtube: '',
+  instagram: '',
+  discord: '',
+}
+
 export default function CreatorsManagementPage() {
   const [creators, setCreators] = useState<OfficialCreator[]>([])
   const [isOpen, setIsOpen] = useState(false)
+  const [editingCreator, setEditingCreator] = useState<OfficialCreator | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
 
   // Form State
-  const [formData, setFormData] = useState({
-    name: '',
-    handle: '',
-    organizationName: '',
-    email: '',
-    password: 'password123',
-    subscribers: '100K Followers',
-    bio: '',
-    games: 'Free Fire, BGMI',
-    youtube: '',
-    instagram: '',
-    discord: '',
-  })
+  const [formData, setFormData] = useState(initialForm)
 
   useEffect(() => {
     loadCreators()
@@ -45,6 +50,33 @@ export default function CreatorsManagementPage() {
 
   const loadCreators = () => {
     creatorService.list().then(setCreators)
+  }
+
+  const handleStartEdit = (c: OfficialCreator) => {
+    setEditingCreator(c)
+    setFormData({
+      name: c.name || '',
+      handle: c.handle || '',
+      organizationName: c.organizationName || '',
+      email: '',
+      password: '',
+      avatar: c.avatar || '',
+      subscribers: c.subscribers || '',
+      bio: c.bio || '',
+      games: Array.isArray(c.games) ? c.games.join(', ') : '',
+      youtube: c.socials?.youtube || '',
+      instagram: c.socials?.instagram || '',
+      discord: c.socials?.discord || '',
+    })
+    setErrorMsg('')
+    setIsOpen(true)
+  }
+
+  const handleOpenCreate = () => {
+    setEditingCreator(null)
+    setFormData(initialForm)
+    setErrorMsg('')
+    setIsOpen(true)
   }
 
   const handleDelete = async (id: string, name: string) => {
@@ -59,50 +91,48 @@ export default function CreatorsManagementPage() {
     }
   }
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
     setErrorMsg('')
     setSuccessMsg('')
 
     try {
-      await creatorService.create({
+      const gamesList = formData.games.split(',').map((g) => g.trim()).filter(Boolean)
+      const payload = {
         name: formData.name,
         handle: formData.handle,
         organizationName: formData.organizationName,
-        email: formData.email,
-        password: formData.password,
+        email: formData.email.trim() ? formData.email.trim() : undefined,
+        password: formData.password.trim() ? formData.password.trim() : undefined,
+        avatar: formData.avatar.trim() ? formData.avatar.trim() : undefined,
         subscribers: formData.subscribers,
         bio: formData.bio,
-        games: formData.games.split(',').map((g) => g.trim()),
+        games: gamesList,
         socials: {
           youtube: formData.youtube || undefined,
           instagram: formData.instagram || undefined,
           discord: formData.discord || undefined,
         },
-      })
+      }
 
-      setSuccessMsg(`Official Creator "${formData.name}" onboarded successfully! Partner credentials generated.`)
+      if (editingCreator) {
+        await creatorService.update(editingCreator.id, payload)
+        setSuccessMsg(`Official Creator "${formData.name}" updated successfully!`)
+      } else {
+        await creatorService.create(payload)
+        setSuccessMsg(`Official Creator "${formData.name}" onboarded successfully! Partner credentials generated.`)
+      }
+
       setIsOpen(false)
+      setEditingCreator(null)
       loadCreators()
-      setFormData({
-        name: '',
-        handle: '',
-        organizationName: '',
-        email: '',
-        password: 'password123',
-        subscribers: '100K Followers',
-        bio: '',
-        games: 'Free Fire, BGMI',
-        youtube: '',
-        instagram: '',
-        discord: '',
-      })
+      setFormData(initialForm)
     } catch (err: unknown) {
       if (err instanceof Error) {
         setErrorMsg(err.message)
       } else {
-        setErrorMsg('Failed to onboard creator')
+        setErrorMsg(editingCreator ? 'Failed to update creator' : 'Failed to onboard creator')
       }
     } finally {
       setIsSubmitting(false)
@@ -119,7 +149,7 @@ export default function CreatorsManagementPage() {
         description="Head Authority: Review, onboard, and manage authorized esports creators who conduct tournaments on RDK Esports."
         actions={
           <button
-            onClick={() => setIsOpen(true)}
+            onClick={handleOpenCreate}
             className="inline-flex items-center gap-1.5 rounded bg-primary px-4 py-2 text-xs font-semibold text-background shadow hover:opacity-90 transition"
           >
             <Plus className="size-4" />
@@ -259,8 +289,16 @@ export default function CreatorsManagementPage() {
 
                     <button
                       type="button"
+                      onClick={() => handleStartEdit(c)}
+                      className="rounded p-1 text-muted-foreground hover:text-primary hover:bg-muted transition-colors ml-1"
+                      title={`Edit ${c.name}`}
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleDelete(c.id, c.name)}
-                      className="rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors ml-1"
+                      className="rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
                       title={`Remove ${c.name}`}
                     >
                       <Trash2 className="size-3.5" />
@@ -273,14 +311,20 @@ export default function CreatorsManagementPage() {
         )}
       </div>
 
-      {/* Onboard Creator Modal */}
+      {/* Creator Modal (Create or Edit) */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
               <div className="flex items-center gap-2">
-                <Sparkles className="size-4 text-primary" />
-                <h3 className="font-bold text-base text-foreground">Onboard Official Creator Partner</h3>
+                {editingCreator ? (
+                  <Pencil className="size-4 text-primary" />
+                ) : (
+                  <Sparkles className="size-4 text-primary" />
+                )}
+                <h3 className="font-bold text-base text-foreground">
+                  {editingCreator ? `Edit Partner: ${editingCreator.name}` : 'Onboard Official Creator Partner'}
+                </h3>
               </div>
               <button
                 onClick={() => setIsOpen(false)}
@@ -296,7 +340,7 @@ export default function CreatorsManagementPage() {
               </p>
             )}
 
-            <form onSubmit={handleCreate} className="space-y-3">
+            <form onSubmit={handleSubmit} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <label className="block text-xs font-medium text-foreground">
                   Creator / Channel Name *
@@ -350,11 +394,11 @@ export default function CreatorsManagementPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="block text-xs font-medium text-foreground">
-                  Partner Login Email *
+                  {editingCreator ? 'Partner Login Email (optional)' : 'Partner Login Email *'}
                   <input
                     type="email"
-                    required
-                    placeholder="partner@creator.com"
+                    required={!editingCreator}
+                    placeholder={editingCreator ? 'Leave blank to keep current' : 'partner@creator.com'}
                     className={field}
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -362,16 +406,28 @@ export default function CreatorsManagementPage() {
                 </label>
 
                 <label className="block text-xs font-medium text-foreground">
-                  Temporary Password *
+                  {editingCreator ? 'Update Password (optional)' : 'Temporary Password *'}
                   <input
                     type="text"
-                    required
+                    required={!editingCreator}
+                    placeholder={editingCreator ? 'Leave blank to keep current' : 'e.g. secret123'}
                     className={field}
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   />
                 </label>
               </div>
+
+              <label className="block text-xs font-medium text-foreground">
+                Avatar Image URL (optional)
+                <input
+                  type="url"
+                  placeholder="https://... (image URL)"
+                  className={field}
+                  value={formData.avatar}
+                  onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
+                />
+              </label>
 
               <label className="block text-xs font-medium text-foreground">
                 Bio / Tournament Focus
@@ -443,7 +499,13 @@ export default function CreatorsManagementPage() {
                   disabled={isSubmitting}
                   className="rounded bg-primary px-4 py-1.5 text-xs font-bold text-background hover:opacity-90 disabled:opacity-60"
                 >
-                  {isSubmitting ? 'Onboarding...' : 'Authorize Partner'}
+                  {isSubmitting
+                    ? editingCreator
+                      ? 'Saving Changes...'
+                      : 'Onboarding...'
+                    : editingCreator
+                    ? 'Save Changes'
+                    : 'Authorize Partner'}
                 </button>
               </div>
             </form>
