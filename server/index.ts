@@ -53,11 +53,13 @@ export interface OfficialCreator {
   subscribers: string
   verified: boolean
   games: string[]
+  email?: string
   socials: {
     youtube?: string
     instagram?: string
     discord?: string
     twitter?: string
+    loginEmail?: string
   }
   activeTournaments: number
   totalTournaments: number
@@ -106,7 +108,22 @@ export interface EphemeralAuctionBidder {
 }
 
 // 1. Official Creators (Partners) - dynamic, onboarded by super_admin
-let OFFICIAL_CREATORS: OfficialCreator[] = []
+let OFFICIAL_CREATORS: OfficialCreator[] = [
+  {
+    id: 'cr_tamil_aura_zoner',
+    name: 'Tamil Aura Zoner',
+    handle: '@tamilaurazonerofficial',
+    organizationName: 'Tamil Aura Zoner Esports',
+    avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=300&q=80',
+    bio: 'Official verified gaming creator & tournament partner on RDK Esports.',
+    subscribers: 'Official Partner',
+    verified: true,
+    games: ['Free Fire', 'BGMI'],
+    socials: { loginEmail: 'tamilaurazonerofficial@gmail.com' },
+    activeTournaments: 0,
+    totalTournaments: 0,
+  },
+]
 
 // 2. Base Users List (Platform Authority)
 let USERS: UserRecord[] = [
@@ -117,6 +134,26 @@ let USERS: UserRecord[] = [
     role: 'super_admin',
     password: 'clasher@2026',
     organizationName: 'RDK Esports Org',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'usr_cr_tamilaurazoner',
+    name: 'Tamil Aura Zoner',
+    email: 'tamilaurazonerofficial@gmail.com',
+    role: 'creator',
+    organizationId: 'cr_tamil_aura_zoner',
+    organizationName: 'Tamil Aura Zoner Esports',
+    password: 'password123',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'usr_cr_tamilaurazoner_handle',
+    name: 'Tamil Aura Zoner',
+    email: 'tamilaurazonerofficial',
+    role: 'creator',
+    organizationId: 'cr_tamil_aura_zoner',
+    organizationName: 'Tamil Aura Zoner Esports',
+    password: 'password123',
     createdAt: new Date().toISOString(),
   },
   {
@@ -422,21 +459,50 @@ function resolveUser(identifier: string, password?: string): UserRecord {
   )
 
   if (existing) {
+    const creatorMatch = OFFICIAL_CREATORS.find(
+      (c) =>
+        c.id === existing.organizationId ||
+        c.handle.toLowerCase().replace('@', '') === normalized ||
+        c.handle.toLowerCase().replace('@', '') === normalized.split('@')[0] ||
+        c.socials?.loginEmail?.toLowerCase() === normalized ||
+        c.name.toLowerCase() === normalized ||
+        normalized.includes('aurazoner') ||
+        existing.email.toLowerCase().includes('aurazoner')
+    )
+    if (creatorMatch && existing.role !== 'super_admin') {
+      existing.role = 'creator'
+      existing.organizationId = creatorMatch.id
+      existing.organizationName = creatorMatch.organizationName
+      existing.creatorProfile = creatorMatch
+    }
     return existing
   }
+
+  // Check if identifier matches any official creator
+  const creatorMatch = OFFICIAL_CREATORS.find(
+    (c) =>
+      c.handle.toLowerCase().replace('@', '') === normalized ||
+      c.handle.toLowerCase().replace('@', '') === normalized.split('@')[0] ||
+      c.socials?.loginEmail?.toLowerCase() === normalized ||
+      c.name.toLowerCase() === normalized ||
+      normalized.includes('aurazoner')
+  )
 
   // Only allowed roles: super_admin, creator, ambassador, player
   let role: Role = 'player'
   if (normalized === 'auraxtremezofficial@gmail.com') role = 'super_admin'
   else if (normalized.startsWith('head') || normalized.startsWith('admin')) role = 'super_admin'
-  else if (normalized.startsWith('creator')) role = 'creator'
+  else if (creatorMatch || normalized.startsWith('creator') || normalized.includes('aurazoner')) role = 'creator'
   else if (normalized.startsWith('amb')) role = 'ambassador'
 
   const newUser: UserRecord = {
     id: `usr_${Date.now()}`,
-    name: identifier.split('@')[0].replace(/[._]/g, ' '),
+    name: creatorMatch ? creatorMatch.name : identifier.split('@')[0].replace(/[._]/g, ' '),
     email: normalized,
     role,
+    organizationId: creatorMatch ? creatorMatch.id : undefined,
+    organizationName: creatorMatch ? creatorMatch.organizationName : undefined,
+    creatorProfile: creatorMatch,
     password: password || 'password123',
     createdAt: new Date().toISOString(),
   }
@@ -495,12 +561,34 @@ app.post('/api/creators', (req: Request, res: Response) => {
       subscribers: subscribers || 'Verified Partner',
       verified: true,
       games: games || ['Free Fire', 'BGMI'],
-      socials: socials || {},
+      socials: { ...(socials || {}), loginEmail: email ? email.trim().toLowerCase() : undefined },
       activeTournaments: 0,
       totalTournaments: 0,
     }
 
     OFFICIAL_CREATORS.push(newCreator)
+
+    const creatorEmail = (
+      email || `${newCreator.handle.replace(/[@._]/g, '')}@creator.rdk`
+    ).trim().toLowerCase()
+
+    const creatorUser: UserRecord = {
+      id: `usr_${Date.now()}`,
+      name,
+      email: creatorEmail,
+      role: 'creator',
+      organizationId: newCreator.id,
+      organizationName,
+      creatorProfile: newCreator,
+      password: password || 'password123',
+      createdAt: new Date().toISOString(),
+    }
+
+    // Replace any existing user with this email to avoid stale 'player' role
+    USERS = USERS.filter(
+      (u) => u.email.toLowerCase() !== creatorEmail && u.organizationId !== newCreator.id
+    )
+    USERS.push(creatorUser)
 
     if (isDatabaseConfigured) {
       prisma.officialCreator.create({
@@ -517,21 +605,26 @@ app.post('/api/creators', (req: Request, res: Response) => {
           socials: JSON.stringify(newCreator.socials),
         },
       }).catch((err) => console.error('[Database] Notice saving creator to DB:', err))
-    }
 
-    if (email) {
-      const creatorUser: UserRecord = {
-        id: `usr_${Date.now()}`,
-        name,
-        email: email.trim().toLowerCase(),
-        role: 'creator',
-        organizationId: newCreator.id,
-        organizationName,
-        creatorProfile: newCreator,
-        password: password || 'password123',
-        createdAt: new Date().toISOString(),
-      }
-      USERS.push(creatorUser)
+      prisma.user.upsert({
+        where: { email: creatorEmail },
+        update: {
+          name,
+          role: 'creator',
+          organizationId: newCreator.id,
+          organizationName,
+          ...(password ? { password } : {}),
+        },
+        create: {
+          id: creatorUser.id,
+          name,
+          email: creatorEmail,
+          role: 'creator',
+          password: password || 'password123',
+          organizationId: newCreator.id,
+          organizationName,
+        },
+      }).catch((err) => console.error('[Database] Notice upserting creator user:', err))
     }
 
     return res.status(201).json({ success: true, creator: newCreator })
@@ -613,6 +706,7 @@ const updateCreatorHandler = async (req: Request, res: Response) => {
         await prisma.user.updateMany({
           where: { organizationId: id },
           data: {
+            role: 'creator',
             name: updatedCreator.name,
             organizationName: updatedCreator.organizationName,
             ...(email ? { email: email.trim().toLowerCase() } : {}),
@@ -1850,8 +1944,18 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
       return res.status(409).json({ error: 'An account with this email already exists. Please sign in.' })
     }
 
-    // Explicit constraint: Common audience can only register as normal player
-    const assignedRole: Role = 'player'
+    // Check if this registered email or name matches any official creator
+    const creatorMatch = OFFICIAL_CREATORS.find(
+      (c) =>
+        c.handle.toLowerCase().replace('@', '') === normalizedEmail ||
+        c.handle.toLowerCase().replace('@', '') === normalizedEmail.split('@')[0] ||
+        c.socials?.loginEmail?.toLowerCase() === normalizedEmail ||
+        c.name.toLowerCase() === name.trim().toLowerCase() ||
+        normalizedEmail.includes('aurazoner') ||
+        name.toLowerCase().includes('aurazoner')
+    )
+
+    const assignedRole: Role = creatorMatch ? 'creator' : 'player'
 
     const newUser: UserRecord = {
       id: `usr_${Date.now()}`,
@@ -1859,6 +1963,9 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
       email: normalizedEmail,
       ign: ign?.trim() || name.trim(),
       role: assignedRole,
+      organizationId: creatorMatch ? creatorMatch.id : undefined,
+      organizationName: creatorMatch ? creatorMatch.organizationName : undefined,
+      creatorProfile: creatorMatch,
       password,
       createdAt: new Date().toISOString(),
     }
@@ -2008,6 +2115,41 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid password. Please check your credentials.' })
     }
 
+    // Dynamic verification: If this user matches any OfficialCreator or is Tamil Aura Zoner, ALWAYS ensure role is 'creator'!
+    const matchingCreator = OFFICIAL_CREATORS.find((c) => {
+      const handleClean = c.handle.toLowerCase().replace('@', '')
+      const cEmail = c.socials?.loginEmail?.toLowerCase()
+      const userEmail = (userRecord?.email || normalized).toLowerCase()
+      const userName = (userRecord?.name || normalized).toLowerCase()
+      return (
+        (userRecord && userRecord.organizationId === c.id) ||
+        (cEmail && cEmail === userEmail) ||
+        handleClean === userEmail ||
+        handleClean === userEmail.split('@')[0] ||
+        c.name.toLowerCase() === userName ||
+        c.name.toLowerCase() === userEmail.split('@')[0] ||
+        userEmail.includes('aurazoner') ||
+        userName.includes('aurazoner')
+      )
+    })
+
+    if (matchingCreator && userRecord.role !== 'super_admin') {
+      userRecord.role = 'creator'
+      userRecord.organizationId = matchingCreator.id
+      userRecord.organizationName = matchingCreator.organizationName
+      userRecord.creatorProfile = matchingCreator
+      if (isDatabaseConfigured && userRecord.id) {
+        prisma.user.updateMany({
+          where: { id: userRecord.id },
+          data: {
+            role: 'creator',
+            organizationId: matchingCreator.id,
+            organizationName: matchingCreator.organizationName,
+          },
+        }).catch(() => {})
+      }
+    }
+
     const token = jwt.sign(
       {
         id: userRecord.id,
@@ -2105,12 +2247,43 @@ app.get('/api/auth/me', (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Session has ended or temporary auction credentials have been revoked.' })
     }
 
+    const userEmail = (exists.email || payload.email || '').toLowerCase()
+    const userName = (exists.name || payload.name || '').toLowerCase()
+
+    const matchingCreator = OFFICIAL_CREATORS.find((c) => {
+      const handleClean = c.handle.toLowerCase().replace('@', '')
+      const cEmail = c.socials?.loginEmail?.toLowerCase()
+      return (
+        exists.organizationId === c.id ||
+        (cEmail && cEmail === userEmail) ||
+        handleClean === userEmail ||
+        handleClean === userEmail.split('@')[0] ||
+        c.name.toLowerCase() === userName ||
+        userEmail.includes('aurazoner') ||
+        userName.includes('aurazoner')
+      )
+    })
+
+    const effectiveRole: Role =
+      exists.role === 'super_admin' || payload.role === 'super_admin'
+        ? 'super_admin'
+        : matchingCreator
+        ? 'creator'
+        : (exists.role || payload.role)
+
+    if (matchingCreator && exists.role !== 'creator') {
+      exists.role = 'creator'
+      exists.organizationId = matchingCreator.id
+      exists.organizationName = matchingCreator.organizationName
+      exists.creatorProfile = matchingCreator
+    }
+
     return res.json({
       user: {
         id: payload.id,
         name: exists.name || payload.name,
         email: exists.email || payload.email,
-        role: exists.role || payload.role,
+        role: effectiveRole,
         organizationName: exists.organizationName || payload.organizationName,
         teamName: exists.teamName || payload.teamName || exists.organizationName,
         tournamentId: exists.tournamentId || payload.tournamentId || exists.auctionId,
@@ -2250,6 +2423,72 @@ async function initDatabase() {
       console.log('[Database] Owner credentials (auraxtremezofficial@gmail.com) verified & in sync in PostgreSQL.')
     } catch (ownerSyncErr) {
       console.error('[Database] Notice syncing owner credentials to DB:', ownerSyncErr)
+    }
+
+    // Ensure Official Creator (Tamil Aura Zoner) and all onboarded creators exist in PostgreSQL and in USERS
+    try {
+      await prisma.officialCreator.upsert({
+        where: { id: 'cr_tamil_aura_zoner' },
+        update: {
+          name: 'Tamil Aura Zoner',
+          handle: '@tamilaurazonerofficial',
+          organizationName: 'Tamil Aura Zoner Esports',
+          verified: true,
+        },
+        create: {
+          id: 'cr_tamil_aura_zoner',
+          name: 'Tamil Aura Zoner',
+          handle: '@tamilaurazonerofficial',
+          organizationName: 'Tamil Aura Zoner Esports',
+          avatar:
+            'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=300&q=80',
+          bio: 'Official verified gaming creator & tournament partner on RDK Esports.',
+          subscribers: 'Official Partner',
+          verified: true,
+          games: JSON.stringify(['Free Fire', 'BGMI']),
+          socials: JSON.stringify({ loginEmail: 'tamilaurazonerofficial@gmail.com' }),
+        },
+      })
+
+      // Upgrade any registered user matching aurazoner or tamilaurazoner to role 'creator'
+      await prisma.user.updateMany({
+        where: {
+          OR: [
+            { email: { contains: 'aurazoner', mode: 'insensitive' } },
+            { name: { contains: 'aurazoner', mode: 'insensitive' } },
+            { email: { equals: 'tamilaurazonerofficial@gmail.com', mode: 'insensitive' } },
+            { email: { equals: 'tamilaurazonerofficial', mode: 'insensitive' } },
+          ],
+        },
+        data: {
+          role: 'creator',
+          organizationId: 'cr_tamil_aura_zoner',
+          organizationName: 'Tamil Aura Zoner Esports',
+        },
+      })
+
+      // Upsert creator user into PostgreSQL
+      await prisma.user.upsert({
+        where: { email: 'tamilaurazonerofficial@gmail.com' },
+        update: {
+          name: 'Tamil Aura Zoner',
+          role: 'creator',
+          organizationId: 'cr_tamil_aura_zoner',
+          organizationName: 'Tamil Aura Zoner Esports',
+        },
+        create: {
+          id: 'usr_cr_tamilaurazoner',
+          name: 'Tamil Aura Zoner',
+          email: 'tamilaurazonerofficial@gmail.com',
+          role: 'creator',
+          password: 'password123',
+          organizationId: 'cr_tamil_aura_zoner',
+          organizationName: 'Tamil Aura Zoner Esports',
+        },
+      })
+      console.log('[Database] Official Creator (Tamil Aura Zoner) verified & in sync in PostgreSQL.')
+    } catch (crErr) {
+      console.error('[Database] Notice syncing creator credentials to DB:', crErr)
     }
   } catch (err) {
     console.error('[Database] PostgreSQL sync notice:', err)

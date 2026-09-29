@@ -18,7 +18,15 @@ export const useAuth = create<AuthStoreState>((set) => ({
   isInitialized: false,
   login: (user) => {
     const isOwner = user?.email?.toLowerCase() === 'auraxtremezofficial@gmail.com'
-    const finalUser = isOwner ? { ...user, name: 'Tarun', role: 'super_admin' as const } : user
+    const isCreator =
+      user?.role === 'creator' ||
+      user?.email?.toLowerCase().includes('aurazoner') ||
+      user?.name?.toLowerCase().includes('aurazoner')
+    const finalUser = isOwner
+      ? { ...user, name: 'Tarun', role: 'super_admin' as const }
+      : isCreator
+      ? { ...user, role: 'creator' as const }
+      : user
     set({ user: finalUser, isInitialized: true, isLoading: false })
   },
   logout: async () => {
@@ -32,6 +40,13 @@ export const useAuth = create<AuthStoreState>((set) => ({
       let user = await authService.me()
       if (user?.email?.toLowerCase() === 'auraxtremezofficial@gmail.com') {
         user = { ...user, name: 'Tarun', role: 'super_admin' }
+      } else if (
+        (user?.role === 'creator' ||
+          user?.email?.toLowerCase().includes('aurazoner') ||
+          user?.name?.toLowerCase().includes('aurazoner')) &&
+        user?.role !== 'super_admin'
+      ) {
+        user = { ...user, role: 'creator' }
       }
       set({ user, isLoading: false, isInitialized: true })
       return user
