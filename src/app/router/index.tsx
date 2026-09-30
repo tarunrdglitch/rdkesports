@@ -42,6 +42,7 @@ const AuctionCredentials = lazyWithRetry(() => import('@/pages/creator/AuctionCr
 const CreateTournament = lazyWithRetry(() => import('@/pages/creator/CreateTournamentPage'))
 const TournamentManage = lazyWithRetry(() => import('@/pages/creator/TournamentManagePage'))
 const PaymentsDesk = lazyWithRetry(() => import('@/pages/creator/PaymentsManagementPage'))
+const AuditLogsAdmin = lazyWithRetry(() => import('@/pages/admin/AuditLogsPage'))
 const AmbassadorBidderPortal = lazyWithRetry(() => import('@/pages/ambassador/AmbassadorBidderPortal'))
 const PlayerDash = lazyWithRetry(() => import('@/pages/player/PlayerDashboard'))
 const CreatorProfile = lazyWithRetry(() => import('@/pages/creator/CreatorProfilePage'))
@@ -65,9 +66,11 @@ export const router = createBrowserRouter([
       <RouteGuard
         allow={[
           'super_admin',
+          'official_partner',
           'creator',
           'org_owner',
           'ambassador',
+          'normal_user',
           'player',
         ]}
       />
@@ -86,15 +89,16 @@ export const router = createBrowserRouter([
               { path: '/admin/tournaments/create', element: S(<CreateTournament />) },
               { path: '/admin/tournaments/:id/manage', element: S(<TournamentManage />) },
               { path: '/admin/payments', element: S(<PaymentsDesk />) },
+              { path: '/admin/audit-logs', element: S(<AuditLogsAdmin />) },
               { path: '/admin/*', element: S(<Soon />) },
             ],
           },
 
-          // 2. Official Creator / Organization (Ambassador strictly EXCLUDED)
+          // 2. Official Partner / Organization (Ambassador strictly EXCLUDED)
           {
             element: (
               <RouteGuard
-                allow={['super_admin', 'creator', 'org_owner']}
+                allow={['super_admin', 'official_partner', 'creator', 'org_owner']}
               />
             ),
             children: [
@@ -130,9 +134,9 @@ export const router = createBrowserRouter([
             ],
           },
 
-          // 4. Audience / Registered Gamer / Player
+          // 4. Normal User / Registered Gamer / Player
           {
-            element: <RouteGuard allow={['player', 'super_admin']} />,
+            element: <RouteGuard allow={['normal_user', 'player', 'super_admin']} />,
             children: [
               { path: '/player/dashboard', element: S(<PlayerDash />) },
               { path: '/player/*', element: S(<Soon />) },

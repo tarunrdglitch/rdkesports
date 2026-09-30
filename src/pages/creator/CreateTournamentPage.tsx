@@ -23,6 +23,7 @@ import {
   Zap,
   Users,
   UserCheck,
+  Coins,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { useAuth } from '@/stores/authStore'
@@ -195,34 +196,80 @@ export default function CreateTournamentPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
 
+  // 4 Top-Level Tournament Types
+  const [tournamentType, setTournamentType] = useState<
+    'BR TOURNAMENT' | 'BR SCRIM' | 'AUCTION TOURNAMENT' | 'CUSTOM TOURNAMENT'
+  >('BR TOURNAMENT')
+  const [entryType, setEntryType] = useState<'per_team' | 'per_player'>('per_team')
+
   // Form State
   const [game, setGame] = useState('Free Fire')
   const [name, setName] = useState('')
   const [formatCategory, setFormatCategory] = useState<'primary' | 'classic'>('primary')
-  const [format, setFormat] = useState('Auction Tournament')
+  const [format, setFormat] = useState('BR Squad')
   const [maxTeams, setMaxTeams] = useState<number | string>(48)
-  const [teamSize, setTeamSize] = useState<number | string>(1)
+  const [teamSize, setTeamSize] = useState<number | string>(4)
   const [startDate, setStartDate] = useState(
     new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
   )
   const [prizePool, setPrizePool] = useState('50000')
   const [prizeBreakdown, setPrizeBreakdown] = useState('1st: ₹25,000 | 2nd: ₹15,000 | 3rd: ₹7,000 | MVP: ₹3,000')
   const [isPaid, setIsPaid] = useState(true)
-  const [entryFee, setEntryFee] = useState('150')
+  const [entryFee, setEntryFee] = useState('100')
   const [upiId, setUpiId] = useState('clasherslive@okaxis')
   const [upiName, setUpiName] = useState(user?.organizationName || 'RDK Esports Partner')
   const [rules, setRules] = useState(
-    '1. Franchise owners will bid on registered players using an allocated virtual purse.\n2. Each franchise team drafts a full squad from the registered candidate pool.\n3. Live hammer sequence & purse deductions managed by RDK Auction Arena.\n4. Toxic behaviour during live bidding results in instant purse penalty.'
+    '1. Standard Battle Royale placement points (1st: 12pts, 2nd: 9pts...) + 1 pt per kill.\n2. All 4 squad members must screen-record gameplay.\n3. Room ID & password shared 15 minutes before match drop.'
   )
   const [communityLink, setCommunityLink] = useState('https://discord.gg/rdkesports')
 
   const selectedFormatData = FORMATS.find((f) => f.id === format) || FORMATS[0]
+
+  const handleSelectType = (type: 'BR TOURNAMENT' | 'BR SCRIM' | 'AUCTION TOURNAMENT' | 'CUSTOM TOURNAMENT') => {
+    setTournamentType(type)
+    if (type === 'AUCTION TOURNAMENT') {
+      setFormat('Auction Tournament')
+      setEntryType('per_player')
+      setTeamSize(1)
+      setMaxTeams(48)
+      setEntryFee('150')
+      setIsPaid(true)
+      setRules('1. Franchise owners will bid on registered players using an allocated virtual purse.\n2. Each franchise team drafts a full squad from the candidate pool.\n3. Live hammer sequence & purse deductions managed by RDK Auction Arena.')
+    } else if (type === 'BR SCRIM') {
+      setFormat('Scrim')
+      setEntryType('per_team')
+      setTeamSize(4)
+      setMaxTeams(24)
+      setEntryFee('0')
+      setIsPaid(false)
+      setRules('1. Tier-1 practice scrims.\n2. Slot rotation every match.\n3. Point tallying updated after each map.\n4. Room ID & password dispatched 15 minutes before match.')
+    } else if (type === 'CUSTOM TOURNAMENT') {
+      setFormat('CS Squad Limited')
+      setEntryType('per_team')
+      setTeamSize(4)
+      setMaxTeams(16)
+      setEntryFee('200')
+      setIsPaid(true)
+      setRules('1. 4v4 Clash Squad custom room.\n2. Gun Attributes: OFF (Fair play).\n3. Limited Ammo: ON.\n4. Grenades & Smoke: Strictly banned.')
+    } else {
+      setFormat('BR Squad')
+      setEntryType('per_team')
+      setTeamSize(4)
+      setMaxTeams(48)
+      setEntryFee('100')
+      setIsPaid(true)
+      setRules('1. Standard Battle Royale placement points (1st: 12pts, 2nd: 9pts...) + 1 pt per kill.\n2. All 4 squad members must screen-record gameplay.\n3. Room ID & password shared 15 minutes before match drop.')
+    }
+  }
 
   const handleSelectFormat = (f: TournamentFormatOption) => {
     setFormat(f.id)
     setTeamSize(f.defaultTeamSize)
     setMaxTeams(f.defaultMaxTeams)
     setRules(f.rulesPreset)
+    if (f.id === 'Auction Tournament') {
+      setEntryType('per_player')
+    }
   }
 
   // Auto-computed preview QR URL
@@ -248,14 +295,17 @@ export default function CreateTournamentPage() {
     try {
       const payload = {
         name: name.trim(),
+        type: tournamentType,
+        entryType,
         game,
         format,
         maxTeams: Number(maxTeams) || 48,
+        maxSlots: Number(maxTeams) || 48,
         teamSize: format === 'Auction Tournament' || Number(teamSize) === 1 ? 'Solo' : Number(teamSize) === 2 ? 'Duo' : Number(teamSize) === 4 ? 'Squad' : `${teamSize} Players`,
         playersPerTeam: format === 'Auction Tournament' ? 1 : (Number(teamSize) || 4),
         prizePool: prizePool ? `₹${prizePool}` : '₹0',
         entryFee: isPaid
-          ? format === 'Auction Tournament' || Number(teamSize) === 1
+          ? entryType === 'per_player' || format === 'Auction Tournament' || Number(teamSize) === 1
             ? `₹${entryFee} / Player`
             : `₹${entryFee} / Team`
           : 'Free',
@@ -389,6 +439,75 @@ export default function CreateTournamentPage() {
                       {isSelected && (
                         <div className="absolute top-2 right-2 size-2 rounded-full bg-primary" />
                       )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* 2. Select Tournament Type */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                2. Select Tournament Type (Powered by RDK Technologies)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  {
+                    id: 'BR TOURNAMENT' as const,
+                    label: 'BR Tournament',
+                    badge: 'Championship',
+                    badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+                    icon: Trophy,
+                    desc: 'Multi-stage competitive Battle Royale. Group stages, qualifiers, placement & kill points.',
+                  },
+                  {
+                    id: 'BR SCRIM' as const,
+                    label: 'BR Scrim',
+                    badge: 'Daily Practice',
+                    badgeColor: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+                    icon: Crosshair,
+                    desc: 'Tier-1 practice scrims. Rapid team slot bookings & room credential dispatch.',
+                  },
+                  {
+                    id: 'AUCTION TOURNAMENT' as const,
+                    label: 'Auction Tournament',
+                    badge: 'IPL-Style Draft',
+                    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+                    icon: Zap,
+                    desc: 'Solo player candidate pool. Franchise owners bid with virtual purse tokens.',
+                  },
+                  {
+                    id: 'CUSTOM TOURNAMENT' as const,
+                    label: 'Custom Tournament',
+                    badge: 'Flexible Rules',
+                    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+                    icon: Target,
+                    desc: '4v4 Clash Squad, headshot-only one-tap, or custom match room conditions.',
+                  },
+                ].map((t) => {
+                  const Icon = t.icon
+                  const isSelected = tournamentType === t.id
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => handleSelectType(t.id)}
+                      className={`p-3 rounded-xl border text-left transition-all relative ${
+                        isSelected
+                          ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                          : 'border-border bg-card hover:border-primary/40 hover:bg-muted/30'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <Icon className="size-5 text-primary" />
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${t.badgeColor}`}>
+                          {t.badge}
+                        </span>
+                      </div>
+                      <div className="font-bold text-xs text-foreground">{t.label}</div>
+                      <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2 leading-tight">
+                        {t.desc}
+                      </p>
                     </button>
                   )
                 })}
@@ -898,6 +1017,72 @@ export default function CreateTournamentPage() {
                 </div>
               )}
             </div>
+
+            {/* RDK 10% Platform Settlement Policy & Estimator Box */}
+            {(() => {
+              const estimatedApprovedSlots = Number(maxTeams) || 0
+              const estimatedGross = isPaid ? (Number(entryFee) || 0) * estimatedApprovedSlots : 0
+              const estimatedRdkFee = Math.round(estimatedGross * 0.1)
+              const estimatedPartnerNet = estimatedGross - estimatedRdkFee
+
+              return (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Coins className="size-4 text-primary" />
+                      <span className="font-bold text-xs text-foreground">
+                        RDK Platform Settlement Estimator (10% Fee)
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-primary font-bold">
+                      Powered by RDK Technologies
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-primary/20 text-xs">
+                    <div className="rounded-lg bg-card/60 p-2.5 border border-border">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+                        Max Potential Gross
+                      </span>
+                      <span className="text-base font-bold text-foreground">
+                        ₹{estimatedGross.toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground block mt-0.5">
+                        {estimatedApprovedSlots} {entryType === 'per_player' ? 'players' : 'teams'} × ₹{entryFee || 0}
+                      </span>
+                    </div>
+
+                    <div className="rounded-lg bg-card/60 p-2.5 border border-primary/30">
+                      <span className="text-[10px] text-primary uppercase font-bold block">
+                        RDK Platform Fee (10%)
+                      </span>
+                      <span className="text-base font-bold text-primary">
+                        ₹{estimatedRdkFee.toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground block mt-0.5">
+                        Payable on event conclusion
+                      </span>
+                    </div>
+
+                    <div className="rounded-lg bg-card/60 p-2.5 border border-emerald-500/30">
+                      <span className="text-[10px] text-emerald-400 uppercase font-bold block">
+                        Partner Net (90%)
+                      </span>
+                      <span className="text-base font-bold text-emerald-400">
+                        ₹{estimatedPartnerNet.toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground block mt-0.5">
+                        Retained by organizer
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    <strong>Transparency Notice:</strong> Official Partners pay 10% of gross successful paid entry fees. Unfilled slots, rejected registrations, and unpaid players are <em>never</em> charged. Per platform security requirements, tournament closure requires verified platform fee settlement.
+                  </p>
+                </div>
+              )
+            })()}
           </motion.div>
         )}
 

@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express'
+import express, { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import jwt from 'jsonwebtoken'
@@ -37,12 +37,226 @@ app.use(express.json({ limit: '30mb' }))
 app.use(express.urlencoded({ extended: true, limit: '30mb' }))
 app.use(cookieParser())
 
+// ═══════════════════════════════════════════════════════════════
+// EXACT 3 MAIN USER ROLES + SUBORDINATE TOURNAMENT STAFF
+// ═══════════════════════════════════════════════════════════════
+export type PlatformRole =
+  | 'super_admin'       // ROLE 1: SUPER ADMIN (RDK Technologies)
+  | 'official_partner'  // ROLE 2: OFFICIAL PARTNER (Tournament Organizer)
+  | 'normal_user'       // ROLE 3: NORMAL USER (Competitive Gamer / Audience)
+
 export type Role =
-  | 'super_admin' // Platform Owner / Head Authority
-  | 'creator' // Official Creator
-  | 'org_owner' // Creator alias
-  | 'ambassador' // Temporary Ambassador (only for creator's respected tournament, deleted after)
-  | 'player' // Normal User
+  | PlatformRole
+  | 'creator'     // Legacy alias for official_partner
+  | 'org_owner'   // Legacy alias for official_partner
+  | 'player'      // Legacy alias for normal_user
+  | 'ambassador'  // Subordinate tournament-specific staff account created by Official Partner
+
+export interface AuthenticatedUser {
+  id: string
+  name: string
+  email: string
+  role: Role
+  organizationId?: string
+  organizationName?: string
+  teamName?: string
+  tournamentId?: string
+  tournamentName?: string
+  allocatedPurse?: number
+  ign?: string
+  isEphemeralAuctionBidder?: boolean
+  auctionId?: string
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthenticatedUser
+    }
+  }
+}
+
+// ── Global JWT Authentication Middleware ──
+const authenticateToken = (req: Request, _res: Response, next: NextFunction) => {
+  const token =
+    req.cookies?.session_token ||
+    (req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.split(' ')[1]
+      : null)
+
+  if (!token) {
+    return next()
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as AuthenticatedUser
+    let normalizedRole = payload.role
+    if (payload.email?.toLowerCase() === 'auraxtremezofficial@gmail.com') {
+      normalizedRole = 'super_admin'
+    } else if (normalizedRole === 'creator' || normalizedRole === 'org_owner') {
+      normalizedRole = 'official_partner'
+    } else if (normalizedRole === 'player') {
+      normalizedRole = 'normal_user'
+    }
+
+    req.user = {
+      ...payload,
+      role: normalizedRole,
+    }
+  } catch {
+    // Session token invalid/expired; req.user remains undefined
+  }
+  next()
+}
+
+app.use(authenticateToken)
+
+// ── RBAC Authorization Middlewares ──
+const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required. Please log in.' })
+  }
+  next()
+}
+
+const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  if (req.user.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Access forbidden: Super Admin platform authority required.' })
+  }
+  next()
+}
+
+const requirePartnerOrAdmin = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  const isSuper = req.user.role === 'super_admin'
+  const isPartner =
+    req.user.role === 'official_partner' ||
+    req.user.role === 'creator' ||
+    req.user.role === 'org_owner'
+
+  if (!isSuper && !isPartner) {
+    return res.status(403).json({ error: 'Access forbidden: Official Partner or Super Admin role required.' })
+  }
+  next()
+}
+
+// Ensure caller is the Official Partner who owns this tournament (or Super Admin)
+const requireTournamentOrganizer = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  if (req.user.role === 'super_admin') return next()
+
+  const tourneyId = String(req.params.id || req.params.tournamentId || '')
+  const tourney = TOURNAMENTS.find((t) => t.id === tourneyId || t.slug === tourneyId)
+  if (!tourney) {
+    return res.status(404).json({ error: 'Tournament not found' })
+  }
+
+  const isPartner =
+    req.user.role === 'official_partner' ||
+    req.user.role === 'creator' ||
+    req.user.role === 'org_owner'
+
+  if (!isPartner) {
+    return res.status(403).json({ error: 'Access forbidden: Only Official Partners can manage tournaments.' })
+  }
+
+  // Tenant Isolation: Prevent partner A from touching partner B's tournament
+  const partnerOrgId = req.user.organizationId
+  const partnerUserId = req.user.id
+  const isOwner =
+    (partnerOrgId && tourney.creatorId === partnerOrgId) ||
+    (partnerUserId && tourney.creatorId === partnerUserId) ||
+    (req.user.email && tourney.creatorHandle?.toLowerCase().includes(req.user.email.split('@')[0].toLowerCase())) ||
+    (tourney.creatorName && req.user.name && tourney.creatorName.toLowerCase() === req.user.name.toLowerCase())
+
+  if (!isOwner) {
+    return res.status(403).json({ error: 'Access forbidden: You do not have permission to manage this tournament.' })
+  }
+
+  next()
+}
+
+// Ensure caller is authorized staff (Ambassador assigned to this tournament) or the owning Partner or Super Admin
+const requireTournamentStaffOrOrganizer = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required' })
+  }
+  if (req.user.role === 'super_admin') return next()
+
+  const tourneyId = String(req.params.id || req.params.tournamentId || '')
+  const tourney = TOURNAMENTS.find((t) => t.id === tourneyId || t.slug === tourneyId)
+  if (!tourney) {
+    return res.status(404).json({ error: 'Tournament not found' })
+  }
+
+  // Partner check
+  if (
+    req.user.role === 'official_partner' ||
+    req.user.role === 'creator' ||
+    req.user.role === 'org_owner'
+  ) {
+    const partnerOrgId = req.user.organizationId
+    const partnerUserId = req.user.id
+    const isOwner =
+      (partnerOrgId && tourney.creatorId === partnerOrgId) ||
+      (partnerUserId && tourney.creatorId === partnerUserId) ||
+      (tourney.creatorName && req.user.name && tourney.creatorName.toLowerCase() === req.user.name.toLowerCase())
+    if (isOwner) return next()
+    return res.status(403).json({ error: 'Access forbidden: You are not the organizer of this tournament.' })
+  }
+
+  // Ambassador check: verify assigned tournament
+  if (req.user.role === 'ambassador') {
+    const assignedTourneyId = req.user.tournamentId || req.user.auctionId
+    if (assignedTourneyId && (assignedTourneyId === tourney.id || assignedTourneyId === tourney.slug)) {
+      return next()
+    }
+    return res.status(403).json({ error: 'Access forbidden: Ambassador is not assigned to this tournament.' })
+  }
+
+  return res.status(403).json({ error: 'Access forbidden: Insufficient tournament staff permissions.' })
+}
+
+// Bidding guard: Only assigned franchise bidders/ambassadors or organizers can place bids; normal users rejected!
+const requireAuctionBiddingAccess = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required to place auction bids.' })
+  }
+  if (req.user.role === 'super_admin') return next()
+
+  const auctionId = String(req.params.id || req.params.auctionId || '')
+
+  // Allow organizer
+  if (
+    req.user.role === 'official_partner' ||
+    req.user.role === 'creator' ||
+    req.user.role === 'org_owner'
+  ) {
+    return next()
+  }
+
+  // Allow assigned ambassador or franchise bidder
+  if (req.user.role === 'ambassador' || req.user.isEphemeralAuctionBidder) {
+    const assignedId = req.user.auctionId || req.user.tournamentId
+    if (!assignedId || (assignedId !== auctionId)) {
+      return res.status(403).json({ error: 'Access forbidden: You are not assigned to bid in this auction.' })
+    }
+    return next()
+  }
+
+  return res.status(403).json({
+    error: 'Access forbidden: Normal Users cannot place live auction bids. Only assigned franchise bidders and ambassadors can bid.',
+  })
+}
+
+
 
 export interface OfficialCreator {
   id: string
@@ -53,8 +267,11 @@ export interface OfficialCreator {
   bio: string
   subscribers: string
   verified: boolean
-  games: string[]
+  status?: 'active' | 'suspended' | 'deactivated'
+  isDeleted?: boolean
+  phone?: string
   email?: string
+  games: string[]
   socials: {
     youtube?: string
     instagram?: string
@@ -64,6 +281,10 @@ export interface OfficialCreator {
   }
   activeTournaments: number
   totalTournaments: number
+  totalGrossRevenue?: number
+  totalRdkFees?: number
+  pendingRdkFees?: number
+  paidRdkFees?: number
 }
 
 export interface UserRecord {
@@ -72,6 +293,9 @@ export interface UserRecord {
   email: string
   role: Role
   ign?: string
+  phone?: string
+  status?: 'active' | 'suspended' | 'deactivated'
+  isDeleted?: boolean
   password?: string
   organizationId?: string
   organizationName?: string
@@ -84,6 +308,7 @@ export interface UserRecord {
   allocatedPurse?: number
   createdAt: string
 }
+
 
 export interface AmbassadorRecord {
   id: string
@@ -186,6 +411,7 @@ export interface TournamentRecord {
   id: string
   slug: string
   name: string
+  type?: 'BR SCRIM' | 'BR TOURNAMENT' | 'AUCTION TOURNAMENT' | 'CUSTOM TOURNAMENT' | string
   creatorId?: string
   creatorName: string
   creatorHandle: string
@@ -195,10 +421,31 @@ export interface TournamentRecord {
   banner: string
   teams: number
   maxTeams: number
-  status: 'draft' | 'registration_open' | 'live' | 'completed'
+  maxSlots?: number
+  status:
+    | 'DRAFT'
+    | 'PUBLISHED'
+    | 'REGISTRATION_OPEN'
+    | 'REGISTRATION_CLOSED'
+    | 'AUCTION'
+    | 'LIVE'
+    | 'FINISHED'
+    | 'SETTLEMENT_PENDING'
+    | 'SETTLEMENT_VERIFIED'
+    | 'CLOSED'
+    | 'draft'
+    | 'registration_open'
+    | 'live'
+    | 'completed'
+    | 'paused'
+    | string
   startDate: string
+  endDate?: string
+  registrationOpening?: string
+  registrationClosing?: string
   prizePool: string
   entryFee: string
+  entryType?: 'per_team' | 'per_player' | string
   registeredTeamsCount: number
   isFeatured?: boolean
   auctionConfigured?: boolean
@@ -208,13 +455,76 @@ export interface TournamentRecord {
   rules?: string
   roomId?: string
   roomPassword?: string
+  roomPublished?: boolean
   roadmap?: TournamentRoadmap
   streamUrl?: string
   streamTitle?: string
   streamStatus?: 'offline' | 'starting_soon' | 'live'
   scheduledMatchInfo?: string
   streamPlatform?: 'youtube' | 'twitch' | 'custom'
+  settlementStatus?: 'PENDING' | 'PAYMENT_SUBMITTED' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED' | string
+  settlementProofUrl?: string | null
+  settlementUtr?: string | null
+  settlementDate?: string | null
+  settlementAmount?: number | null
+  grossRevenue?: number
+  rdkFee?: number
+  partnerNet?: number
+  isClosed?: boolean
+  closedAt?: string | Date | null
+  createdAt?: string | Date
+
 }
+
+export interface PlatformSettlementRecord {
+  id: string
+  tournamentId: string
+  tournamentName: string
+  partnerId: string
+  partnerName: string
+  entryFee: number
+  approvedEntries: number
+  grossRevenue: number
+  rdkFee: number
+  partnerNet: number
+  status: 'PENDING' | 'PAYMENT_SUBMITTED' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED'
+  utr?: string
+  screenshotUrl?: string
+  paymentDate?: string
+  notes?: string
+  submittedAt?: string
+  verifiedAt?: string
+  rejectionReason?: string
+  createdAt: string
+}
+
+export interface PlatformAuditLogRecord {
+  id: string
+  tournamentId?: string
+  action: string
+  actorId: string
+  actorName: string
+  actorRole: string
+  details?: string
+  oldValue?: string
+  newValue?: string
+  reason?: string
+  createdAt: string
+}
+
+export interface AuctionReversalRecord {
+  id: string
+  tournamentId: string
+  auctionId: string
+  playerId: string
+  playerIgn: string
+  teamName: string
+  soldPrice: number
+  reason: string
+  reversedBy: string
+  createdAt: string
+}
+
 
 export interface BracketMatch {
   id: string
@@ -451,6 +761,120 @@ export function createDefaultRoadmap(tourneyName: string): TournamentRoadmap {
 let TOURNAMENTS: TournamentRecord[] = []
 let REGISTERED_TEAMS: RegisteredTeam[] = []
 let PAYMENT_SUBMISSIONS: PaymentSubmission[] = []
+let PLATFORM_SETTLEMENTS: PlatformSettlementRecord[] = []
+let PLATFORM_AUDIT_LOGS: PlatformAuditLogRecord[] = []
+let AUCTION_REVERSALS: AuctionReversalRecord[] = []
+
+// ═══════════════════════════════════════════════════════════════
+// CENTRALIZED FINANCIAL CALCULATION SERVICE
+// ═══════════════════════════════════════════════════════════════
+export interface FinancialCalculationResult {
+  entryFee: number
+  approvedEntries: number
+  grossRevenue: number
+  rdkFee: number
+  partnerNet: number
+  settlementStatus: string
+}
+
+export function calculateTournamentFinances(tourney: TournamentRecord): FinancialCalculationResult {
+  let fee = 0
+  if (typeof tourney.entryFee === 'number') {
+    fee = tourney.entryFee
+  } else if (typeof tourney.entryFee === 'string') {
+    const cleaned = tourney.entryFee.replace(/[^0-9.]/g, '')
+    fee = cleaned ? parseFloat(cleaned) : 0
+  }
+
+  // Count ONLY approved/verified paid registrations
+  const verifiedTeams = REGISTERED_TEAMS.filter(
+    (t) => t.tournamentId === tourney.id && t.status === 'verified'
+  ).length
+
+  const verifiedAuctionCandidates = AUCTION_PLAYERS.filter(
+    (p) =>
+      (p.tournamentId === tourney.id || p.auctionId === tourney.id) &&
+      p.paymentStatus === 'verified'
+  ).length
+
+  const isAuction =
+    tourney.type === 'AUCTION TOURNAMENT' ||
+    tourney.format === 'Auction Tournament' ||
+    tourney.format?.toLowerCase().includes('auction')
+
+  const approvedEntries = isAuction ? verifiedAuctionCandidates : verifiedTeams
+
+  const grossRevenue = Math.round(fee * approvedEntries)
+  const rdkFee = Math.round(grossRevenue * 0.10)
+  const partnerNet = grossRevenue - rdkFee
+
+  const existingSettlement = PLATFORM_SETTLEMENTS.find((s) => s.tournamentId === tourney.id)
+  const settlementStatus =
+    existingSettlement?.status || tourney.settlementStatus || 'PENDING'
+
+  return {
+    entryFee: fee,
+    approvedEntries,
+    grossRevenue,
+    rdkFee,
+    partnerNet,
+    settlementStatus,
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PLATFORM AUDIT LOGGER
+// ═══════════════════════════════════════════════════════════════
+export function logAuditEvent(params: {
+  tournamentId?: string
+  action: string
+  actorId?: string
+  actorName?: string
+  actorRole?: string
+  details?: string
+  oldValue?: string
+  newValue?: string
+  reason?: string
+}) {
+  const log: PlatformAuditLogRecord = {
+    id: `audit_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
+    tournamentId: params.tournamentId,
+    action: params.action,
+    actorId: params.actorId || 'system',
+    actorName: params.actorName || 'System',
+    actorRole: params.actorRole || 'system',
+    details: params.details,
+    oldValue: params.oldValue,
+    newValue: params.newValue,
+    reason: params.reason,
+    createdAt: new Date().toISOString(),
+  }
+
+  PLATFORM_AUDIT_LOGS.unshift(log)
+  console.log(`[AuditLog] ${log.action} | Actor: ${log.actorName} (${log.actorRole}) | ${log.details || ''}`)
+
+  if (isDatabaseConfigured) {
+    prisma.platformAuditLog
+      .create({
+        data: {
+          id: log.id,
+          tournamentId: log.tournamentId,
+          action: log.action,
+          actorId: log.actorId,
+          actorName: log.actorName,
+          actorRole: log.actorRole,
+          details: log.details,
+          oldValue: log.oldValue,
+          newValue: log.newValue,
+          reason: log.reason,
+        },
+      })
+      .catch((err) => console.error('[Database] Failed to persist audit log:', err))
+  }
+
+  return log
+}
+
 
 // Helper: Resolve or create user
 function resolveUser(identifier: string, password?: string): UserRecord {
@@ -537,14 +961,100 @@ app.get('/api/platform/stats', (_req: Request, res: Response) => {
 })
 
 // 3. Official Creators & Partners
-app.get('/api/creators', (_req: Request, res: Response) => {
-  res.json(OFFICIAL_CREATORS)
+app.get('/api/creators', (req: Request, res: Response) => {
+  const includeAll = req.query.includeAll === 'true'
+  let list = OFFICIAL_CREATORS
+  if (!includeAll) {
+    list = list.filter((c) => !c.isDeleted && c.status !== 'deactivated')
+  }
+
+  // Calculate live tournament counts and financials for each partner
+  const enriched = list.map((c) => {
+    const partnerTourneys = TOURNAMENTS.filter((t) => t.creatorId === c.id)
+    const activeTourneys = partnerTourneys.filter((t) => t.status === 'live' || t.status === 'registration_open').length
+    let totalGross = 0
+    let totalRdk = 0
+    let pendingRdk = 0
+    let paidRdk = 0
+
+    partnerTourneys.forEach((t) => {
+      const fin = calculateTournamentFinances(t)
+      totalGross += fin.grossRevenue
+      totalRdk += fin.rdkFee
+      if (fin.settlementStatus === 'VERIFIED') {
+        paidRdk += fin.rdkFee
+      } else {
+        pendingRdk += fin.rdkFee
+      }
+    })
+
+    return {
+      ...c,
+      status: c.status || 'active',
+      isDeleted: c.isDeleted || false,
+      totalTournaments: partnerTourneys.length,
+      activeTournaments: activeTourneys,
+      totalGrossRevenue: totalGross,
+      totalRdkFees: totalRdk,
+      pendingRdkFees: pendingRdk,
+      paidRdkFees: paidRdk,
+    }
+  })
+
+  res.json(enriched)
 })
 
-// 4. Create / Onboard an Official Creator (Head Admin only)
-app.post('/api/creators', (req: Request, res: Response) => {
+// 3b. Partner Detailed Profile & History (Super Admin or Partner self)
+app.get('/api/creators/:id/details', (req: Request, res: Response) => {
+  const id = String(req.params.id)
+  const creator = OFFICIAL_CREATORS.find((c) => c.id === id)
+  if (!creator) {
+    return res.status(404).json({ error: 'Official Partner not found' })
+  }
+
+  const partnerTourneys = TOURNAMENTS.filter((t) => t.creatorId === creator.id)
+  let totalGross = 0
+  let totalRdk = 0
+  let pendingRdk = 0
+  let paidRdk = 0
+  let totalRegistrations = 0
+
+  const tournamentHistory = partnerTourneys.map((t) => {
+    const fin = calculateTournamentFinances(t)
+    totalGross += fin.grossRevenue
+    totalRdk += fin.rdkFee
+    totalRegistrations += fin.approvedEntries
+    if (fin.settlementStatus === 'VERIFIED') {
+      paidRdk += fin.rdkFee
+    } else {
+      pendingRdk += fin.rdkFee
+    }
+
+    return {
+      ...t,
+      finances: fin,
+    }
+  })
+
+  return res.json({
+    partner: {
+      ...creator,
+      status: creator.status || 'active',
+      totalTournaments: partnerTourneys.length,
+      totalRegistrations,
+      totalGrossRevenue: totalGross,
+      totalRdkFees: totalRdk,
+      pendingRdkFees: pendingRdk,
+      paidRdkFees: paidRdk,
+    },
+    tournaments: tournamentHistory,
+  })
+})
+
+// 4. Create / Onboard an Official Partner (Super Admin only)
+app.post('/api/creators', requireSuperAdmin, (req: Request, res: Response) => {
   try {
-    const { name, handle, organizationName, bio, subscribers, games, socials, email, password } = req.body
+    const { name, handle, organizationName, bio, subscribers, games, socials, email, password, phone } = req.body
 
     if (!name || !handle || !organizationName) {
       return res.status(400).json({ error: 'Name, handle, and organization name are required' })
@@ -558,10 +1068,14 @@ app.post('/api/creators', (req: Request, res: Response) => {
       avatar:
         req.body.avatar ||
         'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=300&q=80',
-      bio: bio || 'Official verified gaming creator & tournament partner on RDK Esports.',
-      subscribers: subscribers || 'Verified Partner',
+      bio: bio || 'Official verified gaming partner on RDK Esports.',
+      subscribers: subscribers || 'Official Partner',
       verified: true,
+      status: 'active',
+      isDeleted: false,
       games: games || ['Free Fire', 'BGMI'],
+      email: email ? email.trim().toLowerCase() : undefined,
+      phone: phone || undefined,
       socials: { ...(socials || {}), loginEmail: email ? email.trim().toLowerCase() : undefined },
       activeTournaments: 0,
       totalTournaments: 0,
@@ -570,22 +1084,23 @@ app.post('/api/creators', (req: Request, res: Response) => {
     OFFICIAL_CREATORS.push(newCreator)
 
     const creatorEmail = (
-      email || `${newCreator.handle.replace(/[@._]/g, '')}@creator.rdk`
+      email || `${newCreator.handle.replace(/[@._]/g, '')}@partner.rdk`
     ).trim().toLowerCase()
 
     const creatorUser: UserRecord = {
       id: `usr_${Date.now()}`,
       name,
       email: creatorEmail,
-      role: 'creator',
+      role: 'official_partner',
       organizationId: newCreator.id,
       organizationName,
       creatorProfile: newCreator,
       password: password || 'password123',
+      phone: phone || undefined,
       createdAt: new Date().toISOString(),
     }
 
-    // Replace any existing user with this email to avoid stale 'player' role
+    // Replace any existing user with this email to avoid stale role
     USERS = USERS.filter(
       (u) => u.email.toLowerCase() !== creatorEmail && u.organizationId !== newCreator.id
     )
@@ -602,61 +1117,209 @@ app.post('/api/creators', (req: Request, res: Response) => {
           bio: newCreator.bio,
           subscribers: newCreator.subscribers,
           verified: newCreator.verified,
+          status: 'active',
+          isDeleted: false,
+          email: creatorEmail,
+          phone: phone || null,
           games: JSON.stringify(newCreator.games),
           socials: JSON.stringify(newCreator.socials),
         },
-      }).catch((err) => console.error('[Database] Notice saving creator to DB:', err))
+      }).catch((err) => console.error('[Database] Notice saving partner to DB:', err))
 
       prisma.user.upsert({
         where: { email: creatorEmail },
         update: {
           name,
-          role: 'creator',
+          role: 'official_partner',
           organizationId: newCreator.id,
           organizationName,
+          phone: phone || null,
           ...(password ? { password } : {}),
         },
         create: {
           id: creatorUser.id,
           name,
           email: creatorEmail,
-          role: 'creator',
+          role: 'official_partner',
           password: password || 'password123',
           organizationId: newCreator.id,
           organizationName,
+          phone: phone || null,
         },
-      }).catch((err) => console.error('[Database] Notice upserting creator user:', err))
+      }).catch((err) => console.error('[Database] Notice upserting partner user:', err))
     }
+
+    logAuditEvent({
+      action: 'PARTNER_CREATED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Official Partner ${newCreator.name} (${newCreator.organizationName}) created.`,
+    })
 
     return res.status(201).json({ success: true, creator: newCreator })
   } catch (error) {
-    console.error('Error creating creator:', error)
-    return res.status(500).json({ error: 'Internal server error while creating creator' })
+    console.error('Error creating partner:', error)
+    return res.status(500).json({ error: 'Internal server error while creating partner' })
   }
 })
 
-// 4b. Remove / Delete an Official Creator (Head Admin only)
-app.delete('/api/creators/:id', async (req: Request, res: Response) => {
+// 4b. Soft-Delete / Decommission an Official Partner (Super Admin only - NEVER permanently deletes tournament history!)
+app.delete('/api/creators/:id', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id)
-    OFFICIAL_CREATORS = OFFICIAL_CREATORS.filter((c) => c.id !== id)
-    USERS = USERS.filter((u) => u.organizationId !== id)
-    if (isDatabaseConfigured) {
-      await prisma.officialCreator.deleteMany({ where: { id } }).catch(() => {})
-      await prisma.user.deleteMany({ where: { organizationId: id } }).catch(() => {})
+    const partner = OFFICIAL_CREATORS.find((c) => c.id === id)
+    if (!partner) {
+      return res.status(404).json({ error: 'Official Partner not found' })
     }
-    return res.json({ success: true, message: 'Creator removed successfully' })
+
+    // Soft deletion: flag as deactivated and isDeleted, preserve historical tournament data!
+    partner.status = 'deactivated'
+    partner.isDeleted = true
+
+    const user = USERS.find((u) => u.organizationId === id || (u.email && u.email.toLowerCase() === partner.socials?.loginEmail?.toLowerCase()))
+    if (user) {
+      (user as any).status = 'deactivated'
+      user.isDeleted = true
+    }
+
+    if (isDatabaseConfigured) {
+      await prisma.officialCreator.updateMany({
+        where: { id },
+        data: { status: 'deactivated', isDeleted: true },
+      }).catch(() => {})
+      await prisma.user.updateMany({
+        where: { organizationId: id },
+        data: { status: 'deactivated', isDeleted: true },
+      }).catch(() => {})
+    }
+
+    logAuditEvent({
+      action: 'PARTNER_DECOMMISSIONED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Official Partner "${partner.name}" decommissioned. Historical tournament records preserved for audit.`,
+    })
+
+    return res.json({
+      success: true,
+      message: `Official Partner "${partner.name}" decommissioned successfully. Historical records preserved.`,
+    })
   } catch (error) {
-    console.error('Error removing creator:', error)
-    return res.status(500).json({ error: 'Failed to remove creator' })
+    console.error('Error decommissioning partner:', error)
+    return res.status(500).json({ error: 'Failed to decommission partner' })
   }
 })
 
-// 4c. Update / Edit an Official Creator (Head Admin only)
+// 4c. Toggle Partner Status (Activate / Suspend / Deactivate - Super Admin only)
+app.patch('/api/creators/:id/status', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id)
+    const { status } = req.body
+    if (!['active', 'suspended', 'deactivated'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status. Must be active, suspended, or deactivated.' })
+    }
+
+    const partner = OFFICIAL_CREATORS.find((c) => c.id === id)
+    if (!partner) {
+      return res.status(404).json({ error: 'Official Partner not found' })
+    }
+
+    const oldStatus = partner.status || 'active'
+    partner.status = status
+    if (status === 'active') partner.isDeleted = false
+
+    const user = USERS.find((u) => u.organizationId === id || (u.email && u.email.toLowerCase() === partner.socials?.loginEmail?.toLowerCase()))
+    if (user) {
+      (user as any).status = status
+      if (status === 'active') user.isDeleted = false
+    }
+
+    if (isDatabaseConfigured) {
+      await prisma.officialCreator.updateMany({
+        where: { id },
+        data: { status, isDeleted: status === 'deactivated' },
+      }).catch(() => {})
+      await prisma.user.updateMany({
+        where: { organizationId: id },
+        data: { status, isDeleted: status === 'deactivated' },
+      }).catch(() => {})
+    }
+
+    logAuditEvent({
+      action: 'PARTNER_STATUS_CHANGED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      oldValue: oldStatus,
+      newValue: status,
+      details: `Official Partner "${partner.name}" status changed from ${oldStatus} to ${status}.`,
+    })
+
+    return res.json({
+      success: true,
+      message: `Partner status updated to ${status}.`,
+      partner,
+    })
+  } catch (error) {
+    console.error('Error updating partner status:', error)
+    return res.status(500).json({ error: 'Failed to update partner status' })
+  }
+})
+
+// 4d. Reset Partner Access Credentials (Super Admin only)
+app.post('/api/creators/:id/reset-access', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id)
+    const { newPassword } = req.body
+
+    const partner = OFFICIAL_CREATORS.find((c) => c.id === id)
+    if (!partner) {
+      return res.status(404).json({ error: 'Official Partner not found' })
+    }
+
+    const passwordToSet = newPassword || `rdk#${Math.floor(1000 + Math.random() * 9000)}`
+
+    const user = USERS.find((u) => u.organizationId === id || (u.email && u.email.toLowerCase() === partner.socials?.loginEmail?.toLowerCase()))
+    if (user) {
+      user.password = passwordToSet
+      user.status = 'active'
+      user.isDeleted = false
+    }
+
+    if (isDatabaseConfigured) {
+      await prisma.user.updateMany({
+        where: { organizationId: id },
+        data: { password: passwordToSet, status: 'active', isDeleted: false },
+      }).catch(() => {})
+    }
+
+    logAuditEvent({
+      action: 'PARTNER_ACCESS_RESET',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Access credentials reset for Official Partner "${partner.name}".`,
+    })
+
+    return res.json({
+      success: true,
+      message: `Credentials reset successfully for "${partner.name}".`,
+      email: user?.email || partner.socials?.loginEmail,
+      temporaryPassword: passwordToSet,
+    })
+  } catch (error) {
+    console.error('Error resetting partner access:', error)
+    return res.status(500).json({ error: 'Failed to reset partner access' })
+  }
+})
+
+// 4e. Update / Edit an Official Partner (Super Admin or Partner self)
 const updateCreatorHandler = async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id)
-    const { name, handle, organizationName, bio, subscribers, games, socials, avatar, email, password } = req.body
+    const { name, handle, organizationName, bio, subscribers, games, socials, avatar, email, password, phone } = req.body
 
     const creatorIndex = OFFICIAL_CREATORS.findIndex(
       (c) =>
@@ -665,7 +1328,7 @@ const updateCreatorHandler = async (req: Request, res: Response) => {
         (c.socials?.loginEmail && c.socials.loginEmail.toLowerCase() === id.toLowerCase())
     )
     if (creatorIndex === -1) {
-      return res.status(404).json({ error: 'Creator not found' })
+      return res.status(404).json({ error: 'Partner not found' })
     }
 
     const current = OFFICIAL_CREATORS[creatorIndex]
@@ -679,6 +1342,8 @@ const updateCreatorHandler = async (req: Request, res: Response) => {
       subscribers: subscribers !== undefined ? subscribers : current.subscribers,
       games: Array.isArray(games) ? games : current.games,
       socials: socials !== undefined ? socials : current.socials,
+      email: email ? email.trim().toLowerCase() : current.email,
+      phone: phone !== undefined ? phone : current.phone,
     }
 
     OFFICIAL_CREATORS[creatorIndex] = updatedCreator
@@ -696,6 +1361,7 @@ const updateCreatorHandler = async (req: Request, res: Response) => {
       if (updatedCreator.avatar) (USERS[userIndex] as any).avatar = updatedCreator.avatar
       if (email) USERS[userIndex].email = email.trim().toLowerCase()
       if (password) USERS[userIndex].password = password
+      if (phone) USERS[userIndex].phone = phone
     }
 
     if (isDatabaseConfigured) {
@@ -708,32 +1374,42 @@ const updateCreatorHandler = async (req: Request, res: Response) => {
           avatar: updatedCreator.avatar,
           bio: updatedCreator.bio,
           subscribers: updatedCreator.subscribers,
+          phone: updatedCreator.phone || null,
           games: JSON.stringify(updatedCreator.games),
           socials: JSON.stringify(updatedCreator.socials),
         },
-      }).catch((err) => console.error('[Database] Notice updating creator:', err))
+      }).catch((err) => console.error('[Database] Notice updating partner:', err))
 
       await prisma.user.updateMany({
         where: { organizationId: current.id },
         data: {
-          role: 'creator',
           name: updatedCreator.name,
           organizationName: updatedCreator.organizationName,
+          phone: updatedCreator.phone || null,
           ...(email ? { email: email.trim().toLowerCase() } : {}),
           ...(password ? { password } : {}),
         },
-      }).catch((err) => console.error('[Database] Notice updating creator user in DB:', err))
+      }).catch((err) => console.error('[Database] Notice updating partner user in DB:', err))
     }
+
+    logAuditEvent({
+      action: 'PARTNER_UPDATED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Official Partner "${updatedCreator.name}" profile updated.`,
+    })
 
     return res.json({ success: true, creator: updatedCreator })
   } catch (error) {
-    console.error('Error updating creator:', error)
-    return res.status(500).json({ error: 'Failed to update creator' })
+    console.error('Error updating partner:', error)
+    return res.status(500).json({ error: 'Failed to update partner' })
   }
 }
 
-app.put('/api/creators/:id', updateCreatorHandler)
-app.patch('/api/creators/:id', updateCreatorHandler)
+app.put('/api/creators/:id', requirePartnerOrAdmin, updateCreatorHandler)
+app.patch('/api/creators/:id', requirePartnerOrAdmin, updateCreatorHandler)
+
 
 // 5. Creator Ambassador Management Desk (Created ONLY by Official Creators)
 app.get('/api/creators/ambassadors', (_req: Request, res: Response) => {
@@ -924,17 +1600,23 @@ app.get('/api/tournaments/stats', (_req: Request, res: Response) => {
   res.json(dynamicStats)
 })
 
-// Create New Tournament (Official Creator / Head Admin)
-app.post('/api/tournaments', (req: Request, res: Response) => {
+// Create New Tournament (Official Partner / Super Admin)
+app.post('/api/tournaments', requirePartnerOrAdmin, (req: Request, res: Response) => {
   try {
     const {
       name,
+      type = 'BR TOURNAMENT',
       game,
       format,
       maxTeams = 32,
+      maxSlots,
+      entryType = 'per_team',
       prizePool = '₹10,000',
       entryFee = 'Free',
       startDate,
+      endDate,
+      registrationOpening,
+      registrationClosing,
       banner,
       upiId,
       upiName,
@@ -952,8 +1634,9 @@ app.post('/api/tournaments', (req: Request, res: Response) => {
     const id = `t_${Date.now()}`
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `tourney-${id}`
 
-    // Find creator avatar if exists
-    const creator = OFFICIAL_CREATORS.find((c) => c.id === creatorId) || OFFICIAL_CREATORS[0]
+    // Find creator partner
+    const callerPartnerId = req.user?.organizationId || creatorId
+    const creator = OFFICIAL_CREATORS.find((c) => c.id === callerPartnerId) || OFFICIAL_CREATORS[0]
 
     // Default banner if not provided
     const bannerUrl =
@@ -968,7 +1651,10 @@ app.post('/api/tournaments', (req: Request, res: Response) => {
       id,
       slug,
       name: name.trim(),
-      creatorId,
+      type,
+      entryType,
+      maxSlots: maxSlots ? Number(maxSlots) : undefined,
+      creatorId: creator?.id || callerPartnerId,
       creatorName: creator?.name || creatorName,
       creatorHandle: creator?.handle || creatorHandle,
       creatorAvatar: creator?.avatar,
@@ -977,20 +1663,36 @@ app.post('/api/tournaments', (req: Request, res: Response) => {
       banner: bannerUrl,
       teams: 0,
       maxTeams: Number(maxTeams) || 32,
-      status: 'registration_open',
+      status: 'REGISTRATION_OPEN',
+      settlementStatus: 'PENDING',
+      isClosed: false,
       startDate: startDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      endDate: endDate || undefined,
+      registrationOpening: registrationOpening || undefined,
+      registrationClosing: registrationClosing || undefined,
       prizePool: prizePool.startsWith('₹') ? prizePool : `₹${prizePool}`,
       entryFee: entryFee.toLowerCase().includes('free') ? 'Free' : (entryFee.startsWith('₹') ? entryFee : `₹${entryFee}`),
       registeredTeamsCount: 0,
       isFeatured: true,
+      roomPublished: false,
       upiId: upiId || (entryFee !== 'Free' ? 'rdkesports@upi' : undefined),
       upiName: upiName || (entryFee !== 'Free' ? 'RDK Esports Org' : undefined),
       upiQrUrl: upiQrUrl || (upiId ? `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(upiName || 'Tournament')}&cu=INR` : undefined),
       rules: rules || '1. Standard fair play rules apply.\n2. Room details will be released 15 minutes before the match start.',
+      createdAt: new Date().toISOString(),
     }
 
     TOURNAMENTS.unshift(newTournament)
-    console.log(`[Tournaments] Created new tournament: ${newTournament.name} (${newTournament.id})`)
+    console.log(`[Tournaments] Created new tournament: ${newTournament.name} (${newTournament.id}) - Type: ${newTournament.type}`)
+
+    logAuditEvent({
+      tournamentId: newTournament.id,
+      action: 'TOURNAMENT_CREATED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Created new tournament "${newTournament.name}" of type ${newTournament.type} with entry fee ${newTournament.entryFee}.`,
+    })
 
     if (isDatabaseConfigured) {
       prisma.tournament
@@ -999,6 +1701,8 @@ app.post('/api/tournaments', (req: Request, res: Response) => {
             id: newTournament.id,
             slug: newTournament.slug,
             name: newTournament.name,
+            type: newTournament.type,
+            entryType: newTournament.entryType,
             creatorId: newTournament.creatorId,
             creatorName: newTournament.creatorName,
             creatorHandle: newTournament.creatorHandle,
@@ -1009,11 +1713,14 @@ app.post('/api/tournaments', (req: Request, res: Response) => {
             teams: newTournament.teams,
             maxTeams: newTournament.maxTeams,
             status: newTournament.status,
+            settlementStatus: 'PENDING',
+            isClosed: false,
             startDate: newTournament.startDate,
             prizePool: newTournament.prizePool,
             entryFee: newTournament.entryFee,
             registeredTeamsCount: newTournament.registeredTeamsCount,
             isFeatured: newTournament.isFeatured || false,
+            roomPublished: false,
             upiId: newTournament.upiId,
             upiName: newTournament.upiName,
             upiQrUrl: newTournament.upiQrUrl,
@@ -1036,18 +1743,57 @@ app.post('/api/tournaments', (req: Request, res: Response) => {
   }
 })
 
-// Get Single Tournament Details
+// Get Single Tournament Details (With Data Privacy Protection for normal users)
 app.get('/api/tournaments/:id', (req: Request, res: Response) => {
   const { id } = req.params
   const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
   if (!tourney) {
     return res.status(404).json({ error: 'Tournament not found' })
   }
-  const teams = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id)
-  return res.json({ tournament: tourney, teams })
+
+  // Calculate live authoritative finances
+  const finances = calculateTournamentFinances(tourney)
+
+  const isStaffOrAdmin =
+    req.user &&
+    (req.user.role === 'super_admin' ||
+      req.user.organizationId === tourney.creatorId ||
+      req.user.id === tourney.creatorId ||
+      req.user.tournamentId === tourney.id ||
+      req.user.auctionId === tourney.id)
+
+  const rawTeams = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id)
+
+  // PRIVACY MASKING: Normal users/public viewers cannot see phone numbers, emails, or payment proofs
+  const sanitizedTeams = isStaffOrAdmin
+    ? rawTeams
+    : rawTeams.map((t) => ({
+        id: t.id,
+        name: t.name,
+        captainIgn: t.captainIgn,
+        players: t.players,
+        status: t.status,
+        registeredAt: t.registeredAt,
+        // Captain phone and email are omitted for privacy
+      }))
+
+  return res.json({
+    tournament: {
+      ...tourney,
+      grossRevenue: finances.grossRevenue,
+      rdkFee: finances.rdkFee,
+      partnerNet: finances.partnerNet,
+      settlementStatus: finances.settlementStatus,
+      // Mask room credentials if not published and caller is not staff
+      roomId: tourney.roomPublished || isStaffOrAdmin ? tourney.roomId : undefined,
+      roomPassword: tourney.roomPublished || isStaffOrAdmin ? tourney.roomPassword : undefined,
+    },
+    teams: sanitizedTeams,
+    finances: isStaffOrAdmin ? finances : undefined,
+  })
 })
 
-// Update Tournament Details / Status
+// Update Tournament Details / Status (With Closure Gatekeeper)
 app.patch('/api/tournaments/:id', (req: Request, res: Response) => {
   const { id } = req.params
   const index = TOURNAMENTS.findIndex((t) => t.id === id || t.slug === id)
@@ -1055,22 +1801,111 @@ app.patch('/api/tournaments/:id', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Tournament not found' })
   }
 
+  const tourney = TOURNAMENTS[index]
+  const newStatus = req.body.status
+  const isClosing = newStatus === 'CLOSED' || newStatus === 'closed' || req.body.isClosed === true
+
+  // ═══════════════════════════════════════════════════════════════
+  // CLOSURE GATEKEEPER: Settlement must be VERIFIED before closing
+  // ═══════════════════════════════════════════════════════════════
+  if (isClosing) {
+    const finances = calculateTournamentFinances(tourney)
+    if (finances.grossRevenue > 0 && finances.settlementStatus !== 'VERIFIED') {
+      return res.status(400).json({
+        error: `Closure Gatekeeper: Tournament cannot be CLOSED until the RDK 10% platform fee settlement (₹${finances.rdkFee.toLocaleString()}) has been submitted by the partner and officially VERIFIED by RDK Super Admin. Current settlement status: ${finances.settlementStatus}.`,
+        finances,
+      })
+    }
+
+    req.body.status = 'CLOSED'
+    req.body.isClosed = true
+    req.body.closedAt = new Date().toISOString()
+
+    logAuditEvent({
+      tournamentId: tourney.id,
+      action: 'TOURNAMENT_CLOSED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Tournament "${tourney.name}" officially closed. Final Gross: ₹${finances.grossRevenue}, RDK Fee Paid: ₹${finances.rdkFee}. Tournament is now read-only.`,
+    })
+  } else if (newStatus && newStatus !== tourney.status) {
+    logAuditEvent({
+      tournamentId: tourney.id,
+      action: 'TOURNAMENT_STATUS_UPDATED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      oldValue: String(tourney.status),
+      newValue: String(newStatus),
+      details: `Tournament "${tourney.name}" status transitioned to ${newStatus}.`,
+    })
+  }
+
   TOURNAMENTS[index] = { ...TOURNAMENTS[index], ...req.body }
+
+  if (isDatabaseConfigured) {
+    prisma.tournament
+      .updateMany({
+        where: { id: tourney.id },
+        data: {
+          status: TOURNAMENTS[index].status,
+          isClosed: TOURNAMENTS[index].isClosed || false,
+          closedAt: TOURNAMENTS[index].closedAt ? new Date(TOURNAMENTS[index].closedAt as string) : null,
+          ...(req.body.rules ? { rules: req.body.rules } : {}),
+        },
+      })
+      .catch((err) => console.error('[Database] Notice updating tournament in DB:', err))
+  }
+
   return res.json({ success: true, tournament: TOURNAMENTS[index] })
 })
 
-// Update Match Room ID & Room Password
+// Update Match Room ID & Room Password (With Publishing Toggle)
 app.patch('/api/tournaments/:id/room', (req: Request, res: Response) => {
   const { id } = req.params
-  const { roomId, roomPassword } = req.body
+  const { roomId, roomPassword, roomPublished } = req.body
   const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
   if (!tourney) {
     return res.status(404).json({ error: 'Tournament not found' })
   }
 
-  tourney.roomId = roomId
-  tourney.roomPassword = roomPassword
-  return res.json({ success: true, message: 'Room credentials updated successfully', roomId, roomPassword })
+  if (roomId !== undefined) tourney.roomId = roomId
+  if (roomPassword !== undefined) tourney.roomPassword = roomPassword
+  if (roomPublished !== undefined) {
+    tourney.roomPublished = Boolean(roomPublished)
+    logAuditEvent({
+      tournamentId: tourney.id,
+      action: roomPublished ? 'ROOM_PUBLISHED' : 'ROOM_UNPUBLISHED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Match room credentials ${roomPublished ? 'PUBLISHED' : 'HIDDEN'} for tournament "${tourney.name}".`,
+    })
+  }
+
+  if (isDatabaseConfigured) {
+    prisma.tournament
+      .updateMany({
+        where: { id: tourney.id },
+        data: {
+          roomId: tourney.roomId,
+          roomPassword: tourney.roomPassword,
+          roomPublished: tourney.roomPublished,
+        },
+      })
+      .catch((err) => console.error('[Database] Notice updating room credentials:', err))
+  }
+
+  return res.json({
+    success: true,
+    message: tourney.roomPublished
+      ? 'Room credentials saved and PUBLISHED to verified players!'
+      : 'Room credentials saved (hidden from players until published).',
+    roomId: tourney.roomId,
+    roomPassword: tourney.roomPassword,
+    roomPublished: tourney.roomPublished,
+  })
 })
 
 // Update Live Stream & Match Schedule (Creator Broadcast Studio)
@@ -1143,9 +1978,21 @@ app.post('/api/tournaments/:id/verify-room-access', (req: Request, res: Response
     const matchedPlayer = matchingTeam.players?.find(
       (p) => p.ign?.toLowerCase() === query || p.gameUid?.toLowerCase() === query
     )
+    if (!tourney.roomPublished) {
+      return res.json({
+        success: true,
+        authorized: true,
+        published: false,
+        role: matchingTeam.captainIgn.toLowerCase() === query ? 'captain' : 'player',
+        participantName: matchedPlayer ? matchedPlayer.ign : matchingTeam.captainName,
+        teamName: matchingTeam.name,
+        message: 'Your registration is verified! However, the organizer has not published the match Room ID & Password yet. Please check back 15 minutes before match start.',
+      })
+    }
     return res.json({
       success: true,
       authorized: true,
+      published: true,
       role: matchingTeam.captainIgn.toLowerCase() === query ? 'captain' : 'player',
       participantName: matchedPlayer ? matchedPlayer.ign : matchingTeam.captainName,
       teamName: matchingTeam.name,
@@ -1165,9 +2012,21 @@ app.post('/api/tournaments/:id/verify-room-access', (req: Request, res: Response
   })
 
   if (matchingCandidate) {
+    if (!tourney.roomPublished) {
+      return res.json({
+        success: true,
+        authorized: true,
+        published: false,
+        role: 'draft_candidate',
+        participantName: matchingCandidate.ign,
+        teamName: matchingCandidate.soldToTeam || 'Registered Draft Candidate',
+        message: 'Your player clearance is verified! However, match room credentials have not been released by the host yet. Please check back shortly.',
+      })
+    }
     return res.json({
       success: true,
       authorized: true,
+      published: true,
       role: 'draft_candidate',
       participantName: matchingCandidate.ign,
       teamName: matchingCandidate.soldToTeam || 'Registered Draft Candidate',
@@ -1783,12 +2642,29 @@ app.get('/api/auctions/:id/state', (req: Request, res: Response) => {
   return res.json(state)
 })
 
-app.post('/api/auctions/:id/bid', (req: Request, res: Response) => {
+app.post('/api/auctions/:id/bid', requireAuctionBiddingAccess, (req: Request, res: Response) => {
   const id = String(req.params.id)
   const { teamName, amount, playerId } = req.body
 
   if (!teamName || !amount) {
     return res.status(400).json({ error: 'Team name and bid amount are required' })
+  }
+
+  const numAmount = Number(amount)
+  if (isNaN(numAmount) || numAmount <= 0) {
+    return res.status(400).json({ error: 'Valid positive bid amount is required' })
+  }
+
+  // Find bidder to verify remaining purse balance
+  const bidder = EPHEMERAL_BIDDERS.find(
+    (b) => b.auctionId === id && b.teamName.toLowerCase() === String(teamName).toLowerCase()
+  )
+
+  if (bidder && numAmount > bidder.allocatedPurse) {
+    return res.status(400).json({
+      error: `Purse Limit Exceeded: Team "${teamName}" only has ₹${bidder.allocatedPurse.toLocaleString()} remaining in purse tokens. Bid of ₹${numAmount.toLocaleString()} cannot be placed.`,
+      remainingPurse: bidder.allocatedPurse,
+    })
   }
 
   let state = LIVE_AUCTION_STATE[id]
@@ -1806,7 +2682,6 @@ app.post('/api/auctions/:id/bid', (req: Request, res: Response) => {
     state.activePlayerId = playerId
   }
 
-  const numAmount = Number(amount)
   if (numAmount <= state.currentBid) {
     return res.status(400).json({ error: `Bid must be greater than current bid (₹${state.currentBid.toLocaleString()})` })
   }
@@ -1819,7 +2694,12 @@ app.post('/api/auctions/:id/bid', (req: Request, res: Response) => {
     time: new Date().toLocaleTimeString(),
   })
 
-  return res.json({ success: true, message: `Bid of ₹${numAmount.toLocaleString()} placed by ${teamName}`, state })
+  return res.json({
+    success: true,
+    message: `Bid of ₹${numAmount.toLocaleString()} placed by ${teamName}`,
+    state,
+    remainingPurse: bidder ? bidder.allocatedPurse : undefined,
+  })
 })
 
 // Auction Player Status & Bid Updates (Sold / Unsold / On Hammer)
@@ -1854,6 +2734,15 @@ app.patch('/api/auctions/:id/players/:playerId', (req: Request, res: Response) =
         state.currentBid = Number(soldPrice)
         state.highestBidderTeam = soldToTeam
       }
+
+      logAuditEvent({
+        tournamentId: player.tournamentId || id,
+        action: 'AUCTION_PLAYER_SOLD',
+        actorId: req.user?.id,
+        actorName: req.user?.name,
+        actorRole: req.user?.role,
+        details: `Player "${player.ign}" sold to franchise "${soldToTeam}" for ₹${Number(soldPrice).toLocaleString()}.`,
+      })
     }
 
     return res.json({
@@ -1865,6 +2754,425 @@ app.patch('/api/auctions/:id/players/:playerId', (req: Request, res: Response) =
     console.error('Error updating auction player:', error)
     return res.status(500).json({ error: 'Failed to update player' })
   }
+})
+
+// ═══════════════════════════════════════════════════════════════
+// AUCTION REVERSE SOLD MECHANISM
+// ═══════════════════════════════════════════════════════════════
+app.post('/api/auctions/:id/players/:playerId/reverse-sold', requirePartnerOrAdmin, (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id)
+    const playerId = String(req.params.playerId)
+    const { reason = 'Accidental hammer / Rule correction' } = req.body
+
+    const player = AUCTION_PLAYERS.find(
+      (p) => (p.auctionId === id || p.tournamentId === id) && p.id === playerId
+    )
+    if (!player) {
+      return res.status(404).json({ error: 'Auction candidate not found' })
+    }
+
+    if (player.status !== 'sold') {
+      return res.status(400).json({ error: `Cannot reverse player sale: Player status is "${player.status}", not "sold".` })
+    }
+
+    const previousTeam = player.soldToTeam || 'Unknown Franchise'
+    const refundAmount = player.soldPrice || 0
+
+    // 1. Restore the franchise team's budget
+    const bidder = EPHEMERAL_BIDDERS.find(
+      (b) => b.auctionId === id && b.teamName.toLowerCase() === previousTeam.toLowerCase()
+    )
+    if (bidder) {
+      bidder.allocatedPurse += refundAmount
+    }
+
+    // 2. Return player to available pool
+    player.status = 'available'
+    player.soldPrice = undefined
+    player.soldToTeam = undefined
+
+    // 3. Reset live auction state if this player was active
+    let state = LIVE_AUCTION_STATE[id]
+    if (state && state.activePlayerId === playerId) {
+      state.currentBid = player.basePrice
+      state.highestBidderTeam = ''
+      state.bidHistory = []
+    }
+
+    // 4. Record reversal transaction
+    const reversalRecord: AuctionReversalRecord = {
+      id: `rev_${Date.now()}`,
+      tournamentId: player.tournamentId || id,
+      auctionId: id,
+      playerId: player.id,
+      playerIgn: player.ign,
+      teamName: previousTeam,
+      soldPrice: refundAmount,
+      reason,
+      reversedBy: req.user?.name || 'Tournament Official',
+      createdAt: new Date().toISOString(),
+    }
+    AUCTION_REVERSALS.unshift(reversalRecord)
+
+    // 5. Log audit event
+    logAuditEvent({
+      tournamentId: player.tournamentId || id,
+      action: 'AUCTION_REVERSE_SOLD',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      reason,
+      details: `Reverse sold player "${player.ign}" from "${previousTeam}". Refunded ₹${refundAmount.toLocaleString()} to team budget. Reason: ${reason}.`,
+    })
+
+    if (isDatabaseConfigured) {
+      prisma.auctionReversal
+        .create({
+          data: {
+            id: reversalRecord.id,
+            tournamentId: reversalRecord.tournamentId,
+            auctionId: reversalRecord.auctionId,
+            playerId: reversalRecord.playerId,
+            playerIgn: reversalRecord.playerIgn,
+            teamName: reversalRecord.teamName,
+            soldPrice: reversalRecord.soldPrice,
+            reason: reversalRecord.reason,
+            reversedBy: reversalRecord.reversedBy,
+          },
+        })
+        .catch((err) => console.error('[Database] Failed to persist auction reversal:', err))
+    }
+
+    return res.json({
+      success: true,
+      message: `Sale reversed successfully. ₹${refundAmount.toLocaleString()} restored to "${previousTeam}". Player returned to candidate pool.`,
+      player,
+      restoredPurse: bidder?.allocatedPurse,
+      reversal: reversalRecord,
+    })
+  } catch (error) {
+    console.error('Error reversing player sale:', error)
+    return res.status(500).json({ error: 'Failed to reverse player sale' })
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════
+// RDK 10% PLATFORM SETTLEMENT SYSTEM
+// ═══════════════════════════════════════════════════════════════
+
+// Platform Official Bank / UPI Details for Partner Settlements
+const RDK_PLATFORM_ACCOUNT = {
+  accountName: 'RDK Technologies Platform Fee Escrow',
+  upiId: 'rdktechnologies@upi',
+  bankName: 'HDFC Bank',
+  accountNumber: '50200088991122',
+  ifsc: 'HDFC0000123',
+  qrCodeUrl:
+    'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=rdktechnologies@upi&pn=RDK%20Technologies&cu=INR',
+}
+
+// Get All Platform Settlements (Super Admin: all, Partner: owned tournaments)
+app.get('/api/settlements', requirePartnerOrAdmin, (req: Request, res: Response) => {
+  const isSuper = req.user?.role === 'super_admin'
+  const partnerId = req.user?.organizationId
+
+  const settlements = TOURNAMENTS.map((t) => {
+    if (!isSuper && t.creatorId !== partnerId && req.user?.id !== t.creatorId) {
+      return null
+    }
+
+    const fin = calculateTournamentFinances(t)
+    const existingSettlement = PLATFORM_SETTLEMENTS.find((s) => s.tournamentId === t.id)
+
+    return {
+      id: existingSettlement?.id || `settlement_${t.id}`,
+      tournamentId: t.id,
+      tournamentName: t.name,
+      tournamentType: t.type || 'BR TOURNAMENT',
+      tournamentStatus: t.status,
+      isClosed: t.isClosed || false,
+      partnerId: t.creatorId,
+      partnerName: t.creatorName,
+      entryFee: fin.entryFee,
+      approvedEntries: fin.approvedEntries,
+      grossRevenue: fin.grossRevenue,
+      rdkFee: fin.rdkFee,
+      partnerNet: fin.partnerNet,
+      status: existingSettlement?.status || t.settlementStatus || 'PENDING',
+      utr: existingSettlement?.utr || t.settlementUtr || null,
+      screenshotUrl: existingSettlement?.screenshotUrl || t.settlementProofUrl || null,
+      paymentDate: existingSettlement?.paymentDate || t.settlementDate || null,
+      submittedAt: existingSettlement?.submittedAt || null,
+      verifiedAt: existingSettlement?.verifiedAt || null,
+      rejectionReason: existingSettlement?.rejectionReason || null,
+    }
+  }).filter(Boolean)
+
+  return res.json(settlements)
+})
+
+// Platform Settlement Stats (Super Admin)
+app.get('/api/settlements/stats', requireSuperAdmin, (_req: Request, res: Response) => {
+  let totalGross = 0
+  let totalRdk = 0
+  let verifiedFees = 0
+  let pendingFees = 0
+  let pendingVerificationCount = 0
+
+  TOURNAMENTS.forEach((t) => {
+    const fin = calculateTournamentFinances(t)
+    totalGross += fin.grossRevenue
+    totalRdk += fin.rdkFee
+
+    const existing = PLATFORM_SETTLEMENTS.find((s) => s.tournamentId === t.id)
+    const status = existing?.status || t.settlementStatus || 'PENDING'
+
+    if (status === 'VERIFIED') {
+      verifiedFees += fin.rdkFee
+    } else {
+      pendingFees += fin.rdkFee
+      if (status === 'PAYMENT_SUBMITTED' || status === 'UNDER_REVIEW') {
+        pendingVerificationCount += 1
+      }
+    }
+  })
+
+  return res.json({
+    totalGrossRevenue: totalGross,
+    totalRdkFeeVolume: totalRdk,
+    verifiedFeesCollected: verifiedFees,
+    pendingFeesDue: pendingFees,
+    pendingVerificationCount,
+    collectionRate: totalRdk > 0 ? Math.round((verifiedFees / totalRdk) * 100) : 100,
+  })
+})
+
+// Get Settlement Details for a Specific Tournament
+app.get('/api/tournaments/:id/settlement', requirePartnerOrAdmin, (req: Request, res: Response) => {
+  const { id } = req.params
+  const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+  if (!tourney) {
+    return res.status(404).json({ error: 'Tournament not found' })
+  }
+
+  const finances = calculateTournamentFinances(tourney)
+  const existingSettlement = PLATFORM_SETTLEMENTS.find((s) => s.tournamentId === tourney.id)
+
+  return res.json({
+    tournament: {
+      id: tourney.id,
+      name: tourney.name,
+      type: tourney.type,
+      status: tourney.status,
+      isClosed: tourney.isClosed,
+      closedAt: tourney.closedAt,
+    },
+    finances,
+    settlement: existingSettlement || {
+      tournamentId: tourney.id,
+      status: tourney.settlementStatus || 'PENDING',
+      rdkFee: finances.rdkFee,
+      grossRevenue: finances.grossRevenue,
+    },
+    platformAccount: RDK_PLATFORM_ACCOUNT,
+  })
+})
+
+// Submit RDK 10% Fee Settlement Proof (Official Partner)
+app.post('/api/tournaments/:id/settlement', requirePartnerOrAdmin, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+    if (!tourney) {
+      return res.status(404).json({ error: 'Tournament not found' })
+    }
+
+    const { utr, screenshotUrl, paymentDate, notes, amount } = req.body
+    if (!utr && !screenshotUrl) {
+      return res.status(400).json({ error: 'Payment UTR or screenshot proof is required for settlement verification.' })
+    }
+
+    const finances = calculateTournamentFinances(tourney)
+    const settlementAmount = amount ? Number(amount) : finances.rdkFee
+
+    let settlement = PLATFORM_SETTLEMENTS.find((s) => s.tournamentId === tourney.id)
+    if (!settlement) {
+      settlement = {
+        id: `set_${Date.now()}`,
+        tournamentId: tourney.id,
+        tournamentName: tourney.name,
+        partnerId: tourney.creatorId || 'partner',
+        partnerName: tourney.creatorName,
+        entryFee: finances.entryFee,
+        approvedEntries: finances.approvedEntries,
+        grossRevenue: finances.grossRevenue,
+        rdkFee: finances.rdkFee,
+        partnerNet: finances.partnerNet,
+        status: 'UNDER_REVIEW',
+        utr: utr?.trim(),
+        screenshotUrl,
+        paymentDate: paymentDate || new Date().toISOString().split('T')[0],
+        notes,
+        submittedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      }
+      PLATFORM_SETTLEMENTS.push(settlement)
+    } else {
+      settlement.status = 'UNDER_REVIEW'
+      settlement.utr = utr?.trim() || settlement.utr
+      settlement.screenshotUrl = screenshotUrl || settlement.screenshotUrl
+      settlement.paymentDate = paymentDate || settlement.paymentDate
+      settlement.notes = notes || settlement.notes
+      settlement.grossRevenue = finances.grossRevenue
+      settlement.rdkFee = finances.rdkFee
+      settlement.partnerNet = finances.partnerNet
+      settlement.submittedAt = new Date().toISOString()
+      settlement.rejectionReason = undefined
+    }
+
+    tourney.settlementStatus = 'UNDER_REVIEW'
+    tourney.settlementProofUrl = screenshotUrl || tourney.settlementProofUrl
+    tourney.settlementUtr = utr?.trim() || tourney.settlementUtr
+    tourney.settlementDate = paymentDate || new Date().toISOString()
+    tourney.settlementAmount = settlementAmount
+
+    logAuditEvent({
+      tournamentId: tourney.id,
+      action: 'SETTLEMENT_SUBMITTED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Settlement proof submitted for tournament "${tourney.name}". 10% Fee: ₹${finances.rdkFee.toLocaleString()}, UTR: ${utr || 'N/A'}. Awaiting Super Admin verification.`,
+    })
+
+    if (isDatabaseConfigured) {
+      prisma.platformSettlement
+        .upsert({
+          where: { tournamentId: tourney.id },
+          update: {
+            status: 'UNDER_REVIEW',
+            utr: settlement.utr,
+            screenshotUrl: settlement.screenshotUrl,
+            paymentDate: settlement.paymentDate,
+            notes: settlement.notes,
+            submittedAt: new Date(),
+            rejectionReason: null,
+          },
+          create: {
+            id: settlement.id,
+            tournamentId: settlement.tournamentId,
+            tournamentName: settlement.tournamentName,
+            partnerId: settlement.partnerId,
+            partnerName: settlement.partnerName,
+            entryFee: settlement.entryFee,
+            approvedEntries: settlement.approvedEntries,
+            grossRevenue: settlement.grossRevenue,
+            rdkFee: settlement.rdkFee,
+            partnerNet: settlement.partnerNet,
+            status: 'UNDER_REVIEW',
+            utr: settlement.utr,
+            screenshotUrl: settlement.screenshotUrl,
+            paymentDate: settlement.paymentDate,
+            notes: settlement.notes,
+            submittedAt: new Date(),
+          },
+        })
+        .catch((err) => console.error('[Database] Failed to upsert settlement in DB:', err))
+    }
+
+    return res.json({
+      success: true,
+      message: 'RDK 10% Platform settlement proof submitted successfully! RDK Super Admin has been notified for verification.',
+      settlement,
+      finances,
+    })
+  } catch (error) {
+    console.error('Error submitting settlement:', error)
+    return res.status(500).json({ error: 'Failed to submit platform settlement' })
+  }
+})
+
+// Super Admin: Verify or Reject Platform Settlement
+app.patch('/api/settlements/:id', requireSuperAdmin, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const { status, rejectionReason } = req.body
+
+    if (!['VERIFIED', 'REJECTED'].includes(status)) {
+      return res.status(400).json({ error: 'Status must be VERIFIED or REJECTED' })
+    }
+
+    const settlement = PLATFORM_SETTLEMENTS.find((s) => s.id === id || s.tournamentId === id)
+    if (!settlement) {
+      return res.status(404).json({ error: 'Settlement record not found' })
+    }
+
+    settlement.status = status
+    if (status === 'VERIFIED') {
+      settlement.verifiedAt = new Date().toISOString()
+      settlement.rejectionReason = undefined
+    } else {
+      settlement.rejectionReason = rejectionReason || 'Payment verification failed'
+    }
+
+    // Update corresponding tournament status
+    const tourney = TOURNAMENTS.find((t) => t.id === settlement.tournamentId)
+    if (tourney) {
+      tourney.settlementStatus = status
+      if (status === 'VERIFIED') {
+        tourney.status = 'SETTLEMENT_VERIFIED'
+      }
+    }
+
+    logAuditEvent({
+      tournamentId: settlement.tournamentId,
+      action: status === 'VERIFIED' ? 'SETTLEMENT_VERIFIED' : 'SETTLEMENT_REJECTED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      reason: rejectionReason,
+      details: `Settlement for "${settlement.tournamentName}" was ${status} by RDK Super Admin. RDK Fee: ₹${settlement.rdkFee}.`,
+    })
+
+    if (isDatabaseConfigured) {
+      prisma.platformSettlement
+        .updateMany({
+          where: { tournamentId: settlement.tournamentId },
+          data: {
+            status,
+            verifiedAt: status === 'VERIFIED' ? new Date() : null,
+            rejectionReason: status === 'REJECTED' ? rejectionReason || null : null,
+          },
+        })
+        .catch((err) => console.error('[Database] Notice updating settlement status in DB:', err))
+    }
+
+    return res.json({
+      success: true,
+      message: `Platform settlement marked as ${status}. ${status === 'VERIFIED' ? 'Tournament is now authorized for closure.' : ''}`,
+      settlement,
+    })
+  } catch (error) {
+    console.error('Error updating settlement:', error)
+    return res.status(500).json({ error: 'Failed to update settlement' })
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════
+// PLATFORM AUDIT LOGS EXPLORER (Super Admin)
+// ═══════════════════════════════════════════════════════════════
+app.get('/api/admin/audit-logs', requireSuperAdmin, (req: Request, res: Response) => {
+  const { action, tournamentId, limit = 100 } = req.query
+  let logs = [...PLATFORM_AUDIT_LOGS]
+
+  if (action) logs = logs.filter((l) => l.action.toLowerCase() === String(action).toLowerCase())
+  if (tournamentId) logs = logs.filter((l) => l.tournamentId === String(tournamentId))
+
+  return res.json({
+    count: logs.length,
+    logs: logs.slice(0, Number(limit) || 100),
+  })
 })
 
 // Payments Queue: Get payments for tournament

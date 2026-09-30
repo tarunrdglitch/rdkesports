@@ -28,8 +28,31 @@ import {
   Shield,
   Crosshair,
   Plus,
+  RotateCcw,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
+
+const getEmbedVideoUrl = (url?: string) => {
+  if (!url) return null
+  if (url.includes('drive.google.com')) {
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/)
+    if (match && match[1]) {
+      return `https://drive.google.com/file/d/${match[1]}/preview`
+    }
+  }
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    if (url.includes('embed')) return url
+    if (url.includes('youtu.be/')) {
+      const id = url.split('youtu.be/')[1]?.split('?')[0]
+      return `https://www.youtube.com/embed/${id}`
+    }
+    try {
+      const v = new URL(url).searchParams.get('v')
+      if (v) return `https://www.youtube.com/embed/${v}`
+    } catch {}
+  }
+  return null
+}
 
 interface Bidder {
   id: string
@@ -131,6 +154,16 @@ export default function AuctionCredentialsPage() {
   const [bidHistory, setBidHistory] = useState<{ team: string; amount: number; time: string }[]>([])
   const [previewClipUrl, setPreviewClipUrl] = useState<string | null>(null)
   const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null)
+
+  // Reversal State (Audit-Logged Purse Restoration)
+  const [reversalTarget, setReversalTarget] = useState<{
+    id: string
+    ign: string
+    soldToTeam: string
+    soldPrice: number
+  } | null>(null)
+  const [reversalReason, setReversalReason] = useState('')
+  const [isReversing, setIsReversing] = useState(false)
 
   // Google Sheets import state
   const [csvInput, setCsvInput] = useState('')
@@ -243,6 +276,35 @@ export default function AuctionCredentialsPage() {
       loadPlayers()
     } catch (e: unknown) {
       if (e instanceof Error) setErr(e.message)
+    }
+  }
+
+  const handleExecuteReverseSold = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!reversalTarget) return
+    setIsReversing(true)
+    setErr('')
+    try {
+      const res = await fetch(`/api/auctions/${auctionId}/players/${reversalTarget.id}/reverse-sold`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason: reversalReason.trim() || 'Organizer reversed sale per dispute resolution.',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to reverse player sale')
+
+      setMsg(data.message || `Sale reversed! ₹${reversalTarget.soldPrice.toLocaleString()} refunded to ${reversalTarget.soldToTeam}.`)
+      setReversalTarget(null)
+      setReversalReason('')
+      loadPlayers()
+      loadCredentials()
+    } catch (e: unknown) {
+      if (e instanceof Error) setErr(e.message)
+      else setErr('Failed to reverse sale')
+    } finally {
+      setIsReversing(false)
     }
   }
 
@@ -704,18 +766,12 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                           )}
                         </div>
 
-                        {/* Video Clipping Container */}
+                        {/* Video Clipping Container (Supports YouTube & Google Drive) */}
                         <div className="rounded-lg border border-border bg-black/60 overflow-hidden aspect-video relative flex items-center justify-center shadow-inner group">
                           {activePlayer.clipUrl ? (
-                            activePlayer.clipUrl.includes('youtube.com') || activePlayer.clipUrl.includes('youtu.be') ? (
+                            getEmbedVideoUrl(activePlayer.clipUrl) ? (
                               <iframe
-                                src={
-                                  activePlayer.clipUrl.includes('embed')
-                                    ? activePlayer.clipUrl
-                                    : activePlayer.clipUrl.includes('youtu.be/')
-                                    ? `https://www.youtube.com/embed/${activePlayer.clipUrl.split('youtu.be/')[1].split('?')[0]}`
-                                    : `https://www.youtube.com/embed/${new URL(activePlayer.clipUrl).searchParams.get('v') || 'dQw4w9WgXcQ'}`
-                                }
+                                src={getEmbedVideoUrl(activePlayer.clipUrl)!}
                                 title={`${activePlayer.ign} Gameplay Clip`}
                                 className="w-full h-full border-0"
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -818,6 +874,27 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                             MARK UNSOLD
                           </button>
                         </div>
+
+                        {/* REVERSE SOLD ACTION (When Player was sold) */}
+                        {activePlayer.status === 'sold' && (
+                          <div className="pt-2">
+                            <button
+                              onClick={() => {
+                                setReversalTarget({
+                                  id: activePlayer.id,
+                                  ign: activePlayer.ign,
+                                  soldToTeam: activePlayer.soldToTeam || selectedBidderTeam || 'Franchise Team',
+                                  soldPrice: activePlayer.soldPrice || currentBid,
+                                })
+                                setReversalReason('')
+                              }}
+                              className="w-full inline-flex items-center justify-center gap-1.5 rounded border border-amber-500/50 bg-amber-500/10 py-2 text-xs font-bold text-amber-400 hover:bg-amber-500/20 transition"
+                            >
+                              <RotateCcw className="size-3.5" />
+                              REVERSE SOLD TRANSACTION (RESTORE PURSE)
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1011,15 +1088,34 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                         )}
                       </td>
                       <td className="p-3 text-right">
-                        <button
-                          onClick={() => {
-                            handleSelectPlayer(p)
-                            setActiveTab('stage')
-                          }}
-                          className="inline-flex items-center gap-1 rounded bg-primary/10 hover:bg-primary text-primary hover:text-background px-2.5 py-1 text-[11px] font-bold transition"
-                        >
-                          Spotlight On Stage <ArrowRight className="size-3" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {p.status === 'sold' && (
+                            <button
+                              onClick={() => {
+                                setReversalTarget({
+                                  id: p.id,
+                                  ign: p.ign,
+                                  soldToTeam: p.soldToTeam || 'Team',
+                                  soldPrice: p.soldPrice || 0,
+                                })
+                                setReversalReason('')
+                              }}
+                              className="inline-flex items-center gap-1 rounded border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 px-2 py-1 text-[11px] font-bold transition"
+                              title="Reverse sold transaction and restore team purse"
+                            >
+                              <RotateCcw className="size-3" /> Reverse
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              handleSelectPlayer(p)
+                              setActiveTab('stage')
+                            }}
+                            className="inline-flex items-center gap-1 rounded bg-primary/10 hover:bg-primary text-primary hover:text-background px-2.5 py-1 text-[11px] font-bold transition"
+                          >
+                            Spotlight On Stage <ArrowRight className="size-3" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1201,15 +1297,9 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
             </div>
 
             <div className="aspect-video w-full rounded-lg overflow-hidden bg-black flex items-center justify-center">
-              {previewClipUrl.includes('youtube.com') || previewClipUrl.includes('youtu.be') ? (
+              {getEmbedVideoUrl(previewClipUrl) ? (
                 <iframe
-                  src={
-                    previewClipUrl.includes('embed')
-                      ? previewClipUrl
-                      : previewClipUrl.includes('youtu.be/')
-                      ? `https://www.youtube.com/embed/${previewClipUrl.split('youtu.be/')[1].split('?')[0]}`
-                      : `https://www.youtube.com/embed/${new URL(previewClipUrl).searchParams.get('v') || 'dQw4w9WgXcQ'}`
-                  }
+                  src={getEmbedVideoUrl(previewClipUrl)!}
                   title="Gameplay Video"
                   className="w-full h-full border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -1230,6 +1320,78 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* REVERSE SOLD TRANSACTION MODAL */}
+      {reversalTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <RotateCcw className="size-5 text-amber-400" />
+                <h3 className="font-heading font-black text-sm uppercase tracking-wider text-foreground">
+                  Reverse Sold Player Transaction
+                </h3>
+              </div>
+              <button
+                onClick={() => setReversalTarget(null)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 space-y-1">
+              <p>
+                Candidate: <strong className="text-white">{reversalTarget.ign}</strong>
+              </p>
+              <p>
+                Purchasing Team: <strong className="text-white">{reversalTarget.soldToTeam}</strong>
+              </p>
+              <p>
+                Sold Price to Refund: <strong className="text-emerald-400 font-bold">₹{reversalTarget.soldPrice.toLocaleString()}</strong>
+              </p>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Reversing this sale will set candidate status back to <span className="text-primary font-bold">AVAILABLE</span>, credit <strong className="text-foreground">₹{reversalTarget.soldPrice.toLocaleString()}</strong> back to {reversalTarget.soldToTeam}&apos;s purse, and log an immutable audit event.
+            </p>
+
+            <form onSubmit={handleExecuteReverseSold} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  Reversal Reason (Audit Log Required) *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="e.g. Bidder entered bid by mistake, franchise dispute, or rule violation."
+                  value={reversalReason}
+                  onChange={(e) => setReversalReason(e.target.value)}
+                  className="w-full bg-background border border-border rounded-lg p-2.5 text-xs text-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReversalTarget(null)}
+                  className="px-3 py-1.5 rounded border border-border text-xs text-muted-foreground hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isReversing}
+                  className="px-4 py-1.5 rounded bg-amber-500 text-black font-bold text-xs hover:bg-amber-400 transition disabled:opacity-60 flex items-center gap-1.5"
+                >
+                  <RotateCcw className="size-3.5" />
+                  {isReversing ? 'Reversing Sale…' : 'Confirm Reversal & Refund Purse'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

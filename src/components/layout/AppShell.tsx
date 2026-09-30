@@ -23,13 +23,21 @@ export const AppShell = () => {
   const nav = useNavigate()
   const [open, setOpen] = useState(false)
 
-  const isOwner = user?.role === 'super_admin' || user?.email?.toLowerCase() === 'auraxtremezofficial@gmail.com'
-  const displayName = isOwner ? 'Tarun' : (user?.name || 'User')
+  const isOwner =
+    user?.role === 'super_admin' ||
+    user?.email?.toLowerCase() === 'auraxtremezofficial@gmail.com'
+  const displayName = isOwner ? 'Tarun (RDK)' : (user?.name || 'User')
 
   const getNavItems = (): NavItem[] => {
     if (!user) return []
     if (isOwner) return adminNav
-    if (user.role === 'creator' || user.role === 'org_owner') return creatorNav
+    if (
+      user.role === 'official_partner' ||
+      user.role === 'creator' ||
+      user.role === 'org_owner'
+    ) {
+      return creatorNav
+    }
     if (user.role === 'ambassador') return ambassadorNav
     return playerNav
   }
@@ -37,24 +45,34 @@ export const AppShell = () => {
   const items = getNavItems()
 
   const getRoleLabel = () => {
-    if (isOwner) return 'Platform Owner'
+    if (isOwner) return 'Super Admin (RDK)'
     switch (user?.role) {
-      case 'super_admin': return 'Platform Owner'
+      case 'super_admin':
+        return 'Super Admin (RDK)'
+      case 'official_partner':
       case 'creator':
-      case 'org_owner':   return 'Official Creator'
-      case 'ambassador':  return 'Ambassador'
+      case 'org_owner':
+        return 'Official Partner'
+      case 'ambassador':
+        return 'Tournament Ambassador'
+      case 'normal_user':
       case 'player':
-      default:            return 'Competitive Player'
+      default:
+        return 'Normal User'
     }
   }
 
   const getRoleBadgeColor = () => {
     if (isOwner) return '#E53935'
     switch (user?.role) {
+      case 'official_partner':
       case 'creator':
-      case 'org_owner': return '#E53935'
-      case 'ambassador': return '#FF8F00'
-      default:           return '#ffffff'
+      case 'org_owner':
+        return '#E53935'
+      case 'ambassador':
+        return '#FF8F00'
+      default:
+        return '#22c55e'
     }
   }
 

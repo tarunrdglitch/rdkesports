@@ -640,6 +640,9 @@ export default function TournamentDetailPage() {
               ← Back to All Tournaments
             </Link>
             <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-muted/80 text-muted-foreground border border-border">
+                Powered by RDK Technologies
+              </span>
               <StatusBadge status={tournament.status} />
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
                 {tournament.game}
@@ -2123,6 +2126,18 @@ export default function TournamentDetailPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Platform Branding Footer */}
+      <div className="max-w-6xl mx-auto px-4 mt-12 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <img src="/logo.png" alt="RDK Logo" className="h-5 w-auto" />
+          <span className="font-semibold text-foreground">RDK Technologies</span>
+          <span>• Powered by RDK Technologies Tournament OS</span>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Official Tournament Conducted by {tournament.creatorName}. All standings and brackets securely tracked.
+        </p>
+      </div>
     </div>
   )
 }

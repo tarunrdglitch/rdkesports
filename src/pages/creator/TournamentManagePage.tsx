@@ -33,6 +33,12 @@ import {
   Gavel,
   ShieldAlert,
   Mail,
+  Landmark,
+  Receipt,
+  Lock,
+  Unlock,
+  QrCode,
+  AlertTriangle,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
@@ -60,6 +66,13 @@ interface Tournament {
   maxTeams: number
   roomId?: string
   roomPassword?: string
+  roomPublished?: boolean
+  grossRevenue?: number
+  rdkFee?: number
+  partnerNet?: number
+  settlementStatus?: 'PENDING' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED'
+  isClosed?: boolean
+  closedAt?: string
   upiId?: string
   upiName?: string
   rules?: string
@@ -67,6 +80,50 @@ interface Tournament {
   streamTitle?: string
   streamStatus?: 'offline' | 'starting_soon' | 'live'
   scheduledMatchInfo?: string
+}
+
+interface SettlementInfo {
+  tournament: {
+    id: string
+    name: string
+    type?: string
+    status: string
+    isClosed?: boolean
+    closedAt?: string
+  }
+  finances: {
+    entryFee: number
+    approvedEntries: number
+    totalEntries: number
+    grossRevenue: number
+    rdkFeeRate: number
+    rdkFee: number
+    partnerNet: number
+    settlementStatus: 'PENDING' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED'
+    isClosed: boolean
+    canClose: boolean
+  }
+  settlement?: {
+    id?: string
+    tournamentId: string
+    status: 'PENDING' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED'
+    rdkFee: number
+    grossRevenue: number
+    utr?: string
+    screenshotUrl?: string
+    submittedAt?: string
+    verifiedAt?: string
+    verifiedBy?: string
+    rejectionReason?: string
+  }
+  platformAccount: {
+    accountName: string
+    upiId: string
+    bankName: string
+    accountNumber: string
+    ifsc: string
+    qrCodeUrl: string
+  }
 }
 
 interface Team {
@@ -119,7 +176,7 @@ export default function TournamentManagePage() {
     createdAt: string
   }
 
-  type TabType = 'teams' | 'room' | 'live' | 'roadmap' | 'payments' | 'auction' | 'ambassadors'
+  type TabType = 'teams' | 'room' | 'live' | 'roadmap' | 'payments' | 'auction' | 'ambassadors' | 'settlement'
 
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
@@ -151,7 +208,18 @@ export default function TournamentManagePage() {
   // Room Credentials State
   const [roomId, setRoomId] = useState('')
   const [roomPassword, setRoomPassword] = useState('')
+  const [roomPublished, setRoomPublished] = useState(false)
   const [isSavingRoom, setIsSavingRoom] = useState(false)
+
+  // Platform Settlement & Closure State
+  const [settlementInfo, setSettlementInfo] = useState<SettlementInfo | null>(null)
+  const [settlementForm, setSettlementForm] = useState({
+    utr: '',
+    screenshotUrl: '',
+    notes: '',
+  })
+  const [isSubmittingSettlement, setIsSubmittingSettlement] = useState(false)
+  const [isClosingTournament, setIsClosingTournament] = useState(false)
 
   // Status State
   const [tourneyStatus, setTourneyStatus] = useState<
@@ -204,12 +272,15 @@ export default function TournamentManagePage() {
       setTeams(tData.teams || [])
       setRoomId(t.roomId || '')
       setRoomPassword(t.roomPassword || '')
+      setRoomPublished(Boolean(t.roomPublished))
       setTourneyStatus(t.status)
       setRulesText(t.rules || '')
       setStreamUrl(t.streamUrl || '')
       setStreamTitle(t.streamTitle || '')
       setStreamStatus(t.streamStatus || 'offline')
       setScheduledMatchInfo(t.scheduledMatchInfo || '')
+
+      loadSettlement()
 
       const isAuctionTournament = t.format === 'Auction Tournament' || t.format?.toLowerCase().includes('auction')
       const isPaidTournament = Number(t.entryFee || 0) > 0
@@ -280,6 +351,18 @@ export default function TournamentManagePage() {
     }
   }
 
+  const loadSettlement = async () => {
+    try {
+      const res = await fetch(`/api/tournaments/${id}/settlement`)
+      if (res.ok) {
+        const data = await res.json()
+        setSettlementInfo(data)
+      }
+    } catch {
+      // Ignored
+    }
+  }
+
   const handleSaveRoom = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSavingRoom(true)
@@ -288,10 +371,17 @@ export default function TournamentManagePage() {
       const res = await fetch(`/api/tournaments/${id}/room`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, roomPassword }),
+        body: JSON.stringify({ roomId, roomPassword, roomPublished }),
       })
-      if (!res.ok) throw new Error('Failed to update room credentials')
-      setSuccessMsg('Match Room ID & Password broadcasted successfully!')
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || 'Failed to update room credentials')
+      }
+      setSuccessMsg(
+        roomPublished
+          ? 'Match Room ID & Password broadcasted and LIVE to verified captains!'
+          : 'Match Room credentials saved in DRAFT mode (hidden from players).'
+      )
       setTimeout(() => setSuccessMsg(''), 3000)
     } catch (err: unknown) {
       if (err instanceof Error) setError(err.message)
@@ -304,6 +394,7 @@ export default function TournamentManagePage() {
     newStatus: 'draft' | 'registration_open' | 'live' | 'completed'
   ) => {
     try {
+      setError('')
       const res = await fetch(`/api/tournaments/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -311,11 +402,73 @@ export default function TournamentManagePage() {
       })
       if (res.ok) {
         setTourneyStatus(newStatus)
-        setSuccessMsg(`Tournament status changed to ${newStatus}`)
+        setSuccessMsg(`Tournament status changed to ${newStatus.replace('_', ' ')}`)
         setTimeout(() => setSuccessMsg(''), 3000)
+        loadData()
+      } else {
+        const d = await res.json().catch(() => ({}))
+        setError(d.error || 'Failed to update status')
+        setTimeout(() => setError(''), 6000)
       }
     } catch {
       setError('Failed to update status')
+      setTimeout(() => setError(''), 5000)
+    }
+  }
+
+  const handleSubmitSettlement = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmittingSettlement(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/tournaments/${id}/settlement`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settlementForm),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || 'Failed to submit settlement proof')
+      }
+      setSuccessMsg('RDK 10% platform settlement submitted! Super Admin has been notified for verification.')
+      setTimeout(() => setSuccessMsg(''), 4000)
+      setSettlementForm({ utr: '', screenshotUrl: '', notes: '' })
+      loadSettlement()
+      loadData()
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to submit settlement')
+    } finally {
+      setIsSubmittingSettlement(false)
+    }
+  }
+
+  const handleOfficialClosure = async () => {
+    if (!window.confirm('Confirm Official Tournament Closure? All records and team statistics will be permanently archived for platform audit history.')) {
+      return
+    }
+    setIsClosingTournament(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/tournaments/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || 'Failed to close tournament')
+      }
+      setTourneyStatus('completed')
+      setSuccessMsg('Tournament officially closed and archived! Congratulations on hosting with RDK Technologies.')
+      setTimeout(() => setSuccessMsg(''), 5000)
+      loadData()
+      loadSettlement()
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to close tournament')
+    } finally {
+      setIsClosingTournament(false)
     }
   }
 
@@ -494,6 +647,7 @@ export default function TournamentManagePage() {
   const isAuction = tournament.format === 'Auction Tournament' || tournament.format?.toLowerCase().includes('auction')
   const isPaid = Number(tournament.entryFee || 0) > 0
   const pendingPayments = payments.filter((p) => p.status === 'pending')
+  const approvedPayments = payments.filter((p) => p.status === 'approved')
 
   return (
     <div className="max-w-6xl mx-auto py-4 px-2 sm:px-4 space-y-6">
@@ -699,6 +853,36 @@ export default function TournamentManagePage() {
           <span className="rounded bg-blue-500/20 text-blue-400 px-1.5 py-0.5 text-[9px] font-bold">
             CUSTOMIZER
           </span>
+        </button>
+
+        {/* RDK 10% PLATFORM SETTLEMENT & CLOSURE TAB */}
+        <button
+          onClick={() => setActiveTab('settlement')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+            activeTab === 'settlement'
+              ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Receipt className="size-4 text-emerald-400" />
+          <span>Platform Settlement & Closure</span>
+          {tournament.settlementStatus === 'VERIFIED' ? (
+            <span className="rounded bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 text-[9px] font-bold">
+              VERIFIED
+            </span>
+          ) : tournament.settlementStatus === 'UNDER_REVIEW' ? (
+            <span className="rounded bg-blue-500/20 text-blue-400 px-1.5 py-0.5 text-[9px] font-bold">
+              IN REVIEW
+            </span>
+          ) : isPaid ? (
+            <span className="rounded bg-amber-500/20 text-amber-300 px-1.5 py-0.5 text-[9px] font-bold">
+              10% DUE
+            </span>
+          ) : (
+            <span className="rounded bg-muted text-muted-foreground px-1.5 py-0.5 text-[9px] font-bold">
+              FREE
+            </span>
+          )}
         </button>
       </div>
 
@@ -1408,6 +1592,47 @@ export default function TournamentManagePage() {
           </div>
 
           <form onSubmit={handleSaveRoom} className="space-y-4">
+            {/* Publication Toggle */}
+            <div className="p-3 rounded-lg border border-border bg-background/50 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {roomPublished ? (
+                    <Unlock className="size-4 text-emerald-400" />
+                  ) : (
+                    <Lock className="size-4 text-amber-400" />
+                  )}
+                  <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                    Public Dispatch State
+                  </span>
+                </div>
+                <span
+                  className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                    roomPublished
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  }`}
+                >
+                  {roomPublished ? 'LIVE & PUBLISHED' : 'HIDDEN DRAFT'}
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                {roomPublished
+                  ? 'Credentials are live! Verified captains can claim the room code and password directly from the tournament portal.'
+                  : 'Credentials are in draft mode and invisible to players. Check the toggle below when you are ready to open the custom room.'}
+              </p>
+              <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={roomPublished}
+                  onChange={(e) => setRoomPublished(e.target.checked)}
+                  className="rounded border-border text-primary focus:ring-primary size-4"
+                />
+                <span className="text-xs font-semibold text-foreground">
+                  Publish credentials to verified tournament players
+                </span>
+              </label>
+            </div>
+
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
                 Room ID / Custom Code *
@@ -1442,9 +1667,340 @@ export default function TournamentManagePage() {
               className="w-full py-2.5 rounded bg-primary text-background font-bold text-xs hover:bg-primary/90 transition shadow flex items-center justify-center gap-1.5"
             >
               <Save className="size-4" />
-              {isSavingRoom ? 'Broadcasting Credentials…' : 'Broadcast to Verified Captains'}
+              {isSavingRoom
+                ? 'Saving Credentials…'
+                : roomPublished
+                ? 'Save & Broadcast Live to Players'
+                : 'Save as Hidden Draft'}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* TAB: RDK 10% Platform Settlement & Official Closure */}
+      {activeTab === 'settlement' && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <div className="p-6 rounded-xl border border-border bg-gradient-to-r from-card to-primary/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Receipt className="size-5 text-emerald-400" />
+                <h3 className="font-heading font-black text-base uppercase tracking-wider text-foreground">
+                  RDK 10% Platform Settlement & Official Closure
+                </h3>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Powered by RDK Technologies platform engine. Verified calculations, escrow settlement, and historical tournament archiving.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-muted-foreground uppercase">Settlement:</span>
+              <span
+                className={`text-xs font-black uppercase px-2.5 py-1 rounded border ${
+                  tournament.settlementStatus === 'VERIFIED'
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                    : tournament.settlementStatus === 'UNDER_REVIEW'
+                    ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                    : isPaid
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                    : 'bg-muted text-muted-foreground border-border'
+                }`}
+              >
+                {tournament.settlementStatus || 'PENDING'}
+              </span>
+            </div>
+          </div>
+
+          {/* 4-Stat Financial Breakdown Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 rounded-xl border border-border bg-card">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
+                Approved Paid Entries
+              </span>
+              <div className="text-xl font-heading font-black text-foreground">
+                {settlementInfo?.finances?.approvedEntries ?? approvedPayments.length}{' '}
+                <span className="text-xs font-normal text-muted-foreground">Squads</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Fee: ₹{tournament.entryFee || '0'} per entry
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl border border-border bg-card">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
+                Gross Entry Collected
+              </span>
+              <div className="text-xl font-heading font-black text-foreground">
+                ₹{settlementInfo?.finances?.grossRevenue ?? (Number(tournament.entryFee || 0) * approvedPayments.length)}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                100% of verified entry payments
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block mb-1">
+                RDK 10% Platform Fee Due
+              </span>
+              <div className="text-xl font-heading font-black text-emerald-400">
+                ₹{settlementInfo?.finances?.rdkFee ?? Math.round((Number(tournament.entryFee || 0) * approvedPayments.length) * 0.10)}
+              </div>
+              <p className="text-[11px] text-emerald-500/80 mt-1">
+                Strict 10% calculated strictly from approved entries
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl border border-border bg-card">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
+                Partner Net Earnings (90%)
+              </span>
+              <div className="text-xl font-heading font-black text-primary">
+                ₹{settlementInfo?.finances?.partnerNet ?? Math.round((Number(tournament.entryFee || 0) * approvedPayments.length) * 0.90)}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Retained by Official Partner
+              </p>
+            </div>
+          </div>
+
+          {/* Conditional Guidance Banner */}
+          {!isPaid || (settlementInfo?.finances?.grossRevenue === 0) ? (
+            <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex items-start gap-3">
+              <CheckCircle2 className="size-5 text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                  Free Entry Tournament — Platform Fee Waived
+                </h4>
+                <p className="text-xs text-emerald-200/80 mt-0.5">
+                  This tournament has ₹0 gross revenue. No RDK platform fee settlement is required. You may proceed to conclude the matches and officially close the tournament whenever ready.
+                </p>
+              </div>
+            </div>
+          ) : tournament.settlementStatus === 'VERIFIED' ? (
+            <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex items-start gap-3">
+              <CheckCircle2 className="size-5 text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                  Platform Settlement Verified
+                </h4>
+                <p className="text-xs text-emerald-200/80 mt-0.5">
+                  RDK Technologies Super Admin has verified the 10% platform fee payment. The Closure Gatekeeper has unlocked and this tournament can be officially closed.
+                </p>
+                {settlementInfo?.settlement?.verifiedAt && (
+                  <p className="text-[10px] font-mono text-emerald-400 mt-1">
+                    Verified on: {new Date(settlementInfo.settlement.verifiedAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : tournament.settlementStatus === 'UNDER_REVIEW' ? (
+            <div className="p-4 rounded-xl border border-blue-500/30 bg-blue-500/10 flex items-start gap-3">
+              <Clock className="size-5 text-blue-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold text-blue-300 uppercase tracking-wider">
+                  Settlement Proof Under Review
+                </h4>
+                <p className="text-xs text-blue-200/80 mt-0.5">
+                  Your settlement submission (UTR: <span className="font-mono font-bold text-blue-300">{settlementInfo?.settlement?.utr || 'Submitted'}</span>) is currently being verified by RDK Super Admin. Once approved, the closure button will unlock immediately.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 flex items-start gap-3">
+              <AlertTriangle className="size-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                  Closure Gatekeeper Active — 10% Platform Settlement Required
+                </h4>
+                <p className="text-xs text-amber-200/80 mt-0.5">
+                  Per RDK Technologies platform terms, Official Partners remit 10% of gross entry fees collected (₹{settlementInfo?.finances?.rdkFee ?? 0}). Tournaments cannot transition to closed until this settlement is verified.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* RDK Platform Escrow & Payment Submission Form (Only for paid events not yet verified) */}
+          {isPaid && tournament.settlementStatus !== 'VERIFIED' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left Column: Official RDK Payment Coordinates */}
+              <div className="p-5 rounded-xl border border-border bg-card space-y-4">
+                <div className="flex items-center gap-2 border-b border-border pb-3">
+                  <Landmark className="size-4 text-primary" />
+                  <h4 className="font-heading font-black text-xs uppercase tracking-wider text-foreground">
+                    RDK Official Settlement Account
+                  </h4>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="size-28 bg-white p-1 rounded-lg border border-border shrink-0 flex items-center justify-center">
+                    <img
+                      src={
+                        settlementInfo?.platformAccount?.qrCodeUrl ||
+                        'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=rdktechnologies@upi&pn=RDK%20Technologies&cu=INR'
+                      }
+                      alt="RDK UPI QR Code"
+                      className="size-full object-contain"
+                    />
+                  </div>
+                  <div className="space-y-1.5 text-xs">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
+                      Pay via Any UPI App (GPay / PhonePe / Paytm)
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-bold text-foreground bg-muted px-2 py-0.5 rounded">
+                        {settlementInfo?.platformAccount?.upiId || 'rdktechnologies@upi'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            settlementInfo?.platformAccount?.upiId || 'rdktechnologies@upi'
+                          )
+                          setSuccessMsg('RDK UPI ID copied to clipboard!')
+                          setTimeout(() => setSuccessMsg(''), 2500)
+                        }}
+                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                        title="Copy UPI ID"
+                      >
+                        <Copy className="size-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Beneficiary: <strong>{settlementInfo?.platformAccount?.accountName || 'RDK Technologies Platform Fee Escrow'}</strong>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Bank: <strong>{settlementInfo?.platformAccount?.bankName || 'HDFC Bank'}</strong> • IFSC: <strong className="font-mono">{settlementInfo?.platformAccount?.ifsc || 'HDFC0000123'}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-muted/40 border border-border text-[11px] text-muted-foreground leading-relaxed">
+                  Transfer the exact 10% fee amount: <strong className="text-primary font-bold">₹{settlementInfo?.finances?.rdkFee ?? 0}</strong>. After completing the payment, note the Bank Reference / UTR Number and submit below.
+                </div>
+              </div>
+
+              {/* Right Column: Submit Settlement Proof Form */}
+              <div className="p-5 rounded-xl border border-border bg-card space-y-4">
+                <div className="flex items-center gap-2 border-b border-border pb-3">
+                  <Receipt className="size-4 text-emerald-400" />
+                  <h4 className="font-heading font-black text-xs uppercase tracking-wider text-foreground">
+                    Submit Settlement Proof
+                  </h4>
+                </div>
+
+                <form onSubmit={handleSubmitSettlement} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      12-Digit Bank UTR / Ref Number *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 427819920182"
+                      value={settlementForm.utr}
+                      onChange={(e) =>
+                        setSettlementForm({ ...settlementForm, utr: e.target.value })
+                      }
+                      className="w-full bg-background border border-border rounded px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Payment Screenshot URL (Optional)
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={settlementForm.screenshotUrl}
+                      onChange={(e) =>
+                        setSettlementForm({ ...settlementForm, screenshotUrl: e.target.value })
+                      }
+                      className="w-full bg-background border border-border rounded px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Notes / Remarks (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Final match concluded, 10% settlement paid"
+                      value={settlementForm.notes}
+                      onChange={(e) =>
+                        setSettlementForm({ ...settlementForm, notes: e.target.value })
+                      }
+                      className="w-full bg-background border border-border rounded px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingSettlement || !settlementForm.utr}
+                    className="w-full py-2.5 rounded bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition shadow disabled:opacity-60 flex items-center justify-center gap-1.5"
+                  >
+                    <Receipt className="size-4" />
+                    {isSubmittingSettlement
+                      ? 'Submitting Proof…'
+                      : 'Submit Settlement to RDK Technologies'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Official Tournament Closure Card */}
+          <div className="p-6 rounded-xl border border-border bg-card space-y-4">
+            <div className="flex items-center gap-2 border-b border-border pb-3">
+              <Trophy className="size-5 text-primary" />
+              <div>
+                <h4 className="font-heading font-black text-sm uppercase tracking-wider text-foreground">
+                  Official Tournament Closure & Historical Archive
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Closure permanently marks the tournament as completed and locks brackets and rosters into the platform audit ledger.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p>
+                  Current Status: <strong className="text-foreground uppercase">{tourneyStatus}</strong>
+                </p>
+                <p>
+                  Closure Gatekeeper:{' '}
+                  {settlementInfo?.finances?.canClose ? (
+                    <strong className="text-emerald-400">CLEARED (Ready for Closure)</strong>
+                  ) : (
+                    <strong className="text-amber-400">
+                      LOCKED (10% Fee Settlement must be VERIFIED first)
+                    </strong>
+                  )}
+                </p>
+              </div>
+
+              {tourneyStatus === 'completed' || tournament.isClosed ? (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted border border-border text-xs font-bold text-foreground">
+                  <CheckCircle2 className="size-4 text-emerald-400" />
+                  <span>Tournament Officially Closed & Archived</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOfficialClosure}
+                  disabled={isClosingTournament || !settlementInfo?.finances?.canClose}
+                  className="px-5 py-2.5 rounded-lg bg-primary text-background font-bold text-xs hover:bg-primary/90 transition shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <Trophy className="size-4" />
+                  {isClosingTournament
+                    ? 'Closing Tournament…'
+                    : 'Officially Conclude & Archive Tournament'}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

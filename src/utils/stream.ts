@@ -74,6 +74,21 @@ export function parseStreamEmbed(url?: string): StreamEmbedInfo {
     }
   }
 
+  // 4. Google Drive Video Preview:
+  // - https://drive.google.com/file/d/FILE_ID/view...
+  // - https://drive.google.com/open?id=FILE_ID
+  if (clean.includes('drive.google.com')) {
+    const driveMatch = clean.match(/\/d\/([a-zA-Z0-9_-]+)/) || clean.match(/[?&]id=([a-zA-Z0-9_-]+)/)
+    if (driveMatch && driveMatch[1]) {
+      return {
+        embedUrl: `https://drive.google.com/file/d/${driveMatch[1]}/preview`,
+        platform: 'custom',
+        originalUrl: clean,
+        isValid: true,
+      }
+    }
+  }
+
   // 4. If already an embed or valid https URL
   if (clean.startsWith('http://') || clean.startsWith('https://')) {
     return {
