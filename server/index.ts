@@ -794,7 +794,10 @@ let AUCTION_REVERSALS: AuctionReversalRecord[] = []
 export interface FinancialCalculationResult {
   entryFee: number
   approvedEntries: number
+  totalRegisteredEntries: number
   grossRevenue: number
+  projectedGrossRevenue: number
+  projectedRdkFee: number
   rdkFee: number
   partnerNet: number
   settlementStatus: string
@@ -810,27 +813,34 @@ export function calculateTournamentFinances(tourney: TournamentRecord): Financia
     fee = cleaned ? parseFloat(cleaned) : 0
   }
 
-  // Count ONLY approved/verified paid registrations
+  const isAuction =
+    tourney.type === 'AUCTION TOURNAMENT' ||
+    tourney.format === 'Auction Tournament' ||
+    tourney.format?.toLowerCase().includes('auction')
+
+  // Count approved / verified paid registrations
   const verifiedTeams = REGISTERED_TEAMS.filter(
-    (t) => t.tournamentId === tourney.id && t.status === 'verified'
+    (t) => t.tournamentId === tourney.id && (String(t.status) === 'verified' || String(t.status) === 'approved')
   ).length
 
   const verifiedAuctionCandidates = AUCTION_PLAYERS.filter(
     (p) =>
       (p.tournamentId === tourney.id || p.auctionId === tourney.id) &&
-      p.paymentStatus === 'verified'
+      (String(p.paymentStatus) === 'verified' || String(p.paymentStatus) === 'approved')
   ).length
 
-  const isAuction =
-    tourney.type === 'AUCTION TOURNAMENT' ||
-    tourney.format === 'Auction Tournament' ||
-    tourney.format?.toLowerCase().includes('auction')
+  const totalRegisteredEntries = isAuction
+    ? AUCTION_PLAYERS.filter((p) => p.tournamentId === tourney.id || p.auctionId === tourney.id).length
+    : REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id).length
 
   const approvedEntries = isAuction ? verifiedAuctionCandidates : verifiedTeams
 
   const grossRevenue = Math.round(fee * approvedEntries)
   const rdkFee = Math.round(grossRevenue * 0.10)
   const partnerNet = grossRevenue - rdkFee
+
+  const projectedGrossRevenue = Math.round(fee * totalRegisteredEntries)
+  const projectedRdkFee = Math.round(projectedGrossRevenue * 0.10)
 
   const existingSettlement = PLATFORM_SETTLEMENTS.find((s) => s.tournamentId === tourney.id)
   const settlementStatus =
@@ -841,7 +851,10 @@ export function calculateTournamentFinances(tourney: TournamentRecord): Financia
   return {
     entryFee: fee,
     approvedEntries,
+    totalRegisteredEntries,
     grossRevenue,
+    projectedGrossRevenue,
+    projectedRdkFee,
     rdkFee,
     partnerNet,
     settlementStatus,
@@ -1837,6 +1850,19 @@ app.patch('/api/tournaments/:id', (req: Request, res: Response) => {
   const isClosing = newStatus === 'CLOSED' || newStatus === 'closed' || req.body.isClosed === true
 
   // ═══════════════════════════════════════════════════════════════
+  // STATUS LOCK: Once COMPLETED/CLOSED, ONLY Super Admin can reopen or modify status
+  // ═══════════════════════════════════════════════════════════════
+  const currentStatusNormalized = String(tourney.status || '').toLowerCase()
+  const isCurrentlyCompleted = currentStatusNormalized === 'completed' || currentStatusNormalized === 'closed'
+  if (isCurrentlyCompleted && newStatus && newStatus.toLowerCase() !== currentStatusNormalized) {
+    if (req.user?.role !== 'super_admin') {
+      return res.status(403).json({
+        error: 'Tournament is marked as COMPLETED. Once completed, only a Super Admin can reopen or modify tournament status.',
+      })
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // CLOSURE GATEKEEPER: Settlement must be VERIFIED before closing
   // ═══════════════════════════════════════════════════════════════
   if (isClosing) {
@@ -1876,20 +1902,114 @@ app.patch('/api/tournaments/:id', (req: Request, res: Response) => {
   TOURNAMENTS[index] = { ...TOURNAMENTS[index], ...req.body }
 
   if (isDatabaseConfigured) {
+    const updateData: any = {
+      status: TOURNAMENTS[index].status,
+      isClosed: TOURNAMENTS[index].isClosed || false,
+      closedAt: TOURNAMENTS[index].closedAt ? new Date(TOURNAMENTS[index].closedAt as string) : null,
+    }
+    if (req.body.name) updateData.name = String(req.body.name).trim()
+    if (req.body.game) updateData.game = String(req.body.game).trim()
+    if (req.body.format) updateData.format = String(req.body.format).trim()
+    if (req.body.maxTeams !== undefined) updateData.maxTeams = Number(req.body.maxTeams)
+    if (req.body.entryFee !== undefined) updateData.entryFee = String(req.body.entryFee)
+    if (req.body.prizePool !== undefined) updateData.prizePool = String(req.body.prizePool)
+    if (req.body.startDate !== undefined) updateData.startDate = String(req.body.startDate)
+    if (req.body.rules !== undefined) updateData.rules = String(req.body.rules)
+    if (req.body.upiId !== undefined) updateData.upiId = String(req.body.upiId)
+    if (req.body.upiName !== undefined) updateData.upiName = String(req.body.upiName)
+    if (req.body.upiQrUrl !== undefined) updateData.upiQrUrl = String(req.body.upiQrUrl)
+
     prisma.tournament
       .updateMany({
         where: { id: tourney.id },
-        data: {
-          status: TOURNAMENTS[index].status,
-          isClosed: TOURNAMENTS[index].isClosed || false,
-          closedAt: TOURNAMENTS[index].closedAt ? new Date(TOURNAMENTS[index].closedAt as string) : null,
-          ...(req.body.rules ? { rules: req.body.rules } : {}),
-        },
+        data: updateData,
       })
       .catch((err) => console.error('[Database] Notice updating tournament in DB:', err))
   }
 
   return res.json({ success: true, tournament: TOURNAMENTS[index] })
+})
+
+// Verify / Approve All Registered Entries (Instant Reconciliation for Partner/Admin)
+app.post('/api/tournaments/:id/approve-all-entries', requirePartnerOrAdmin, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+    if (!tourney) {
+      return res.status(404).json({ error: 'Tournament not found' })
+    }
+
+    let updatedTeams = 0
+    for (const t of REGISTERED_TEAMS) {
+      if (t.tournamentId === tourney.id) {
+        t.status = 'verified'
+        updatedTeams++
+      }
+    }
+
+    let updatedPlayers = 0
+    for (const p of AUCTION_PLAYERS) {
+      if (p.tournamentId === tourney.id || p.auctionId === tourney.id) {
+        p.paymentStatus = 'verified'
+        updatedPlayers++
+      }
+    }
+
+    for (const pay of PAYMENT_SUBMISSIONS) {
+      if (pay.tournamentId === tourney.id) {
+        pay.status = 'approved'
+        pay.verifiedAt = new Date().toISOString()
+      }
+    }
+
+    tourney.registeredTeamsCount = REGISTERED_TEAMS.filter(
+      (t) => t.tournamentId === tourney.id && (String(t.status) === 'verified' || String(t.status) === 'approved')
+    ).length
+    tourney.teams = tourney.registeredTeamsCount
+
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.registeredTeam.updateMany({
+          where: { tournamentId: tourney.id },
+          data: { status: 'verified' },
+        })
+        await prisma.auctionPlayer.updateMany({
+          where: { OR: [{ tournamentId: tourney.id }, { auctionId: tourney.id }] },
+          data: { paymentStatus: 'verified' },
+        })
+        await prisma.paymentSubmission.updateMany({
+          where: { tournamentId: tourney.id },
+          data: { status: 'approved', verifiedAt: new Date() },
+        })
+        await prisma.tournament.updateMany({
+          where: { id: tourney.id },
+          data: { registeredTeamsCount: tourney.registeredTeamsCount, teams: tourney.teams },
+        })
+      } catch (dbErr) {
+        console.warn('[Database] Notice approving all entries in PostgreSQL:', dbErr)
+      }
+    }
+
+    const finances = calculateTournamentFinances(tourney)
+
+    logAuditEvent({
+      tournamentId: tourney.id,
+      action: 'ALL_ENTRIES_VERIFIED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Organizer verified all entries (${updatedTeams} teams, ${updatedPlayers} auction draft players). Calculated platform fee: ₹${finances.rdkFee}.`,
+    })
+
+    return res.json({
+      success: true,
+      message: `All ${updatedTeams || updatedPlayers} participant entries verified! Platform fee updated to ₹${finances.rdkFee.toLocaleString('en-IN')}.`,
+      finances,
+    })
+  } catch (error: any) {
+    console.error('Error approving all entries:', error)
+    return res.status(500).json({ error: error.message || 'Failed to approve entries' })
+  }
 })
 
 // Update Match Room ID & Room Password (With Publishing Toggle)

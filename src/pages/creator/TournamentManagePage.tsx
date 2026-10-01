@@ -42,11 +42,13 @@ import {
   Unlock,
   QrCode,
   AlertTriangle,
+  Settings,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { useAuth } from '@/stores/authStore'
 import { parseStreamEmbed } from '@/utils/stream'
+import { PrizePoolDivider } from '@/components/tournament/PrizePoolDivider'
 import {
   TournamentRoadmapTree,
   TournamentRoadmap,
@@ -237,6 +239,24 @@ export default function TournamentManagePage() {
   })
   const [isSubmittingSettlement, setIsSubmittingSettlement] = useState(false)
   const [isClosingTournament, setIsClosingTournament] = useState(false)
+  const [isApprovingAll, setIsApprovingAll] = useState(false)
+
+  // Edit Tournament Settings Modal State
+  const [isEditSettingsOpen, setIsEditSettingsOpen] = useState(false)
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
+  const [settingsForm, setSettingsForm] = useState({
+    name: '',
+    game: 'Free Fire',
+    format: 'Auction Tournament',
+    maxTeams: 48 as number | string,
+    entryFee: '60',
+    prizePool: '12000',
+    prizeBreakdown: '🥇 1st: ₹6,000 | 🥈 2nd: ₹3,500 | 🥉 3rd: ₹2,500',
+    startDate: '',
+    rules: '',
+    upiId: '',
+    upiName: '',
+  })
 
   // Status State
   const [tourneyStatus, setTourneyStatus] = useState<
@@ -515,9 +535,101 @@ export default function TournamentManagePage() {
     }
   }
 
+  const handleOpenEditSettings = () => {
+    if (!tournament) return
+    const feeNum = parseFee(tournament.entryFee)
+    setSettingsForm({
+      name: tournament.name || '',
+      game: tournament.game || 'Free Fire',
+      format: tournament.format || 'Auction Tournament',
+      maxTeams: tournament.maxTeams || 32,
+      entryFee: String(feeNum || 0),
+      prizePool: String(parseFee(tournament.prizePool) || 12000),
+      prizeBreakdown:
+        (tournament as any).prizeBreakdown ||
+        (tournament.prizePool?.includes(':')
+          ? tournament.prizePool
+          : '🥇 1st: ₹6,000 | 🥈 2nd: ₹3,500 | 🥉 3rd: ₹2,500'),
+      startDate: tournament.startDate || '',
+      rules: tournament.rules || '',
+      upiId: tournament.upiId || '',
+      upiName: tournament.upiName || '',
+    })
+    setIsEditSettingsOpen(true)
+  }
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSavingSettings(true)
+    setError('')
+    try {
+      const payload: any = {
+        name: settingsForm.name.trim(),
+        game: settingsForm.game.trim(),
+        format: settingsForm.format.trim(),
+        maxTeams: Number(settingsForm.maxTeams) || 32,
+        entryFee: Number(settingsForm.entryFee) > 0 ? `₹${settingsForm.entryFee}` : 'Free',
+        prizePool: settingsForm.prizeBreakdown || `₹${settingsForm.prizePool}`,
+        prizeBreakdown: settingsForm.prizeBreakdown,
+        startDate: settingsForm.startDate,
+        rules: settingsForm.rules,
+        upiId: settingsForm.upiId,
+        upiName: settingsForm.upiName,
+      }
+
+      const res = await fetch(`/api/tournaments/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to update tournament settings')
+
+      setTournament((prev) => (prev ? { ...prev, ...data.tournament } : data.tournament))
+      setSuccessMsg('Tournament settings updated successfully!')
+      setTimeout(() => setSuccessMsg(''), 3000)
+      setIsEditSettingsOpen(false)
+      loadData()
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to update tournament settings')
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }
+
+  const handleApproveAllEntries = async () => {
+    if (!confirm('Verify and approve all participant entries for this tournament? This will mark all registered teams as verified and update the RDK 10% platform fee calculation.')) return
+    setIsApprovingAll(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/tournaments/${id}/approve-all-entries`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to approve entries')
+      setSuccessMsg(data.message || 'All entries approved!')
+      setTimeout(() => setSuccessMsg(''), 4000)
+      loadData()
+      loadSettlement()
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to approve entries')
+    } finally {
+      setIsApprovingAll(false)
+    }
+  }
+
   const handleUpdateStatus = async (
     newStatus: 'draft' | 'registration_open' | 'live' | 'completed'
   ) => {
+    if (tourneyStatus === 'completed' && newStatus !== 'completed' && user?.role !== 'super_admin') {
+      setError('Tournament is marked as COMPLETED. Once completed, only a Super Admin can reopen or modify tournament status.')
+      setTimeout(() => setError(''), 6000)
+      return
+    }
+
     try {
       setError('')
       const res = await fetch(`/api/tournaments/${id}`, {
@@ -980,6 +1092,15 @@ export default function TournamentManagePage() {
         description={`Tournament Control Room • ${tournament.game} • Hosted by ${tournament.creatorName}`}
         actions={
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleOpenEditSettings}
+              className="flex items-center gap-1.5 text-xs font-semibold text-foreground bg-card hover:bg-muted border border-border rounded px-3 py-1.5 transition-colors shadow-sm"
+              title="Edit tournament settings, format, prize pool & rules"
+            >
+              <Settings className="size-3.5 text-blue-400" />
+              <span>Edit Settings</span>
+            </button>
             <a
               href={`/api/tournaments/${tournament.id}/export`}
               target="_blank"
@@ -1046,21 +1167,38 @@ export default function TournamentManagePage() {
           </span>
         </div>
 
-        {/* Change Status Control */}
+        {/* Change Status Control (Locked when completed except for super_admin) */}
         <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-lg border border-border">
-          {(['draft', 'registration_open', 'live', 'completed'] as const).map((st) => (
-            <button
-              key={st}
-              onClick={() => handleUpdateStatus(st)}
-              className={`px-3 py-1 text-[11px] font-bold rounded capitalize transition-all ${
-                tourneyStatus === st
-                  ? 'bg-primary text-background shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+          {tourneyStatus === 'completed' && user?.role !== 'super_admin' ? (
+            <div
+              className="flex items-center gap-1.5 px-3 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold"
+              title="Tournament is completed. Only a Super Admin can reopen or change status."
             >
-              {st.replace('_', ' ')}
-            </button>
-          ))}
+              <Lock className="size-3.5 text-amber-400" />
+              <span>Completed (Locked — Super Admin Only)</span>
+            </div>
+          ) : (
+            <>
+              {tourneyStatus === 'completed' && user?.role === 'super_admin' && (
+                <span className="text-[10px] font-bold text-amber-400 px-2 py-0.5 bg-amber-500/15 rounded border border-amber-500/30 flex items-center gap-1 mr-1">
+                  <Unlock className="size-3" /> Super Admin Reopen
+                </span>
+              )}
+              {(['draft', 'registration_open', 'live', 'completed'] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => handleUpdateStatus(st)}
+                  className={`px-3 py-1 text-[11px] font-bold rounded capitalize transition-all ${
+                    tourneyStatus === st
+                      ? 'bg-primary text-background shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {st.replace('_', ' ')}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
@@ -2100,15 +2238,33 @@ export default function TournamentManagePage() {
               </div>
             </div>
           ) : totalGrossCollected === 0 ? (
-            <div className="p-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 flex items-start gap-3">
-              <Clock className="size-5 text-cyan-400 shrink-0 mt-0.5" />
-              <div>
-                <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">
-                  Paid Tournament — 0 Paid Entries Collected Yet
-                </h4>
-                <p className="text-xs text-cyan-200/80 mt-0.5">
-                  Entry fee is <strong>₹{entryFeeNumber} per entry</strong>. RDK 10% platform fee is calculated dynamically on <strong>actual money collected from approved teams</strong> ({settlementInfo?.finances?.approvedEntries ?? approvedPayments.length}/{tournament.maxTeams} approved = ₹0 collected). As teams register and payments are approved, your gross revenue and 10% platform fee will update in real time.
-                </p>
+            <div className="p-5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 space-y-3">
+              <div className="flex items-start gap-3">
+                <Clock className="size-5 text-cyan-400 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">
+                    Paid Tournament — 0 Paid Entries Verified Yet
+                  </h4>
+                  <p className="text-xs text-cyan-200/80 mt-0.5 leading-relaxed">
+                    Entry fee is <strong>₹{entryFeeNumber} per entry</strong>. RDK 10% platform fee is calculated dynamically on <strong>actual money collected from approved teams</strong> ({settlementInfo?.finances?.approvedEntries ?? approvedPayments.length}/{teams.length || tournament.maxTeams} approved = ₹0 collected).
+                  </p>
+                  <p className="text-xs text-amber-300/90 mt-1.5 leading-relaxed">
+                    💡 <strong>Why is it currently ₹0?</strong> Participant registrations are currently in pending verification status. If your participants have paid entry fees (or were imported by you from Google Sheets), click below to verify all entries in 1-click and immediately calculate the ₹{Math.round((teams.length || 216) * entryFeeNumber * 0.10).toLocaleString('en-IN')} platform fee!
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1 border-t border-cyan-500/20">
+                <button
+                  type="button"
+                  onClick={handleApproveAllEntries}
+                  disabled={isApprovingAll}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition hover:scale-105 active:scale-95 disabled:opacity-50"
+                >
+                  <CheckCircle2 className="size-4" />
+                  {isApprovingAll
+                    ? 'Verifying All Entries…'
+                    : `⚡ Verify & Approve All ${teams.length || tournament.registeredTeamsCount || 216} Entries (Recalculate Fee)`}
+                </button>
               </div>
             </div>
           ) : tournament.settlementStatus === 'VERIFIED' ? (
@@ -3289,6 +3445,199 @@ export default function TournamentManagePage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Edit Tournament Settings Modal */}
+      {isEditSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+          <div className="relative w-full max-w-3xl rounded-2xl border border-blue-500/40 bg-[#0a1026] p-6 shadow-2xl shadow-blue-500/10 space-y-5 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-blue-900/60 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-600/30">
+                  <Settings className="size-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-wider text-white">
+                    Edit Tournament Settings
+                  </h3>
+                  <p className="text-xs text-blue-300/80">
+                    Update tournament title, game, format, slots, entry fee, prize pool breakdown & rules
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditSettingsOpen(false)}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-white transition"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSettings} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-blue-200 uppercase tracking-wider mb-1">
+                    Tournament Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsForm.name}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, name: e.target.value })}
+                    className="w-full bg-[#070b19] border border-blue-900/80 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-blue-200 uppercase tracking-wider mb-1">
+                    Esports Game Title *
+                  </label>
+                  <select
+                    value={settingsForm.game}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, game: e.target.value })}
+                    className="w-full bg-[#070b19] border border-blue-900/80 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="Free Fire">Free Fire MAX</option>
+                    <option value="BGMI">Battlegrounds Mobile India (BGMI)</option>
+                    <option value="Call of Duty Mobile">Call of Duty: Mobile</option>
+                    <option value="Valorant">Valorant Mobile / PC</option>
+                    <option value="Pokemon UNITE">Pokemon UNITE</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-blue-200 uppercase tracking-wider mb-1">
+                    Tournament Format *
+                  </label>
+                  <select
+                    value={settingsForm.format}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, format: e.target.value })}
+                    className="w-full bg-[#070b19] border border-blue-900/80 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="Auction Tournament">IPL-Style Live Player Auction</option>
+                    <option value="BR Squad">Battle Royale (Squad)</option>
+                    <option value="BR Solo">Battle Royale (Solo)</option>
+                    <option value="CS Squad No Rules">Clash Squad (No Rules)</option>
+                    <option value="CS Squad Limited">Clash Squad (Limited)</option>
+                    <option value="CS Squad One Tap">Clash Squad (One Tap)</option>
+                    <option value="Custom Tournament">Custom Format</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-blue-200 uppercase tracking-wider mb-1">
+                    Total Slots / Teams *
+                  </label>
+                  <input
+                    type="number"
+                    min="2"
+                    required
+                    value={settingsForm.maxTeams}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, maxTeams: e.target.value })}
+                    className="w-full bg-[#070b19] border border-blue-900/80 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-blue-200 uppercase tracking-wider mb-1">
+                    Entry Fee (₹ INR) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-xs font-bold text-amber-400">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={settingsForm.entryFee}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, entryFee: e.target.value })}
+                      placeholder="0 for Free"
+                      className="w-full bg-[#070b19] border border-blue-900/80 rounded-xl pl-7 pr-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Prize Pool Divider Component */}
+              <div className="pt-2">
+                <PrizePoolDivider
+                  totalPrize={settingsForm.prizePool}
+                  initialBreakdown={settingsForm.prizeBreakdown}
+                  onChange={(total, breakdownStr) => {
+                    setSettingsForm((prev) => ({
+                      ...prev,
+                      prizePool: String(total),
+                      prizeBreakdown: breakdownStr,
+                    }))
+                  }}
+                />
+              </div>
+
+              {/* Start Date & Rules */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-blue-200 uppercase tracking-wider mb-1">
+                    Start Date / Drop Schedule
+                  </label>
+                  <input
+                    type="text"
+                    value={settingsForm.startDate}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, startDate: e.target.value })}
+                    placeholder="e.g. 2026-10-10 or Oct 10, 2026"
+                    className="w-full bg-[#070b19] border border-blue-900/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-blue-200 uppercase tracking-wider mb-1">
+                    Organizer UPI ID
+                  </label>
+                  <input
+                    type="text"
+                    value={settingsForm.upiId}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, upiId: e.target.value })}
+                    placeholder="e.g. clasherslive@okaxis"
+                    className="w-full bg-[#070b19] border border-blue-900/80 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-blue-200 uppercase tracking-wider mb-1">
+                  Tournament Rules & Instructions
+                </label>
+                <textarea
+                  rows={4}
+                  value={settingsForm.rules}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, rules: e.target.value })}
+                  placeholder="Paste or write rules for participants..."
+                  className="w-full bg-[#070b19] border border-blue-900/80 rounded-xl p-3 text-xs text-blue-100 focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end gap-3 border-t border-blue-900/60 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsEditSettingsOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-muted-foreground hover:bg-muted transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingSettings}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-blue-600/30 transition hover:scale-105 active:scale-95 disabled:opacity-50"
+                >
+                  <Save className="size-4" />
+                  {isSavingSettings ? 'Saving Settings…' : 'Save Tournament Settings'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

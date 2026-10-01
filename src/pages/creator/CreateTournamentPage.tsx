@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { useAuth } from '@/stores/authStore'
+import { PrizePoolDivider } from '@/components/tournament/PrizePoolDivider'
 
 const GAMES = [
   {
@@ -895,36 +896,15 @@ export default function CreateTournamentPage() {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-                  Total Prize Pool (₹ INR)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-sm text-muted-foreground font-bold">₹</span>
-                  <input
-                    type="number"
-                    value={prizePool}
-                    onChange={(e) => setPrizePool(e.target.value)}
-                    placeholder="50000"
-                    className="w-full bg-card border border-border rounded pl-8 pr-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-                  Prize Distribution Breakdown
-                </label>
-                <input
-                  type="text"
-                  value={prizeBreakdown}
-                  onChange={(e) => setPrizeBreakdown(e.target.value)}
-                  placeholder="1st: ₹25K | 2nd: ₹15K | 3rd: ₹7K | MVP: ₹3K"
-                  className="w-full bg-card border border-border rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
-                />
-              </div>
-            </div>
+            {/* Interactive Prize Pool & Rank Division */}
+            <PrizePoolDivider
+              totalPrize={prizePool}
+              initialBreakdown={prizeBreakdown}
+              onChange={(total, breakdownStr) => {
+                setPrizePool(String(total))
+                setPrizeBreakdown(breakdownStr)
+              }}
+            />
 
             {/* Entry Fee & UPI Setup */}
             <div className="p-4 border border-border rounded-lg bg-card space-y-4">
