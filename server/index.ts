@@ -2690,8 +2690,39 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
 
 // Auction Player Pool: Get players for an auction tournament
 app.get('/api/auctions/:id/players', (req: Request, res: Response) => {
-  const { id } = req.params
-  const players = AUCTION_PLAYERS.filter((p) => p.auctionId === id || p.tournamentId === id)
+  const id = String(req.params.id)
+  const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+  const targetId = tourney ? tourney.id : id
+  let players = AUCTION_PLAYERS.filter((p) => p.auctionId === id || p.tournamentId === id || p.tournamentId === targetId || p.auctionId === targetId)
+  if (players.length === 0) {
+    const tourneyTeams = REGISTERED_TEAMS.filter((t) => t.tournamentId === id || t.tournamentId === targetId)
+    if (tourneyTeams.length > 0) {
+      players = tourneyTeams.map((t) => ({
+        id: t.id,
+        auctionId: targetId,
+        tournamentId: targetId,
+        name: t.captainName || t.name,
+        ign: t.captainIgn || t.name,
+        gameUid: t.players?.[0]?.gameUid || 'N/A',
+        role: (t.role as any) || 'Rusher',
+        basePrice: 5000,
+        tier: 'Tier 2 (Pro)',
+        phone: t.captainPhone,
+        email: t.captainEmail,
+        clipUrl: t.clipUrl,
+        photoUrl: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+        stats: {
+          kd: '3.50',
+          matchesPlayed: 45,
+          headshotRate: '60%',
+          achievements: t.achievements || 'Registered Draft Candidate',
+        },
+        status: 'available',
+        paymentStatus: 'verified',
+        registeredAt: t.registeredAt,
+      }))
+    }
+  }
   return res.json({ count: players.length, players })
 })
 

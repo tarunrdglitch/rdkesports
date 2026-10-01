@@ -126,6 +126,85 @@ interface AuctionPlayer {
   registeredAt: string
 }
 
+// Official 36 District Franchise Teams & Ambassadors (12 Group A, 12 Group B, 12 Group C)
+export const TNBBL_36_TEAMS: Array<{ name: string; group: 'GROUP A' | 'GROUP B' | 'GROUP C'; ambassador: string }> = [
+  // GROUP A (12)
+  { name: 'MADURAI WARRIORS', group: 'GROUP A', ambassador: 'Madurai Warriors Ambassador' },
+  { name: 'KRISHNAGIRI ELITES', group: 'GROUP A', ambassador: 'Krishnagiri Elites Ambassador' },
+  { name: 'KARUR KNIGHTS', group: 'GROUP A', ambassador: 'Karur Knights Ambassador' },
+  { name: 'VELLORE EMPIRES', group: 'GROUP A', ambassador: 'Vellore Empires Ambassador' },
+  { name: 'CHENNAI CHALLENGERS', group: 'GROUP A', ambassador: 'Chennai Challengers Ambassador' },
+  { name: 'NAMAKKAL DOMINATORS', group: 'GROUP A', ambassador: 'Namakkal Dominators Ambassador' },
+  { name: 'KANCHIPURAM TITANS', group: 'GROUP A', ambassador: 'Kanchipuram Titans Ambassador' },
+  { name: 'KANYAKUMARI KODEX', group: 'GROUP A', ambassador: 'Kanyakumari Kodex Ambassador' },
+  { name: 'RAMANATHAPURAM ROYALS', group: 'GROUP A', ambassador: 'Ramanathapuram Royals Ambassador' },
+  { name: 'TIRUVANAMALAI THUNDERS', group: 'GROUP A', ambassador: 'Tiruvanamalai Thunders Ambassador' },
+  { name: 'VILLUPURAM WIPERS', group: 'GROUP A', ambassador: 'Villupuram Wipers Ambassador' },
+  { name: 'TRICHY UNITED', group: 'GROUP A', ambassador: 'Trichy United Ambassador' },
+
+  // GROUP B (12)
+  { name: 'CHEGALPATTU REBELS', group: 'GROUP B', ambassador: 'Chegalpattu Rebels Ambassador' },
+  { name: 'SALEM SPARTANS', group: 'GROUP B', ambassador: 'Salem Spartans Ambassador' },
+  { name: 'SIVAGANGAI SENATORS', group: 'GROUP B', ambassador: 'Sivagangai Senators Ambassador' },
+  { name: 'THANJAI LIONS', group: 'GROUP B', ambassador: 'Thanjai Lions Ambassador' },
+  { name: 'TIRUVARUR RAIDERS', group: 'GROUP B', ambassador: 'Tiruvarur Raiders Ambassador' },
+  { name: 'NELLAI TIGERS', group: 'GROUP B', ambassador: 'Nellai Tigers Ambassador' },
+  { name: 'COIMBATORE BLASTERS', group: 'GROUP B', ambassador: 'Coimbatore Blasters Ambassador' },
+  { name: 'DINDIGUL DRAGONS', group: 'GROUP B', ambassador: 'Dindigul Dragons Ambassador' },
+  { name: 'NILAGIRI NAUGHTYS', group: 'GROUP B', ambassador: 'Nilagiri Naughtys Ambassador' },
+  { name: 'TIRUVALLUR CHAMPS', group: 'GROUP B', ambassador: 'Tiruvallur Champs Ambassador' },
+  { name: 'ERODE RIVALS', group: 'GROUP B', ambassador: 'Erode Rivals Ambassador' },
+  { name: 'BHUVANESH FF', group: 'GROUP B', ambassador: 'Bhuvanesh FF Ambassador' },
+
+  // GROUP C (12)
+  { name: 'VIRUDHUNAGAR NINJAS', group: 'GROUP C', ambassador: 'Virudhunagar Ninjas Ambassador' },
+  { name: 'ARIYALUR JODZ', group: 'GROUP C', ambassador: 'Ariyalur Jodz Ambassador' },
+  { name: 'TIRUPPUR WOLVES', group: 'GROUP C', ambassador: 'Tiruppur Wolves Ambassador' },
+  { name: 'THOOTHYKUDI STRICKERS', group: 'GROUP C', ambassador: 'Thoothykudi Strickers Ambassador' },
+  { name: 'THENI GLADIATORS', group: 'GROUP C', ambassador: 'Theni Gladiators Ambassador' },
+  { name: 'RANIPET DESTROYERS', group: 'GROUP C', ambassador: 'Ranipet Destroyers Ambassador' },
+  { name: 'PUDUKOTTAI FLAWLESS', group: 'GROUP C', ambassador: 'Pudukottai Flawless Ambassador' },
+  { name: 'PERAMBALUR XTREMZ', group: 'GROUP C', ambassador: 'Perambalur Xtremz Ambassador' },
+  { name: 'MAYILADUTHURAI MONSTERS', group: 'GROUP C', ambassador: 'Mayiladuthurai Monsters Ambassador' },
+  { name: 'TENKASI WARRIORS', group: 'GROUP C', ambassador: 'Tenkasi Warriors Ambassador' },
+  { name: 'KALLAKURICHI KINGS', group: 'GROUP C', ambassador: 'Kallakurichi Kings Ambassador' },
+  { name: 'CUDDALORE HEROES', group: 'GROUP C', ambassador: 'Cuddalore Heroes Ambassador' },
+]
+
+function mapTeamsToCandidates(teamList: any[], tourneyId: string = ''): AuctionPlayer[] {
+  return teamList.map((t: any, index: number) => {
+    const ign = t.captainIgn || t.players?.[0]?.ign || t.name || `Player #${index + 1}`
+    const name = t.captainName || t.players?.[0]?.name || ign
+    return {
+      id: t.id || `candidate-${index + 1}`,
+      auctionId: tourneyId,
+      tournamentId: tourneyId,
+      name,
+      ign,
+      gameUid: t.players?.[0]?.gameUid || 'N/A',
+      phone: t.captainPhone,
+      email: t.captainEmail,
+      role: t.role || 'All-Rounder',
+      tier: (t.tier || 'Tier 2 (Pro)') as any,
+      basePrice: t.basePrice || 5000,
+      currentBid: t.currentBid || 5000,
+      soldPrice: t.soldPrice,
+      soldToTeam: t.soldToTeam || t.ambassadorName,
+      status: (t.soldPrice ? 'sold' : 'available') as any,
+      paymentStatus: (t.status === 'verified' || t.paymentStatus === 'verified' ? 'verified' : 'pending') as any,
+      registeredAt: t.registeredAt || new Date().toISOString(),
+      clipUrl: t.clipUrl || '',
+      stats: {
+        kd: t.kd || '3.80',
+        matchesPlayed: 45,
+        headshotRate: t.headshotRate || '58%',
+        achievements: t.achievements || t.experience || 'Competitive Draft Candidate',
+      },
+      photoUrl: t.photoUrl || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+    }
+  })
+}
+
 export default function TournamentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
@@ -137,6 +216,8 @@ export default function TournamentDetailPage() {
   const [roadmap, setRoadmap] = useState<TournamentRoadmap | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+
+  const isAuction = Boolean(tournament && (tournament.format === 'Auction Tournament' || tournament.format.toLowerCase().includes('auction')))
 
   // Video Montage Clip Modal State
   const [activeClip, setActiveClip] = useState<{ ign: string; name: string; url: string; role: string } | null>(null)
@@ -177,74 +258,117 @@ export default function TournamentDetailPage() {
 
   // Group filter for Teams tab
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<'ALL' | 'GROUP A' | 'GROUP B' | 'GROUP C'>('ALL')
-  const hasGroups = teams.some((t) => t.group)
+  const hasGroups = isAuction || teams.some((t) => t.group)
   const filteredTeams = selectedGroupFilter === 'ALL'
     ? teams
     : teams.filter((t) => (t.group || '').toUpperCase() === selectedGroupFilter)
 
-  // Group teams and individual players by Ambassador & Franchise Team
+  // Group 216 candidate players into the 36 District Franchise Teams & Ambassadors
   const franchiseGroups = useMemo(() => {
-    const map = new Map<string, {
-      ambassadorName: string
-      teamName: string
-      group?: string
-      status: string
-      players: Array<{
+    if (!isAuction) return []
+
+    // 1. Initialize 36 Franchise Teams (12 Group A, 12 Group B, 12 Group C)
+    const groups = TNBBL_36_TEAMS.map((tDef, idx) => ({
+      index: idx + 1,
+      ambassadorName: tDef.ambassador,
+      teamName: tDef.name,
+      group: tDef.group,
+      status: 'verified',
+      players: [] as Array<{
         ign: string
         name?: string
         role?: string
         experience?: string
         achievements?: string
         clipUrl?: string
-      }>
-    }>()
+      }>,
+    }))
+
+    // 2. Flatten all registered candidate players
+    const allCandidates: Array<{
+      ign: string
+      name?: string
+      role?: string
+      experience?: string
+      achievements?: string
+      clipUrl?: string
+      assignedTeam?: string
+      assignedAmbassador?: string
+    }> = []
 
     teams.forEach((t) => {
-      const hasAmb = Boolean(t.ambassadorName && t.ambassadorName.trim())
-      const ambName = hasAmb ? t.ambassadorName!.trim() : (t.players && t.players.length > 1 ? t.captainName : 'Franchise Lead')
-      const franchiseTeam = hasAmb ? t.name : (t.name || 'Franchise Team')
-      const key = hasAmb ? t.ambassadorName!.trim().toLowerCase() : t.id
-
-      if (!map.has(key)) {
-        map.set(key, {
-          ambassadorName: ambName,
-          teamName: franchiseTeam,
-          group: t.group,
-          status: t.status,
-          players: [],
-        })
-      }
-
-      const entry = map.get(key)!
-      if (t.group && !entry.group) entry.group = t.group
-
       if (t.players && t.players.length > 1) {
         t.players.forEach((p) => {
-          entry.players.push({
+          allCandidates.push({
             ign: p.ign,
             name: p.name,
-            role: p.role || t.role,
+            role: p.role || t.role || 'All-Rounder',
             experience: p.experience || t.experience,
             achievements: p.achievements || t.achievements,
             clipUrl: t.clipUrl,
+            assignedTeam: t.name,
+            assignedAmbassador: t.ambassadorName,
           })
         })
       } else {
         const ign = t.captainIgn || t.players?.[0]?.ign || t.name
         const name = t.captainName || t.players?.[0]?.name
-        entry.players.push({
+        allCandidates.push({
           ign,
           name,
-          role: t.role,
+          role: t.role || 'All-Rounder',
           experience: t.experience,
           achievements: t.achievements,
           clipUrl: t.clipUrl,
+          assignedTeam: t.name,
+          assignedAmbassador: t.ambassadorName,
         })
       }
     })
 
-    return Array.from(map.values())
-  }, [teams])
+    // 3. Match candidates with existing team or ambassador name if present
+    const unassigned: typeof allCandidates = []
+    allCandidates.forEach((p) => {
+      let matched = false
+      if (p.assignedAmbassador) {
+        const target = groups.find((g) =>
+          g.ambassadorName.toLowerCase().includes(p.assignedAmbassador!.toLowerCase()) ||
+          p.assignedAmbassador!.toLowerCase().includes(g.teamName.toLowerCase())
+        )
+        if (target) {
+          target.players.push(p)
+          matched = true
+        }
+      } else if (p.assignedTeam) {
+        const target = groups.find((g) =>
+          g.teamName.toLowerCase() === p.assignedTeam!.toLowerCase()
+        )
+        if (target) {
+          target.players.push(p)
+          matched = true
+        }
+      }
+      if (!matched) {
+        unassigned.push(p)
+      }
+    })
+
+    // 4. Distribute remaining candidates evenly 6 per team across the 36 teams
+    let teamCursor = 0
+    unassigned.forEach((p) => {
+      while (teamCursor < groups.length && groups[teamCursor].players.length >= 6) {
+        teamCursor++
+      }
+      if (teamCursor < groups.length) {
+        groups[teamCursor].players.push(p)
+      } else {
+        const minTeam = groups.reduce((min, curr) => curr.players.length < min.players.length ? curr : min, groups[0])
+        minTeam.players.push(p)
+      }
+    })
+
+    return groups
+  }, [teams, isAuction])
 
   const filteredFranchiseGroups = useMemo(() => {
     if (selectedGroupFilter === 'ALL') return franchiseGroups
@@ -266,6 +390,13 @@ export default function TournamentDetailPage() {
     loadTournament()
   }, [id])
 
+  // Keep auction player pool synchronized with teams data
+  useEffect(() => {
+    if (isAuction && auctionPlayers.length === 0 && teams.length > 0) {
+      setAuctionPlayers(mapTeamsToCandidates(teams))
+    }
+  }, [isAuction, auctionPlayers.length, teams])
+
   const loadTournament = async () => {
     setIsLoading(true)
     setError('')
@@ -278,10 +409,22 @@ export default function TournamentDetailPage() {
 
       // If auction tournament, load auction players and default to auction pool tab
       if (data.tournament.format === 'Auction Tournament') {
-        const pRes = await fetch(`/api/auctions/${data.tournament.id}/players`)
-        if (pRes.ok) {
-          const pData = await pRes.json()
-          setAuctionPlayers(pData.players || [])
+        try {
+          const pRes = await fetch(`/api/auctions/${data.tournament.id}/players`)
+          if (pRes.ok) {
+            const pData = await pRes.json()
+            if (pData.players && pData.players.length > 0) {
+              setAuctionPlayers(pData.players)
+            } else if (data.teams && data.teams.length > 0) {
+              setAuctionPlayers(mapTeamsToCandidates(data.teams))
+            }
+          } else if (data.teams && data.teams.length > 0) {
+            setAuctionPlayers(mapTeamsToCandidates(data.teams))
+          }
+        } catch {
+          if (data.teams && data.teams.length > 0) {
+            setAuctionPlayers(mapTeamsToCandidates(data.teams))
+          }
         }
         setActiveTab('auction_pool')
       }
@@ -680,7 +823,6 @@ export default function TournamentDetailPage() {
     )
   }
 
-  const isAuction = tournament.format === 'Auction Tournament' || tournament.format.toLowerCase().includes('auction')
   const isSolo = tournament.format === 'BR Solo' || (tournament as any).teamSize === 'Solo' || (tournament as any).playersPerTeam === 1
   const totalEnrolled = isAuction ? Math.max(auctionPlayers.length, tournament.registeredTeamsCount) : tournament.registeredTeamsCount
   const spotsLeft = Math.max(0, tournament.maxTeams - totalEnrolled)
