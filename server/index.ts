@@ -360,6 +360,7 @@ let OFFICIAL_CREATORS: OfficialCreator[] = [
 ]
 
 // 2. Base Users List (Platform Authority)
+// NOTE: Only real credentials here — test accounts removed for production security.
 let USERS: UserRecord[] = [
   {
     id: 'usr_owner_tarun',
@@ -387,22 +388,6 @@ let USERS: UserRecord[] = [
     role: 'creator',
     organizationId: 'cr_tamil_aura_zoner',
     organizationName: 'Tamil Aura Zoner Esports',
-    password: 'password123',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'usr_head_owner',
-    name: 'RDK Project Head',
-    email: 'head@rdk.com',
-    role: 'super_admin',
-    password: 'password123',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'usr_admin',
-    name: 'RDK Super Admin',
-    email: 'admin@x.com',
-    role: 'super_admin',
     password: 'password123',
     createdAt: new Date().toISOString(),
   },
@@ -1860,7 +1845,7 @@ app.get('/api/tournaments/:id', (req: Request, res: Response) => {
 })
 
 // Update Tournament Details / Status (With Closure Gatekeeper)
-app.patch('/api/tournaments/:id', (req: Request, res: Response) => {
+app.patch('/api/tournaments/:id', requirePartnerOrAdmin, (req: Request, res: Response) => {
   const { id } = req.params
   const index = TOURNAMENTS.findIndex((t) => t.id === id || t.slug === id)
   if (index === -1) {
@@ -1868,7 +1853,27 @@ app.patch('/api/tournaments/:id', (req: Request, res: Response) => {
   }
 
   const tourney = TOURNAMENTS[index]
+
+  // Enforce ownership: only Super Admin or the partner/creator who owns the tournament can update it
+  if (req.user?.role !== 'super_admin') {
+    const isOwner =
+      (req.user?.organizationId && tourney.creatorId === req.user.organizationId) ||
+      (req.user?.id && tourney.creatorId === req.user.id) ||
+      (tourney.creatorName && req.user?.name && tourney.creatorName.toLowerCase() === req.user.name.toLowerCase())
+    if (!isOwner) {
+      return res.status(403).json({ error: 'Forbidden: You can only edit tournaments created by your organization.' })
+    }
+  }
+
+  // Read-only Lock: Once tournament is permanently closed, only Super Admin can edit it
+  if (tourney.isClosed && req.user?.role !== 'super_admin') {
+    return res.status(403).json({
+      error: 'Tournament is closed and archived in read-only mode. Only Super Admin can modify closed tournaments.',
+    })
+  }
+
   const newStatus = req.body.status
+
   const isClosing =
     newStatus === 'CLOSED' ||
     newStatus === 'closed' ||
@@ -1876,11 +1881,12 @@ app.patch('/api/tournaments/:id', (req: Request, res: Response) => {
     req.body.isClosed === true
 
   // ═══════════════════════════════════════════════════════════════
-  // STATUS LOCK: Once COMPLETED/CLOSED, ONLY Super Admin can reopen or modify status
+  // STATUS LOCK: Once COMPLETED/CLOSED, ONLY Super Admin can reopen to an active state
   // ═══════════════════════════════════════════════════════════════
   const currentStatusNormalized = String(tourney.status || '').toLowerCase()
   const isCurrentlyCompleted = currentStatusNormalized === 'completed' || currentStatusNormalized === 'closed'
-  if (isCurrentlyCompleted && newStatus && newStatus.toLowerCase() !== currentStatusNormalized) {
+  const isTargetCompleted = newStatus && (newStatus.toLowerCase() === 'completed' || newStatus.toLowerCase() === 'closed')
+  if (isCurrentlyCompleted && newStatus && !isTargetCompleted && newStatus.toLowerCase() !== currentStatusNormalized) {
     if (req.user?.role !== 'super_admin') {
       return res.status(403).json({
         error: 'Tournament is marked as COMPLETED. Once completed, only a Super Admin can reopen or modify tournament status.',
@@ -2043,7 +2049,8 @@ app.post('/api/tournaments/:id/approve-all-entries', requirePartnerOrAdmin, asyn
 })
 
 // Update Match Room ID & Room Password (With Publishing Toggle)
-app.patch('/api/tournaments/:id/room', (req: Request, res: Response) => {
+// Auth: Only the tournament organizer (Official Partner who owns it) or Super Admin can set room credentials
+app.patch('/api/tournaments/:id/room', requirePartnerOrAdmin, (req: Request, res: Response) => {
   const { id } = req.params
   const { roomId, roomPassword, roomPublished } = req.body
   const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
@@ -2090,7 +2097,8 @@ app.patch('/api/tournaments/:id/room', (req: Request, res: Response) => {
 })
 
 // Update Live Stream & Match Schedule (Creator Broadcast Studio)
-app.patch('/api/tournaments/:id/stream', (req: Request, res: Response) => {
+// Auth: Only the tournament organizer or Super Admin can control the broadcast
+app.patch('/api/tournaments/:id/stream', requirePartnerOrAdmin, (req: Request, res: Response) => {
   const { id } = req.params
   const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
   if (!tourney) {
@@ -2102,6 +2110,21 @@ app.patch('/api/tournaments/:id/stream', (req: Request, res: Response) => {
   if (streamTitle !== undefined) tourney.streamTitle = streamTitle
   if (streamStatus !== undefined) tourney.streamStatus = streamStatus
   if (scheduledMatchInfo !== undefined) tourney.scheduledMatchInfo = scheduledMatchInfo
+
+  // Persist stream changes to PostgreSQL
+  if (isDatabaseConfigured) {
+    prisma.tournament
+      .updateMany({
+        where: { id: tourney.id },
+        data: {
+          streamUrl: tourney.streamUrl || null,
+          streamTitle: tourney.streamTitle || null,
+          streamStatus: tourney.streamStatus || 'offline',
+          scheduledMatchInfo: tourney.scheduledMatchInfo || null,
+        },
+      })
+      .catch((err) => console.error('[Database] Notice persisting stream update:', err))
+  }
 
   return res.json({
     success: true,
@@ -2628,7 +2651,7 @@ app.patch('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, (req: Req
 })
 
 // Batch Allot Teams to Ambassador
-app.post('/api/tournaments/:id/teams/batch-allot', requirePartnerOrAdmin, (req: Request, res: Response) => {
+app.post('/api/tournaments/:id/teams/batch-allot', requirePartnerOrAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params
     const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
@@ -2638,12 +2661,14 @@ app.post('/api/tournaments/:id/teams/batch-allot', requirePartnerOrAdmin, (req: 
 
     const targetTeams = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id)
     let updatedCount = 0
+    const updatedTeamIds: string[] = []
 
     if (Array.isArray(teamIds) && teamIds.length > 0) {
       targetTeams.forEach((t) => {
         if (teamIds.includes(t.id)) {
           t.ambassadorId = ambassadorId || undefined
           t.ambassadorName = ambassadorName || undefined
+          updatedTeamIds.push(t.id)
           updatedCount++
         }
       })
@@ -2653,7 +2678,23 @@ app.post('/api/tournaments/:id/teams/batch-allot', requirePartnerOrAdmin, (req: 
       for (let i = from - 1; i < to; i++) {
         targetTeams[i].ambassadorId = ambassadorId || undefined
         targetTeams[i].ambassadorName = ambassadorName || undefined
+        updatedTeamIds.push(targetTeams[i].id)
         updatedCount++
+      }
+    }
+
+    // Persist ambassador allotments to PostgreSQL so they survive server restarts
+    if (isDatabaseConfigured && updatedTeamIds.length > 0) {
+      try {
+        await (prisma.registeredTeam as any).updateMany({
+          where: { id: { in: updatedTeamIds } },
+          data: {
+            ambassadorId: ambassadorId || null,
+            ambassadorName: ambassadorName || null,
+          },
+        })
+      } catch (dbErr) {
+        console.warn('[Database] Notice persisting batch-allot to PostgreSQL:', dbErr)
       }
     }
 
@@ -2664,7 +2705,7 @@ app.post('/api/tournaments/:id/teams/batch-allot', requirePartnerOrAdmin, (req: 
 })
 
 // Delete Team (Partner / Admin)
-app.delete('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, (req: Request, res: Response) => {
+app.delete('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, async (req: Request, res: Response) => {
   try {
     const { id, teamId } = req.params
     const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
@@ -2673,8 +2714,24 @@ app.delete('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, (req: Re
     const index = REGISTERED_TEAMS.findIndex((t) => t.id === teamId && t.tournamentId === tourney.id)
     if (index === -1) return res.status(404).json({ error: 'Team not found' })
 
+    // Remove from in-memory store
     REGISTERED_TEAMS.splice(index, 1)
     tourney.registeredTeamsCount = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id).length
+
+    // Persist deletion to PostgreSQL — critical so deleted teams don't reappear after Railway restart
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.registeredTeam.delete({ where: { id: String(teamId) } })
+        await prisma.tournament.updateMany({
+          where: { id: tourney.id },
+          data: { registeredTeamsCount: tourney.registeredTeamsCount, teams: tourney.registeredTeamsCount },
+        })
+        // Also delete any associated payment submission for this team
+        await prisma.paymentSubmission.deleteMany({ where: { teamId: String(teamId) } }).catch(() => {})
+      } catch (dbErr) {
+        console.warn('[Database] Notice deleting team from PostgreSQL:', dbErr)
+      }
+    }
 
     return res.json({ success: true, message: 'Team removed' })
   } catch (err: any) {
@@ -2695,12 +2752,14 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
     const isPaid = tourney.entryFee && !tourney.entryFee.toLowerCase().includes('free')
 
     // Gatekeeper: Reject registration if tournament is not open or slots are full
-    if (tourney.status !== 'registration_open') {
+    const statusNormalized = String(tourney.status || '').toLowerCase()
+    const isOpen = statusNormalized === 'registration_open' || statusNormalized === 'upcoming'
+    if (!isOpen) {
       return res.status(400).json({
         error:
-          tourney.status === 'live'
+          statusNormalized === 'live'
             ? 'Tournament is currently live. Registration is closed.'
-            : tourney.status === 'completed'
+            : statusNormalized === 'completed' || statusNormalized === 'closed'
               ? 'Tournament has concluded. Registration is closed.'
               : 'Registration is currently closed for this tournament.',
       })
@@ -2839,11 +2898,13 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
     }
 
     // ── CASE B: Standard Team / Squad Registration ──
-    const { teamName, captainName, captainEmail, captainPhone, captainIgn, players, utr, screenshotUrl } = req.body
+    const teamNameRaw = req.body.teamName || req.body.name || req.body.team
+    const { captainName, captainEmail, captainPhone, captainIgn, players, utr, screenshotUrl } = req.body
 
-    if (!teamName || !captainName || !captainEmail || !captainIgn) {
+    if (!teamNameRaw || !captainName || !captainEmail || !captainIgn) {
       return res.status(400).json({ error: 'Team name, Captain Name, Captain Email, and Captain IGN are required' })
     }
+    const teamName = String(teamNameRaw).trim()
 
     // Duplicate check 1: Team Name uniqueness within this tournament
     const existingTeam = REGISTERED_TEAMS.find(
@@ -3868,8 +3929,8 @@ app.post('/api/tournaments/:id/settlement', requirePartnerOrAdmin, (req: Request
   }
 })
 
-// Super Admin: Verify or Reject Platform Settlement
-app.patch('/api/settlements/:id', requireSuperAdmin, (req: Request, res: Response) => {
+// Super Admin: Verify or Reject Platform Settlement (Supports multiple route aliases)
+const handleVerifySettlement = async (req: Request, res: Response) => {
   try {
     const { id } = req.params
     const { status, rejectionReason } = req.body
@@ -3932,7 +3993,11 @@ app.patch('/api/settlements/:id', requireSuperAdmin, (req: Request, res: Respons
     console.error('Error updating settlement:', error)
     return res.status(500).json({ error: 'Failed to update settlement' })
   }
-})
+}
+
+app.patch('/api/settlements/:id', requireSuperAdmin, handleVerifySettlement)
+app.post('/api/tournaments/:id/settlement/verify', requireSuperAdmin, handleVerifySettlement)
+app.patch('/api/tournaments/:id/settlement', requireSuperAdmin, handleVerifySettlement)
 
 // ═══════════════════════════════════════════════════════════════
 // PLATFORM AUDIT LOGS EXPLORER (Super Admin)
@@ -4000,10 +4065,45 @@ app.get('/api/payments/all', (req: Request, res: Response) => {
   return res.json(list)
 })
 
-// Approve or Reject Payment (Ambassador / Official Creator)
-app.patch('/api/payments/:id', (req: Request, res: Response) => {
+// Submit payment screenshot proof for registered team
+app.post('/api/tournaments/:id/payment', (req: Request, res: Response) => {
   try {
     const { id } = req.params
+    const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+    if (!tourney) return res.status(404).json({ error: 'Tournament not found' })
+
+    const { teamId, teamName, captainName, amount, utr, screenshotUrl } = req.body
+    const newPayment: PaymentSubmission = {
+      id: `pay_${Date.now()}`,
+      tournamentId: tourney.id,
+      tournamentName: tourney.name,
+      teamId: teamId || `team_${Date.now()}`,
+      teamName: teamName || 'Team',
+      captainName: captainName || 'Captain',
+      amount: amount || tourney.entryFee,
+      utr: utr?.trim() || 'SCREENSHOT_UPLOADED',
+      screenshotUrl: screenshotUrl || 'https://images.unsplash.com/photo-1556742049-0a67e55722c0?auto=format&fit=crop&w=400&q=80',
+      status: 'pending',
+      submittedAt: new Date().toISOString(),
+    }
+    PAYMENT_SUBMISSIONS.push(newPayment)
+
+    const team = REGISTERED_TEAMS.find((t) => t.id === teamId)
+    if (team) {
+      if (screenshotUrl) team.paymentProofUrl = screenshotUrl
+      if (utr) team.utr = utr
+    }
+
+    return res.status(201).json({ success: true, payment: newPayment })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to submit payment proof' })
+  }
+})
+
+// Approve or Reject Payment (Ambassador / Official Creator)
+const handleVerifyPayment = (req: Request, res: Response) => {
+  try {
+    const id = req.params.payId || req.params.id
     const { status, rejectionReason } = req.body
 
     if (!['approved', 'rejected'].includes(status)) {
@@ -4042,7 +4142,11 @@ app.patch('/api/payments/:id', (req: Request, res: Response) => {
     console.error('Error verifying payment:', error)
     return res.status(500).json({ error: 'Failed to update payment status' })
   }
-})
+}
+
+app.patch('/api/payments/:id', handleVerifyPayment)
+app.patch('/api/tournaments/:id/payments/:payId/verify', handleVerifyPayment)
+app.patch('/api/tournaments/:id/payments/:payId', handleVerifyPayment)
 
 // 9. Audience / Player Self-Registration (Only creates player / team_captain, NEVER ambassador)
 app.post('/api/auth/register', (req: Request, res: Response) => {
@@ -4199,39 +4303,10 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
           error: 'These temporary auction credentials have expired or this auction has ended and accounts were deleted.',
         })
       }
-      // Check if it's a known demo fallback or auto-resolve
-      const fallback = resolveUser(email, password)
-      const token = jwt.sign(
-        {
-          id: fallback.id,
-          name: fallback.name,
-          email: fallback.email,
-          role: fallback.role,
-          organizationName: fallback.organizationName,
-          ign: fallback.ign,
-        },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      )
-
-      res.cookie('session_token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      })
-
-      return res.json({
-        success: true,
-        user: {
-          id: fallback.id,
-          name: fallback.name,
-          email: fallback.email,
-          role: fallback.role,
-          organizationName: fallback.organizationName,
-          ign: fallback.ign,
-        },
-        token,
+      // Security fix: No longer auto-create ghost accounts for unknown emails.
+      // Return a clear 401 so attackers cannot enumerate or gain access with arbitrary credentials.
+      return res.status(401).json({
+        error: 'No account found with these credentials. Please check your email and password, or contact the tournament organizer.',
       })
     }
 
@@ -4280,6 +4355,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
         name: userRecord.name,
         email: userRecord.email,
         role: userRecord.role,
+        organizationId: userRecord.organizationId,
         organizationName: userRecord.organizationName,
         teamName: userRecord.teamName || userRecord.organizationName,
         tournamentId: userRecord.tournamentId || userRecord.auctionId,
@@ -4889,13 +4965,22 @@ async function seedTnbblData(targetId: string) {
 }
 
 // Endpoint to seed or re-seed TNBBL 36 District Teams & Ambassadors
-app.post('/api/tournaments/:id/seed-tnbbl', async (req: Request, res: Response) => {
+// Auth: Super Admin only — this is a destructive operation that overwrites ambassador allotments
+app.post('/api/tournaments/:id/seed-tnbbl', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id)
     const result = await seedTnbblData(id)
     if (!result.success) {
       return res.status(404).json(result)
     }
+    logAuditEvent({
+      tournamentId: id,
+      action: 'TNBBL_SEEDED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `TNBBL 36 District Teams & Ambassadors re-seeded by Super Admin.`,
+    })
     return res.json(result)
   } catch (error: any) {
     console.error('Error seeding TNBBL data:', error)

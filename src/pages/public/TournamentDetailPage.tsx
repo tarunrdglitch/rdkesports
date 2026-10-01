@@ -1691,14 +1691,14 @@ export default function TournamentDetailPage() {
                                 <span className="size-5 rounded bg-background border border-border flex items-center justify-center text-[10px] font-mono text-muted-foreground shrink-0">
                                   {pIdx + 1}
                                 </span>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-heading font-black text-xs text-foreground tracking-wide">
+                                <div className="min-w-0 flex-1 overflow-hidden">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-heading font-black text-xs text-foreground tracking-wide truncate block max-w-[120px]" title={p.ign}>
                                       {p.ign}
                                     </span>
                                     {p.name && p.name.toLowerCase().trim() !== p.ign.toLowerCase().trim() && (
-                                      <span className="text-[10px] text-muted-foreground">
-                                        ({p.name})
+                                      <span className="text-[10px] text-muted-foreground truncate block max-w-[80px]" title={p.name}>
+                                        ({p.name.length > 18 ? p.name.slice(0, 18) + '…' : p.name})
                                       </span>
                                     )}
                                   </div>
@@ -2078,6 +2078,7 @@ export default function TournamentDetailPage() {
                             <input
                               type="text"
                               required
+                              maxLength={50}
                               placeholder="e.g. Praveen Kumar"
                               value={playerName}
                               onChange={(e) => setPlayerName(e.target.value)}
@@ -2092,6 +2093,7 @@ export default function TournamentDetailPage() {
                             <input
                               type="text"
                               required
+                              maxLength={30}
                               placeholder="e.g. AURA_SNIPER99"
                               value={playerIgn}
                               onChange={(e) => setPlayerIgn(e.target.value)}
