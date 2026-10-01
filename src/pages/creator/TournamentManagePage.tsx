@@ -43,11 +43,13 @@ import {
   QrCode,
   AlertTriangle,
   Settings,
+  Image as ImageIcon,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { useAuth } from '@/stores/authStore'
 import { parseStreamEmbed } from '@/utils/stream'
+import { compressImageFile } from '@/utils/imageCompressor'
 import { PrizePoolDivider } from '@/components/tournament/PrizePoolDivider'
 import {
   TournamentRoadmapTree,
@@ -240,6 +242,48 @@ export default function TournamentManagePage() {
   const [isSubmittingSettlement, setIsSubmittingSettlement] = useState(false)
   const [isClosingTournament, setIsClosingTournament] = useState(false)
   const [isApprovingAll, setIsApprovingAll] = useState(false)
+  const [screenshotFileName, setScreenshotFileName] = useState('')
+  const [isProcessingScreenshot, setIsProcessingScreenshot] = useState(false)
+
+  const handleScreenshotChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload a valid image file (PNG, JPG, JPEG, WEBP)')
+      setTimeout(() => setError(''), 5000)
+      return
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      setError('Image file size must be under 20MB')
+      setTimeout(() => setError(''), 5000)
+      return
+    }
+
+    setScreenshotFileName(file.name)
+    setIsProcessingScreenshot(true)
+    setError('')
+
+    try {
+      const compressedDataUrl = await compressImageFile(file, 1400, 1400, 0.82)
+      setSettlementForm((prev) => ({
+        ...prev,
+        screenshotUrl: compressedDataUrl,
+      }))
+    } catch {
+      const reader = new FileReader()
+      reader.onload = () => {
+        setSettlementForm((prev) => ({
+          ...prev,
+          screenshotUrl: reader.result as string,
+        }))
+      }
+      reader.readAsDataURL(file)
+    } finally {
+      setIsProcessingScreenshot(false)
+    }
+  }
 
   // Edit Tournament Settings Modal State
   const [isEditSettingsOpen, setIsEditSettingsOpen] = useState(false)
@@ -630,6 +674,12 @@ export default function TournamentManagePage() {
       return
     }
 
+    if (newStatus === 'completed' && !canClose && user?.role !== 'super_admin') {
+      setError(`Closure Gatekeeper Active: Cannot mark this tournament as COMPLETED until the 10% platform fee settlement (₹${totalRdkFeeDue.toLocaleString('en-IN')}) has been submitted with screenshot proof and VERIFIED by Super Admin.`)
+      setTimeout(() => setError(''), 6000)
+      return
+    }
+
     try {
       setError('')
       const res = await fetch(`/api/tournaments/${id}`, {
@@ -655,6 +705,11 @@ export default function TournamentManagePage() {
 
   const handleSubmitSettlement = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!settlementForm.screenshotUrl) {
+      setError('Please upload a screenshot of your payment receipt before submitting to Super Admin.')
+      setTimeout(() => setError(''), 5000)
+      return
+    }
     setIsSubmittingSettlement(true)
     setError('')
     try {
@@ -667,9 +722,8 @@ export default function TournamentManagePage() {
         const d = await res.json().catch(() => ({}))
         throw new Error(d.error || 'Failed to submit settlement proof')
       }
-      setSuccessMsg('RDK 10% platform settlement submitted! Super Admin has been notified for verification.')
-      setTimeout(() => setSuccessMsg(''), 4000)
-      setSettlementForm({ utr: '', screenshotUrl: '', notes: '' })
+      setSuccessMsg('Payment screenshot submitted to RDK Super Admin! It is now under review for verification.')
+      setTimeout(() => setSuccessMsg(''), 5000)
       loadSettlement()
       loadData()
     } catch (err: unknown) {
@@ -681,6 +735,12 @@ export default function TournamentManagePage() {
   }
 
   const handleOfficialClosure = async () => {
+    if (!canClose && user?.role !== 'super_admin') {
+      setError(`Closure Gatekeeper Active: Cannot close tournament. The 10% platform fee settlement (₹${totalRdkFeeDue.toLocaleString('en-IN')}) must be submitted with screenshot proof and VERIFIED by Super Admin first.`)
+      setTimeout(() => setError(''), 6000)
+      return
+    }
+
     if (!window.confirm('Confirm Official Tournament Closure? All records and team statistics will be permanently archived for platform audit history.')) {
       return
     }
@@ -2441,7 +2501,7 @@ export default function TournamentManagePage() {
                 </div>
 
                 <div className="p-3 rounded-lg bg-muted/40 border border-border text-[11px] text-muted-foreground leading-relaxed">
-                  Transfer the exact 10% fee amount: <strong className="text-primary font-bold">₹{totalRdkFeeDue.toLocaleString('en-IN')}</strong>. After completing the payment, note the Bank Reference / UTR Number and submit below.
+                  Transfer the exact 10% fee amount: <strong className="text-primary font-bold">₹{totalRdkFeeDue.toLocaleString('en-IN')}</strong> to the official UPI ID above. After completing the payment, upload your payment screenshot proof below for Super Admin verification.
                 </div>
               </div>
 
@@ -2450,19 +2510,92 @@ export default function TournamentManagePage() {
                 <div className="flex items-center gap-2 border-b border-border pb-3">
                   <Receipt className="size-4 text-emerald-400" />
                   <h4 className="font-heading font-black text-xs uppercase tracking-wider text-foreground">
-                    Submit Settlement Proof
+                    Submit Settlement Payment Screenshot
                   </h4>
                 </div>
 
-                <form onSubmit={handleSubmitSettlement} className="space-y-3">
+                <form onSubmit={handleSubmitSettlement} className="space-y-3.5">
+                  {/* Image Screenshot Upload (REQUIRED) */}
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-foreground mb-1.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <ImageIcon className="size-3.5 text-primary" />
+                        Upload Payment Screenshot *
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-normal">
+                        PNG, JPG, WEBP
+                      </span>
+                    </label>
+
+                    {settlementForm.screenshotUrl ? (
+                      <div className="p-3 border-2 border-emerald-500/40 rounded-xl bg-card flex items-center gap-3">
+                        <div className="relative size-16 rounded-lg overflow-hidden border border-border shrink-0 bg-black/60">
+                          <img
+                            src={settlementForm.screenshotUrl}
+                            alt="Uploaded Screenshot"
+                            className="size-full object-cover"
+                          />
+                        </div>
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                            <CheckCircle2 className="size-3.5" />
+                            <span>Payment Screenshot Attached</span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {screenshotFileName || 'Image Ready for Super Admin'}
+                          </p>
+                          <label className="text-[11px] text-primary hover:underline cursor-pointer font-semibold inline-block">
+                            Change Image
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={handleScreenshotChange}
+                            />
+                          </label>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSettlementForm({ ...settlementForm, screenshotUrl: '' })
+                            setScreenshotFileName('')
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition"
+                          title="Remove screenshot"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="border-2 border-dashed border-border hover:border-primary/60 rounded-xl p-5 flex flex-col items-center justify-center cursor-pointer bg-background hover:bg-muted/20 transition-all text-center group">
+                        <div className="p-2.5 rounded-full bg-primary/10 text-primary group-hover:scale-110 transition mb-2">
+                          <Upload className="size-5" />
+                        </div>
+                        <span className="text-xs font-bold text-foreground">
+                          {isProcessingScreenshot ? 'Compressing Image…' : 'Click to Upload Payment Screenshot'}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground mt-0.5">
+                          Attach screenshot of ₹{totalRdkFeeDue.toLocaleString('en-IN')} paid to rdktechnologies@upi
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleScreenshotChange}
+                          disabled={isProcessingScreenshot}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Optional UTR / Reference */}
                   <div>
                     <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                      12-Digit Bank UTR / Ref Number *
+                      12-Digit Bank UTR / Ref Number (Optional)
                     </label>
                     <input
                       type="text"
-                      required
-                      placeholder="e.g. 427819920182"
+                      placeholder="e.g. 427819920182 (Optional if clearly shown on screenshot)"
                       value={settlementForm.utr}
                       onChange={(e) =>
                         setSettlementForm({ ...settlementForm, utr: e.target.value })
@@ -2471,28 +2604,14 @@ export default function TournamentManagePage() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                      Payment Screenshot URL (Optional)
-                    </label>
-                    <input
-                      type="url"
-                      placeholder="https://..."
-                      value={settlementForm.screenshotUrl}
-                      onChange={(e) =>
-                        setSettlementForm({ ...settlementForm, screenshotUrl: e.target.value })
-                      }
-                      className="w-full bg-background border border-border rounded px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
-                    />
-                  </div>
-
+                  {/* Optional Notes */}
                   <div>
                     <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                       Notes / Remarks (Optional)
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Final match concluded, 10% settlement paid"
+                      placeholder="e.g. 10% platform fee paid from GPay"
                       value={settlementForm.notes}
                       onChange={(e) =>
                         setSettlementForm({ ...settlementForm, notes: e.target.value })
@@ -2503,14 +2622,17 @@ export default function TournamentManagePage() {
 
                   <button
                     type="submit"
-                    disabled={isSubmittingSettlement || !settlementForm.utr}
-                    className="w-full py-2.5 rounded bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition shadow disabled:opacity-60 flex items-center justify-center gap-1.5"
+                    disabled={isSubmittingSettlement || !settlementForm.screenshotUrl}
+                    className="w-full py-2.5 rounded-lg bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                   >
-                    <Receipt className="size-4" />
+                    <Upload className="size-4" />
                     {isSubmittingSettlement
-                      ? 'Submitting Proof…'
-                      : 'Submit Settlement to RDK Technologies'}
+                      ? 'Submitting Proof to Super Admin…'
+                      : '📤 Submit Payment Screenshot to Super Admin'}
                   </button>
+                  <p className="text-[10px] text-center text-muted-foreground">
+                    Super Admin will review this screenshot in their desk to verify and unlock tournament closure.
+                  </p>
                 </form>
               </div>
             </div>
@@ -2541,28 +2663,37 @@ export default function TournamentManagePage() {
                     <strong className="text-emerald-400">CLEARED (Ready for Closure)</strong>
                   ) : (
                     <strong className="text-amber-400">
-                      LOCKED (10% Fee Settlement must be VERIFIED first)
+                      LOCKED (10% Fee Settlement of ₹{totalRdkFeeDue.toLocaleString('en-IN')} must be VERIFIED by Super Admin first)
                     </strong>
                   )}
                 </p>
               </div>
 
               {tourneyStatus === 'completed' || tournament.isClosed ? (
-                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted border border-border text-xs font-bold text-foreground">
-                  <CheckCircle2 className="size-4 text-emerald-400" />
-                  <span>Tournament Officially Closed & Archived</span>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted border border-border text-xs font-bold text-foreground">
+                    <CheckCircle2 className="size-4 text-emerald-400" />
+                    <span>Tournament Officially Completed</span>
+                  </div>
+                  {!canClose && (
+                    <span className="text-[11px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-lg">
+                      ⚠️ 10% Platform Fee Verification Pending
+                    </span>
+                  )}
                 </div>
               ) : (
                 <button
                   type="button"
                   onClick={handleOfficialClosure}
-                  disabled={isClosingTournament || !canClose}
+                  disabled={isClosingTournament || (!canClose && user?.role !== 'super_admin')}
                   className="px-5 py-2.5 rounded-lg bg-primary text-background font-bold text-xs hover:bg-primary/90 transition shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
                   <Trophy className="size-4" />
                   {isClosingTournament
                     ? 'Closing Tournament…'
-                    : 'Officially Conclude & Archive Tournament'}
+                    : canClose
+                    ? 'Officially Conclude & Archive Tournament'
+                    : `🔒 Locked (Upload Screenshot of ₹${totalRdkFeeDue.toLocaleString('en-IN')})`}
                 </button>
               )}
             </div>

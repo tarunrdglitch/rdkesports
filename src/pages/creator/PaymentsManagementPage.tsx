@@ -97,6 +97,17 @@ export default function PaymentsManagementPage() {
   const [rejectionReason, setRejectionReason] = useState('')
   const [isProcessingAction, setIsProcessingAction] = useState(false)
 
+  // Lightbox Modal for Payment Screenshot Proof
+  const [previewProofModal, setPreviewProofModal] = useState<{
+    url: string
+    title: string
+    tournamentName?: string
+    partnerName?: string
+    amount?: number | string
+    utr?: string
+    settlementItem?: PlatformSettlementItem
+  } | null>(null)
+
   const [isLoading, setIsLoading] = useState(true)
   const [actionMsg, setActionMsg] = useState('')
   const [error, setError] = useState('')
@@ -484,21 +495,68 @@ export default function PaymentsManagementPage() {
                       </td>
 
                       <td className="px-4 py-3">
-                        {s.utr ? (
+                        {s.screenshotUrl ? (
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPreviewProofModal({
+                                  url: s.screenshotUrl!,
+                                  title: `10% Platform Settlement — ${s.tournamentName}`,
+                                  tournamentName: s.tournamentName,
+                                  partnerName: s.partnerName,
+                                  amount: s.rdkFee,
+                                  utr: s.utr,
+                                  settlementItem: s,
+                                })
+                              }
+                              className="group relative size-12 rounded-lg border-2 border-primary/30 overflow-hidden bg-black/60 hover:border-primary shrink-0 transition shadow-sm hover:scale-105 active:scale-95"
+                              title="Click to view full payment screenshot"
+                            >
+                              <img
+                                src={s.screenshotUrl}
+                                alt="Payment Proof"
+                                className="size-full object-cover group-hover:opacity-90"
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                <Eye className="size-4 text-white" />
+                              </div>
+                            </button>
+                            <div className="space-y-0.5 min-w-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPreviewProofModal({
+                                    url: s.screenshotUrl!,
+                                    title: `10% Platform Settlement — ${s.tournamentName}`,
+                                    tournamentName: s.tournamentName,
+                                    partnerName: s.partnerName,
+                                    amount: s.rdkFee,
+                                    utr: s.utr,
+                                    settlementItem: s,
+                                  })
+                                }
+                                className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+                              >
+                                <Eye className="size-3" /> View Screenshot
+                              </button>
+                              {s.utr && !s.utr.startsWith('SCREENSHOT-') ? (
+                                <span className="font-mono text-[10px] text-muted-foreground block truncate max-w-[130px]" title={s.utr}>
+                                  Ref: {s.utr}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-emerald-400 block font-semibold">
+                                  Screenshot Uploaded
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : s.utr ? (
                           <div className="space-y-0.5">
                             <span className="font-mono text-[11px] font-bold text-foreground select-all bg-muted/30 px-1.5 py-0.5 rounded block w-fit">
                               {s.utr}
                             </span>
-                            {s.screenshotUrl && (
-                              <a
-                                href={s.screenshotUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[10px] text-primary hover:underline flex items-center gap-1 font-semibold"
-                              >
-                                <Eye className="size-3" /> View Proof
-                              </a>
-                            )}
+                            <span className="text-amber-400 text-[10px] block">No image attached</span>
                           </div>
                         ) : (
                           <span className="text-muted-foreground text-[10px] italic">
@@ -778,6 +836,116 @@ export default function PaymentsManagementPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal for Payment Screenshot Proof */}
+      {previewProofModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-in fade-in"
+          onClick={() => setPreviewProofModal(null)}
+        >
+          <div
+            className="relative max-w-3xl w-full max-h-[92vh] bg-card border border-border rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border bg-card">
+              <div>
+                <h4 className="font-heading font-black text-sm uppercase tracking-wider text-foreground flex items-center gap-2">
+                  <Receipt className="size-4 text-primary" />
+                  {previewProofModal.title}
+                </h4>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground mt-1">
+                  {previewProofModal.partnerName && (
+                    <span>
+                      Sender: <strong className="text-foreground">{previewProofModal.partnerName}</strong>
+                    </span>
+                  )}
+                  {previewProofModal.amount && (
+                    <span>
+                      Fee Amount: <strong className="text-emerald-400">₹{previewProofModal.amount.toLocaleString()}</strong>
+                    </span>
+                  )}
+                  {previewProofModal.utr && !previewProofModal.utr.startsWith('SCREENSHOT-') && (
+                    <span className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded text-foreground">
+                      Ref: {previewProofModal.utr}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewProofModal(null)}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition"
+                title="Close"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* Image Viewport */}
+            <div className="p-4 overflow-auto flex-1 flex items-center justify-center bg-black/70 min-h-[300px]">
+              <img
+                src={previewProofModal.url}
+                alt="Payment Proof Screenshot"
+                className="max-h-[62vh] w-auto max-w-full object-contain rounded-lg shadow-2xl border border-white/10"
+              />
+            </div>
+
+            {/* Footer / Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 border-t border-border bg-card">
+              <a
+                href={previewProofModal.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-primary hover:underline flex items-center gap-1 font-semibold"
+              >
+                <ExternalLink className="size-3.5" />
+                Open original full resolution
+              </a>
+
+              <div className="flex items-center gap-2">
+                {previewProofModal.settlementItem &&
+                  isSuperAdmin &&
+                  previewProofModal.settlementItem.status === 'UNDER_REVIEW' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const item = previewProofModal.settlementItem!
+                          setPreviewProofModal(null)
+                          setRejectingSettlement(item)
+                          setRejectionReason('')
+                        }}
+                        className="px-3 py-1.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 font-bold text-xs transition"
+                      >
+                        Reject Proof
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const item = previewProofModal.settlementItem!
+                          setPreviewProofModal(null)
+                          handleVerifySettlement(item)
+                        }}
+                        className="px-4 py-1.5 rounded bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition flex items-center gap-1.5 shadow"
+                      >
+                        <Check className="size-3.5" />
+                        Verify 10% Settlement
+                      </button>
+                    </>
+                  )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewProofModal(null)}
+                  className="px-4 py-1.5 rounded border border-border text-xs text-muted-foreground hover:bg-muted font-semibold"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

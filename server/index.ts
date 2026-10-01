@@ -1850,7 +1850,11 @@ app.patch('/api/tournaments/:id', (req: Request, res: Response) => {
 
   const tourney = TOURNAMENTS[index]
   const newStatus = req.body.status
-  const isClosing = newStatus === 'CLOSED' || newStatus === 'closed' || req.body.isClosed === true
+  const isClosing =
+    newStatus === 'CLOSED' ||
+    newStatus === 'closed' ||
+    newStatus === 'completed' ||
+    req.body.isClosed === true
 
   // ═══════════════════════════════════════════════════════════════
   // STATUS LOCK: Once COMPLETED/CLOSED, ONLY Super Admin can reopen or modify status
@@ -1866,18 +1870,22 @@ app.patch('/api/tournaments/:id', (req: Request, res: Response) => {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // CLOSURE GATEKEEPER: Settlement must be VERIFIED before closing
+  // CLOSURE GATEKEEPER: Settlement must be VERIFIED before completing or closing
   // ═══════════════════════════════════════════════════════════════
   if (isClosing) {
     const finances = calculateTournamentFinances(tourney)
     if (finances.grossRevenue > 0 && finances.settlementStatus !== 'VERIFIED') {
-      return res.status(400).json({
-        error: `Closure Gatekeeper: Tournament cannot be CLOSED until the RDK 10% platform fee settlement (₹${finances.rdkFee.toLocaleString()}) has been submitted by the partner and officially VERIFIED by RDK Super Admin. Current settlement status: ${finances.settlementStatus}.`,
-        finances,
-      })
+      if (req.user?.role !== 'super_admin') {
+        return res.status(400).json({
+          error: `Closure Gatekeeper: Tournament cannot be marked as COMPLETED or CLOSED until the RDK 10% platform fee settlement (₹${finances.rdkFee.toLocaleString()}) has been submitted with screenshot proof and officially VERIFIED by RDK Super Admin. Current settlement status: ${finances.settlementStatus}.`,
+          finances,
+        })
+      }
     }
 
-    req.body.status = 'CLOSED'
+    if (newStatus !== 'completed') {
+      req.body.status = 'CLOSED'
+    }
     req.body.isClosed = true
     req.body.closedAt = new Date().toISOString()
 
@@ -3724,12 +3732,13 @@ app.post('/api/tournaments/:id/settlement', requirePartnerOrAdmin, (req: Request
     }
 
     const { utr, screenshotUrl, paymentDate, notes, amount } = req.body
-    if (!utr && !screenshotUrl) {
-      return res.status(400).json({ error: 'Payment UTR or screenshot proof is required for settlement verification.' })
+    if (!screenshotUrl) {
+      return res.status(400).json({ error: 'Please upload an image screenshot of your payment proof for Super Admin review.' })
     }
 
     const finances = calculateTournamentFinances(tourney)
     const settlementAmount = amount ? Number(amount) : finances.rdkFee
+    const finalUtr = utr && utr.trim() ? utr.trim() : `SCREENSHOT-${Date.now().toString().slice(-6)}`
 
     let settlement = PLATFORM_SETTLEMENTS.find((s) => s.tournamentId === tourney.id)
     if (!settlement) {
@@ -3745,7 +3754,7 @@ app.post('/api/tournaments/:id/settlement', requirePartnerOrAdmin, (req: Request
         rdkFee: finances.rdkFee,
         partnerNet: finances.partnerNet,
         status: 'UNDER_REVIEW',
-        utr: utr?.trim(),
+        utr: finalUtr,
         screenshotUrl,
         paymentDate: paymentDate || new Date().toISOString().split('T')[0],
         notes,
@@ -3755,7 +3764,7 @@ app.post('/api/tournaments/:id/settlement', requirePartnerOrAdmin, (req: Request
       PLATFORM_SETTLEMENTS.push(settlement)
     } else {
       settlement.status = 'UNDER_REVIEW'
-      settlement.utr = utr?.trim() || settlement.utr
+      settlement.utr = finalUtr || settlement.utr
       settlement.screenshotUrl = screenshotUrl || settlement.screenshotUrl
       settlement.paymentDate = paymentDate || settlement.paymentDate
       settlement.notes = notes || settlement.notes
