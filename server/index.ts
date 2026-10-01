@@ -818,22 +818,41 @@ export function calculateTournamentFinances(tourney: TournamentRecord): Financia
     tourney.format === 'Auction Tournament' ||
     tourney.format?.toLowerCase().includes('auction')
 
-  // Count approved / verified paid registrations
-  const verifiedTeams = REGISTERED_TEAMS.filter(
-    (t) => t.tournamentId === tourney.id && (String(t.status) === 'verified' || String(t.status) === 'approved')
+  const matchesTournament = (targetId?: string) =>
+    Boolean(targetId && (targetId === tourney.id || targetId === tourney.slug))
+
+  // 1. Teams registrations
+  const teamsList = REGISTERED_TEAMS.filter((t) => matchesTournament(t.tournamentId))
+  const verifiedTeams = teamsList.filter(
+    (t) => String(t.status) === 'verified' || String(t.status) === 'approved'
   ).length
 
-  const verifiedAuctionCandidates = AUCTION_PLAYERS.filter(
-    (p) =>
-      (p.tournamentId === tourney.id || p.auctionId === tourney.id) &&
-      (String(p.paymentStatus) === 'verified' || String(p.paymentStatus) === 'approved')
+  // 2. Auction Draft Candidates
+  const auctionList = AUCTION_PLAYERS.filter(
+    (p) => matchesTournament(p.tournamentId) || matchesTournament(p.auctionId)
+  )
+  const verifiedAuctionCandidates = auctionList.filter(
+    (p) => String(p.paymentStatus) === 'verified' || String(p.paymentStatus) === 'approved'
   ).length
 
-  const totalRegisteredEntries = isAuction
-    ? AUCTION_PLAYERS.filter((p) => p.tournamentId === tourney.id || p.auctionId === tourney.id).length
-    : REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id).length
+  // 3. Verified Payment Submissions Queue
+  const approvedPayments = PAYMENT_SUBMISSIONS.filter(
+    (pay) => matchesTournament(pay.tournamentId) && (pay.status === 'approved' || (pay.status as string) === 'verified')
+  ).length
 
-  let approvedEntries = isAuction ? verifiedAuctionCandidates : verifiedTeams
+  const totalRegisteredEntries = Math.max(
+    teamsList.length,
+    auctionList.length,
+    tourney.registeredTeamsCount || 0,
+    tourney.teams || 0
+  )
+
+  let approvedEntries = Math.max(
+    verifiedTeams,
+    verifiedAuctionCandidates,
+    approvedPayments
+  )
+
   if (approvedEntries === 0 && totalRegisteredEntries > 0) {
     approvedEntries = totalRegisteredEntries
   }
@@ -3626,7 +3645,17 @@ app.get('/api/settlements', requirePartnerOrAdmin, (req: Request, res: Response)
     }
 
     const fin = calculateTournamentFinances(t)
-    const existingSettlement = PLATFORM_SETTLEMENTS.find((s) => s.tournamentId === t.id)
+    const existingSettlement = PLATFORM_SETTLEMENTS.find(
+      (s) => s.tournamentId === t.id || s.tournamentId === t.slug
+    )
+
+    if (existingSettlement) {
+      existingSettlement.entryFee = fin.entryFee
+      existingSettlement.approvedEntries = fin.approvedEntries
+      existingSettlement.grossRevenue = fin.grossRevenue
+      existingSettlement.rdkFee = fin.rdkFee
+      existingSettlement.partnerNet = fin.partnerNet
+    }
 
     return {
       id: existingSettlement?.id || `settlement_${t.id}`,
@@ -3668,7 +3697,9 @@ app.get('/api/settlements/stats', requireSuperAdmin, (_req: Request, res: Respon
     totalGross += fin.grossRevenue
     totalRdk += fin.rdkFee
 
-    const existing = PLATFORM_SETTLEMENTS.find((s) => s.tournamentId === t.id)
+    const existing = PLATFORM_SETTLEMENTS.find(
+      (s) => s.tournamentId === t.id || s.tournamentId === t.slug
+    )
     const status = existing?.status || t.settlementStatus || 'PENDING'
 
     if (status === 'VERIFIED') {
