@@ -1439,11 +1439,86 @@ app.patch('/api/creators/:id', requirePartnerOrAdmin, updateCreatorHandler)
 
 
 // 5. Creator Ambassador Management Desk (Created ONLY by Official Creators)
-app.get('/api/creators/ambassadors', (_req: Request, res: Response) => {
-  res.json(AMBASSADORS)
+app.get('/api/creators/ambassadors', async (_req: Request, res: Response) => {
+  try {
+    const list: AmbassadorRecord[] = [...AMBASSADORS]
+
+    // 1. If database is configured, load any ambassadors saved in PostgreSQL
+    if (isDatabaseConfigured) {
+      try {
+        const dbAmbs = await prisma.ambassador.findMany()
+        for (const da of dbAmbs) {
+          if (!list.some((a) => a.id === da.id || a.email.toLowerCase() === da.email.toLowerCase())) {
+            list.push({
+              id: da.id,
+              name: da.name,
+              email: da.email,
+              creatorId: da.creatorId,
+              tournamentId: da.tournamentId,
+              tournamentName: da.tournamentName,
+              assignedTeamRange: da.assignedTeamRange,
+              phone: da.phone || undefined,
+              createdAt: da.createdAt.toISOString(),
+            })
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[Database] Notice loading ambassadors:', dbErr)
+      }
+    }
+
+    // 2. Include any ephemeral franchise bidders generated for auctions by creators
+    for (const b of EPHEMERAL_BIDDERS) {
+      if (b.status === 'active' && !list.some((a) => a.id === b.id || a.email.toLowerCase() === b.loginCode.toLowerCase())) {
+        const tourney = TOURNAMENTS.find((t) => t.id === b.auctionId || t.slug === b.auctionId)
+        list.push({
+          id: b.id,
+          name: `${b.teamName} (Franchise Bidder)`,
+          email: b.loginCode,
+          creatorId: tourney?.creatorId || 'creator',
+          tournamentId: b.auctionId,
+          tournamentName: tourney?.name || 'Auction Tournament',
+          assignedTeamRange: b.teamName,
+          phone: '',
+          createdAt: b.createdAt,
+        })
+      }
+    }
+
+    // 3. Dynamically include any ambassador entered on registered teams by the creator
+    for (const tm of REGISTERED_TEAMS) {
+      if (tm.ambassadorName && tm.ambassadorName.trim()) {
+        const ambName = tm.ambassadorName.trim()
+        const exists = list.some(
+          (a) =>
+            a.name.toLowerCase() === ambName.toLowerCase() ||
+            (a.tournamentId === tm.tournamentId && a.assignedTeamRange.toLowerCase() === tm.name.toLowerCase())
+        )
+        if (!exists) {
+          const cleanSlug = ambName.toLowerCase().replace(/[^a-z0-9]/g, '')
+          const tourney = TOURNAMENTS.find((t) => t.id === tm.tournamentId || t.slug === tm.tournamentId)
+          list.push({
+            id: tm.ambassadorId || `amb_${tm.tournamentId}_${cleanSlug}`,
+            name: ambName,
+            email: `${cleanSlug}@rdkesports.in`,
+            creatorId: tourney?.creatorId || 'creator',
+            tournamentId: tm.tournamentId,
+            tournamentName: tourney?.name || 'Tournament',
+            assignedTeamRange: tm.name,
+            phone: '',
+            createdAt: tm.registeredAt,
+          })
+        }
+      }
+    }
+
+    return res.json(list)
+  } catch (err: any) {
+    return res.json(AMBASSADORS)
+  }
 })
 
-app.post('/api/creators/ambassadors', (req: Request, res: Response) => {
+app.post('/api/creators/ambassadors', async (req: Request, res: Response) => {
   try {
     const { name, email, password, tournamentId, tournamentName, assignedTeamRange, phone, creatorId } = req.body
 
@@ -1471,6 +1546,26 @@ app.post('/api/creators/ambassadors', (req: Request, res: Response) => {
 
     AMBASSADORS.push(newAmbassador)
 
+    // Save to PostgreSQL if available
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.ambassador.create({
+          data: {
+            id: newAmbassador.id,
+            name: newAmbassador.name,
+            email: newAmbassador.email,
+            creatorId: newAmbassador.creatorId,
+            tournamentId: newAmbassador.tournamentId,
+            tournamentName: newAmbassador.tournamentName,
+            assignedTeamRange: newAmbassador.assignedTeamRange,
+            phone: newAmbassador.phone || null,
+          },
+        })
+      } catch (dbErr) {
+        console.warn('[Database] Notice saving ambassador to DB:', dbErr)
+      }
+    }
+
     // Provision the ambassador user login
     const ambUser: UserRecord = {
       id: newAmbassador.id,
@@ -1490,10 +1585,17 @@ app.post('/api/creators/ambassadors', (req: Request, res: Response) => {
   }
 })
 
-app.delete('/api/creators/ambassadors/:id', (req: Request, res: Response) => {
-  const { id } = req.params
+app.delete('/api/creators/ambassadors/:id', async (req: Request, res: Response) => {
+  const id = String(req.params.id)
   AMBASSADORS = AMBASSADORS.filter((a) => a.id !== id)
   USERS = USERS.filter((u) => u.id !== id)
+
+  if (isDatabaseConfigured) {
+    try {
+      await prisma.ambassador.delete({ where: { id } }).catch(() => {})
+    } catch {}
+  }
+
   return res.json({ success: true, message: 'Ambassador revoked successfully' })
 })
 
@@ -2449,8 +2551,8 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
           tourney.status === 'live'
             ? 'Tournament is currently live. Registration is closed.'
             : tourney.status === 'completed'
-            ? 'Tournament has concluded. Registration is closed.'
-            : 'Registration is currently closed for this tournament.',
+              ? 'Tournament has concluded. Registration is closed.'
+              : 'Registration is currently closed for this tournament.',
       })
     }
 
@@ -4221,6 +4323,39 @@ async function initDatabase() {
         registeredAt: p.registeredAt.toISOString(),
       }))
       console.log(`[Database] Synced ${AUCTION_PLAYERS.length} auction draft players from PostgreSQL.`)
+    }
+
+    const dbAmbassadors = await prisma.ambassador.findMany()
+    if (dbAmbassadors.length > 0) {
+      AMBASSADORS = dbAmbassadors.map((a) => ({
+        id: a.id,
+        name: a.name,
+        email: a.email,
+        creatorId: a.creatorId,
+        tournamentId: a.tournamentId,
+        tournamentName: a.tournamentName,
+        assignedTeamRange: a.assignedTeamRange,
+        phone: a.phone || undefined,
+        createdAt: a.createdAt.toISOString(),
+      }))
+      console.log(`[Database] Synced ${AMBASSADORS.length} ambassadors from PostgreSQL.`)
+    }
+
+    const dbBidders = await prisma.ephemeralAuctionBidder.findMany()
+    if (dbBidders.length > 0) {
+      EPHEMERAL_BIDDERS = dbBidders.map((b) => ({
+        id: b.id,
+        auctionId: b.auctionId,
+        teamName: b.teamName,
+        loginCode: b.loginCode,
+        passkey: b.passkey,
+        allocatedPurse: b.allocatedPurse,
+        spentAmount: b.spentAmount,
+        group: (b as any).group || undefined,
+        status: b.status as any,
+        createdAt: b.createdAt.toISOString(),
+      }))
+      console.log(`[Database] Synced ${EPHEMERAL_BIDDERS.length} ephemeral auction bidders from PostgreSQL.`)
     }
     // Ensure Owner account exists in PostgreSQL
     try {

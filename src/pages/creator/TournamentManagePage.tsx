@@ -293,15 +293,95 @@ export default function TournamentManagePage() {
     loadData()
   }, [id])
 
-  const loadAmbassadors = async () => {
+  const matchAmbassadorToTourney = (a: TournamentAmbassador, tObj?: Tournament | null) => {
+    if (!a) return false
+    const currentT = tObj || tournament
+    const curId = (currentT?.id || '').toLowerCase().trim()
+    const curSlug = (currentT?.slug || '').toLowerCase().trim()
+    const routeId = (id || '').toLowerCase().trim()
+    const cleanCurName = (currentT?.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+
+    const aTourneyId = (a.tournamentId || '').toLowerCase().trim()
+    const aTourneyName = (a.tournamentName || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+
+    // 1. Direct ID, Route ID (slug/param), or Slug match
+    if (aTourneyId && (aTourneyId === curId || aTourneyId === routeId || (curSlug && aTourneyId === curSlug))) {
+      return true
+    }
+    // 2. Normalized Name match
+    if (cleanCurName && aTourneyName && (aTourneyName.includes(cleanCurName) || cleanCurName.includes(aTourneyName))) {
+      return true
+    }
+    // 3. Fallback: if no tournamentId specified on ambassador
+    if (!aTourneyId && cleanCurName && aTourneyName === cleanCurName) {
+      return true
+    }
+    return false
+  }
+
+  const loadAmbassadors = async (currentTournament?: Tournament | null, currentTeams?: Team[]) => {
     try {
+      const activeTourney = currentTournament || tournament
+      const activeTeams = currentTeams || teams || []
       const res = await fetch('/api/creators/ambassadors')
+      let list: TournamentAmbassador[] = []
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data)) {
-          setAmbassadors(data.filter((a: TournamentAmbassador) => a.tournamentId === id || a.tournamentName === tournament?.name))
+          list = data.filter((a: TournamentAmbassador) => matchAmbassadorToTourney(a, activeTourney))
         }
       }
+
+      // Also dynamically collect any ambassadors that creators entered on teams in this tournament
+      const seenNames = new Set(list.map((a) => a.name.toLowerCase().trim()))
+      activeTeams.forEach((team: any) => {
+        const ambName = (team.ambassadorName || team.ambassador || '').trim()
+        if (ambName && !seenNames.has(ambName.toLowerCase())) {
+          seenNames.add(ambName.toLowerCase())
+          list.push({
+            id: team.ambassadorId || `team_amb_${encodeURIComponent(ambName)}`,
+            name: ambName,
+            email: team.ambassadorEmail || `${ambName.toLowerCase().replace(/[^a-z0-9]/g, '')}@rdk-esports.in`,
+            tournamentId: activeTourney?.id || id || '',
+            tournamentName: activeTourney?.name || '',
+            assignedTeamRange: team.name || 'Assigned Squad',
+            phone: team.ambassadorPhone || '—',
+            createdAt: new Date().toISOString(),
+          })
+        }
+      })
+
+      // If auction tournament, also check for any auction franchise bidders generated dynamically
+      const activeTourneyId = activeTourney?.id || id
+      if (activeTourneyId) {
+        try {
+          const credRes = await fetch(`/api/auctions/${activeTourneyId}/credentials`)
+          if (credRes.ok) {
+            const credData = await credRes.json()
+            const bidders = credData.ephemeralBidders || credData.bidders || []
+            bidders.forEach((b: any) => {
+              const bName = (b.name || '').trim()
+              if (bName && !seenNames.has(bName.toLowerCase())) {
+                seenNames.add(bName.toLowerCase())
+                list.push({
+                  id: b.id || `bidder_${encodeURIComponent(bName)}`,
+                  name: bName,
+                  email: b.email || `${bName.toLowerCase().replace(/[^a-z0-9]/g, '')}@rdk-esports.in`,
+                  tournamentId: activeTourney?.id || id || '',
+                  tournamentName: activeTourney?.name || '',
+                  assignedTeamRange: b.teamRange || b.teamName || 'Auction Franchise Bidder',
+                  phone: b.phone || '—',
+                  createdAt: b.createdAt || new Date().toISOString(),
+                })
+              }
+            })
+          }
+        } catch {
+          // Non-blocking
+        }
+      }
+
+      setAmbassadors(list)
     } catch {
       // Fallback
     }
@@ -319,8 +399,9 @@ export default function TournamentManagePage() {
       if (!tRes.ok) throw new Error('Tournament not found')
       const tData = await tRes.json()
       const t = tData.tournament
+      const loadedTeams = tData.teams || []
       setTournament(t)
-      setTeams(tData.teams || [])
+      setTeams(loadedTeams)
       setRoomId(t.roomId || '')
       setRoomPassword(t.roomPassword || '')
       setRoomPublished(Boolean(t.roomPublished))
@@ -355,15 +436,8 @@ export default function TournamentManagePage() {
         setRoadmap(rData.roadmap)
       }
 
-      // Load ambassadors assigned strictly to this tournament
-      fetch('/api/creators/ambassadors')
-        .then((r) => (r.ok ? r.json() : []))
-        .then((data) => {
-          if (Array.isArray(data)) {
-            setAmbassadors(data.filter((a: TournamentAmbassador) => a.tournamentId === id || a.tournamentName === t.name))
-          }
-        })
-        .catch(() => {})
+      // Load ambassadors dynamically
+      loadAmbassadors(t, loadedTeams)
     } catch (err: unknown) {
       if (err instanceof Error) setError(err.message)
       else setError('Failed to load tournament data')
@@ -3073,11 +3147,21 @@ export default function TournamentManagePage() {
                             <span className="rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-primary font-semibold text-[11px]">
                               {a.assignedTeamRange}
                             </span>
-                            {teams.filter((t) => t.ambassadorId === a.id).length > 0 && (
-                              <span className="text-[10px] text-emerald-400 font-bold">
-                                {teams.filter((t) => t.ambassadorId === a.id).length} squads allotted
-                              </span>
-                            )}
+                            {(() => {
+                              const allottedCount = teams.filter((t) =>
+                                t.ambassadorId === a.id ||
+                                (t.ambassadorName && t.ambassadorName.trim().toLowerCase() === a.name.trim().toLowerCase()) ||
+                                (a.assignedTeamRange && t.name && (
+                                  t.name.toLowerCase().includes(a.assignedTeamRange.toLowerCase()) ||
+                                  a.assignedTeamRange.toLowerCase().includes(t.name.toLowerCase())
+                                ))
+                              ).length
+                              return allottedCount > 0 ? (
+                                <span className="text-[10px] text-emerald-400 font-bold">
+                                  {allottedCount} squads allotted
+                                </span>
+                              ) : null
+                            })()}
                           </div>
                         </td>
                         <td className="p-3 text-muted-foreground">{a.phone || '—'}</td>
