@@ -42,6 +42,7 @@ app.use(
 app.use(express.json({ limit: '30mb' }))
 app.use(express.urlencoded({ extended: true, limit: '30mb' }))
 app.use(cookieParser())
+app.use(express.static(path.join(__dirname, '../public')))
 
 // ═══════════════════════════════════════════════════════════════
 // EXACT 3 MAIN USER ROLES + SUBORDINATE TOURNAMENT STAFF
@@ -2220,7 +2221,7 @@ app.post('/api/tournaments/:id/import-sheet', requirePartnerOrAdmin, async (req:
             phone: p.phone,
             email: p.email,
             clipUrl: p.clipUrl,
-            photoUrl: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+            photoUrl: '/gg.png',
             stats: {
               kd: '3.50',
               matchesPlayed: 75,
@@ -2539,7 +2540,7 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
         experience: String(req.body.experience || req.body.playerExperience || '').trim(),
         achievements: String(req.body.achievements || req.body.playerAchievements || achievements || '').trim(),
         clipUrl: clipUrl.trim(),
-        photoUrl: photoUrl.trim() || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+        photoUrl: photoUrl.trim() || '/gg.png',
         stats: {
           kd: kd ? String(kd) : '3.50',
           matchesPlayed: 75,
@@ -2710,7 +2711,7 @@ app.get('/api/auctions/:id/players', (req: Request, res: Response) => {
         phone: t.captainPhone,
         email: t.captainEmail,
         clipUrl: t.clipUrl,
-        photoUrl: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+        photoUrl: '/gg.png',
         stats: {
           kd: '3.50',
           matchesPlayed: 45,
@@ -2774,7 +2775,7 @@ app.post('/api/auctions/:id/sheets/import', (req: Request, res: Response) => {
         phone: p.phone || '',
         email: p.email || '',
         clipUrl: p.clipUrl || '',
-        photoUrl: p.photoUrl || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+        photoUrl: p.photoUrl || '/gg.png',
         stats: {
           kd: p.kd ? String(p.kd) : '4.00',
           headshotRate: p.headshotRate || '65%',

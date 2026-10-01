@@ -44,6 +44,31 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { parseStreamEmbed } from '@/utils/stream'
 import { TournamentRoadmapTree, TournamentRoadmap } from '@/components/tournament/TournamentRoadmapTree'
 import { compressImageFile } from '@/utils/imageCompressor'
+import { SHEET_CLIPS } from '@/data/sheetClips'
+
+function getEmbedUrl(url: string): string | null {
+  if (!url) return null
+  if (url.includes('youtube.com/watch?v=')) {
+    const id = url.split('v=')[1]?.split('&')[0]
+    return id ? `https://www.youtube.com/embed/${id}` : null
+  }
+  if (url.includes('youtu.be/')) {
+    const id = url.split('youtu.be/')[1]?.split('?')[0]
+    return id ? `https://www.youtube.com/embed/${id}` : null
+  }
+  if (url.includes('youtube.com/shorts/')) {
+    const id = url.split('shorts/')[1]?.split('?')[0]
+    return id ? `https://www.youtube.com/embed/${id}` : null
+  }
+  if (url.includes('drive.google.com')) {
+    const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/) || url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+    if (idMatch && idMatch[1]) {
+      return `https://drive.google.com/file/d/${idMatch[1]}/preview`
+    }
+  }
+  return null
+}
+
 
 interface Tournament {
   id: string
@@ -175,6 +200,10 @@ function mapTeamsToCandidates(teamList: any[], tourneyId: string = ''): AuctionP
   return teamList.map((t: any, index: number) => {
     const ign = t.captainIgn || t.players?.[0]?.ign || t.name || `Player #${index + 1}`
     const name = t.captainName || t.players?.[0]?.name || ign
+    const ignKey = (ign || '').toLowerCase().trim()
+    const nameKey = (name || '').toLowerCase().trim()
+    const resolvedClipUrl = t.clipUrl || SHEET_CLIPS[ignKey] || SHEET_CLIPS[nameKey] || ''
+
     return {
       id: t.id || `candidate-${index + 1}`,
       auctionId: tourneyId,
@@ -193,14 +222,14 @@ function mapTeamsToCandidates(teamList: any[], tourneyId: string = ''): AuctionP
       status: (t.soldPrice ? 'sold' : 'available') as any,
       paymentStatus: (t.status === 'verified' || t.paymentStatus === 'verified' ? 'verified' : 'pending') as any,
       registeredAt: t.registeredAt || new Date().toISOString(),
-      clipUrl: t.clipUrl || '',
+      clipUrl: resolvedClipUrl,
       stats: {
         kd: t.kd || '3.80',
         matchesPlayed: 45,
         headshotRate: t.headshotRate || '58%',
         achievements: t.achievements || t.experience || 'Competitive Draft Candidate',
       },
-      photoUrl: t.photoUrl || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+      photoUrl: t.photoUrl && !t.photoUrl.includes('photo-1566492031773-4f4e44671857') ? t.photoUrl : '/gg.png',
     }
   })
 }
@@ -299,13 +328,16 @@ export default function TournamentDetailPage() {
     teams.forEach((t) => {
       if (t.players && t.players.length > 1) {
         t.players.forEach((p) => {
+          const pIgnKey = (p.ign || '').toLowerCase().trim()
+          const pNameKey = (p.name || '').toLowerCase().trim()
+          const resolvedClip = (p as any).clipUrl || t.clipUrl || SHEET_CLIPS[pIgnKey] || SHEET_CLIPS[pNameKey] || ''
           allCandidates.push({
             ign: p.ign,
             name: p.name,
             role: p.role || t.role || 'All-Rounder',
             experience: p.experience || t.experience,
             achievements: p.achievements || t.achievements,
-            clipUrl: t.clipUrl,
+            clipUrl: resolvedClip,
             assignedTeam: t.name,
             assignedAmbassador: t.ambassadorName,
           })
@@ -313,13 +345,16 @@ export default function TournamentDetailPage() {
       } else {
         const ign = t.captainIgn || t.players?.[0]?.ign || t.name
         const name = t.captainName || t.players?.[0]?.name
+        const ignKey = (ign || '').toLowerCase().trim()
+        const nameKey = (name || '').toLowerCase().trim()
+        const resolvedClip = t.clipUrl || SHEET_CLIPS[ignKey] || SHEET_CLIPS[nameKey] || ''
         allCandidates.push({
           ign,
           name,
           role: t.role || 'All-Rounder',
           experience: t.experience,
           achievements: t.achievements,
-          clipUrl: t.clipUrl,
+          clipUrl: resolvedClip,
           assignedTeam: t.name,
           assignedAmbassador: t.ambassadorName,
         })
@@ -1302,13 +1337,13 @@ export default function TournamentDetailPage() {
                   className="group relative rounded-xl border border-border bg-card overflow-hidden hover:border-primary/50 transition-all shadow-lg flex flex-col justify-between"
                 >
                   {/* Card Header & Photo */}
-                  <div className="relative h-44 w-full bg-muted/40 overflow-hidden">
+                  <div className="relative h-44 w-full bg-black/70 overflow-hidden flex items-center justify-center border-b border-border">
                     <img
-                      src={player.photoUrl || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80'}
+                      src={player.photoUrl && !player.photoUrl.includes('photo-1566492031773-4f4e44671857') ? player.photoUrl : '/gg.png'}
                       alt={player.ign}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-300"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-card via-card/10 to-transparent pointer-events-none" />
 
                     {/* Role & Tier Badges */}
                     <div className="absolute top-2 left-2 flex gap-1">
@@ -1338,46 +1373,53 @@ export default function TournamentDetailPage() {
                     </div>
                   </div>
 
-                  {/* Card Stats & Achievements */}
+                  {/* Card Achievements & Gameplay Montage Clip */}
                   <div className="p-3.5 space-y-3">
-                    <div className="grid grid-cols-2 gap-2 text-center text-xs">
-                      <div className="p-1.5 rounded bg-muted/40 border border-border">
-                        <span className="text-[9px] uppercase font-bold text-muted-foreground block">K/D Ratio</span>
-                        <span className="font-bold text-foreground">{player.stats?.kd || '3.80'}</span>
-                      </div>
-                      <div className="p-1.5 rounded bg-muted/40 border border-border">
-                        <span className="text-[9px] uppercase font-bold text-muted-foreground block">Headshot %</span>
-                        <span className="font-bold text-foreground">{player.stats?.headshotRate || '60%'}</span>
-                      </div>
-                    </div>
-
                     {player.stats?.achievements && (
                       <p className="text-[11px] text-muted-foreground italic line-clamp-2 leading-relaxed">
                         "{player.stats.achievements}"
                       </p>
                     )}
 
-                    {/* Gameplay Montage Video Button */}
-                    {player.clipUrl ? (
-                      <button
-                        onClick={() =>
-                          setActiveClip({
-                            ign: player.ign,
-                            name: player.name,
-                            url: player.clipUrl || '',
-                            role: player.role,
-                          })
-                        }
-                        className="w-full py-2 rounded-lg font-heading font-black text-[11px] bg-primary/10 hover:bg-primary text-primary hover:text-background border border-primary/30 transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <Play className="size-3.5 fill-current" />
-                        <span>WATCH GAMEPLAY MONTAGE</span>
-                      </button>
-                    ) : (
-                      <div className="py-1.5 text-center text-[10px] text-muted-foreground bg-muted/20 rounded">
-                        No montage video linked
-                      </div>
-                    )}
+                    {/* Gameplay Montage Video Button & Direct Link */}
+                    {(() => {
+                      const ignKey = (player.ign || '').toLowerCase().trim()
+                      const nameKey = (player.name || '').toLowerCase().trim()
+                      const clip = player.clipUrl || SHEET_CLIPS[ignKey] || SHEET_CLIPS[nameKey] || ''
+
+                      return clip ? (
+                        <div className="flex items-center gap-1.5 w-full pt-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveClip({
+                                ign: player.ign,
+                                name: player.name,
+                                url: clip,
+                                role: player.role,
+                              })
+                            }
+                            className="flex-1 py-2 rounded-lg font-heading font-black text-xs bg-amber-500/15 hover:bg-amber-500 text-amber-300 hover:text-black border border-amber-500/40 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                          >
+                            <Play className="size-3.5 fill-current" />
+                            <span>WATCH MONTAGE</span>
+                          </button>
+                          <a
+                            href={clip}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open video link"
+                            className="p-2 rounded-lg bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground border border-border transition-colors flex items-center justify-center shrink-0"
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="py-2 text-center text-[10px] text-muted-foreground bg-muted/20 rounded">
+                          No montage video linked
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
               ))}
@@ -1720,23 +1762,40 @@ export default function TournamentDetailPage() {
                                 </div>
                               </div>
 
-                              {p.clipUrl && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setActiveClip({
-                                      ign: p.ign,
-                                      name: p.name || p.ign,
-                                      url: p.clipUrl!,
-                                      role: p.role || 'Draft Player',
-                                    })
-                                  }
-                                  className="self-start sm:self-center px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 transition shrink-0"
-                                >
-                                  <Video className="size-3" />
-                                  <span>Watch Clip</span>
-                                </button>
-                              )}
+                              {(() => {
+                                const pIgnKey = (p.ign || '').toLowerCase().trim()
+                                const pNameKey = (p.name || '').toLowerCase().trim()
+                                const clip = p.clipUrl || SHEET_CLIPS[pIgnKey] || SHEET_CLIPS[pNameKey] || ''
+
+                                return clip ? (
+                                  <div className="flex items-center gap-1.5 self-start sm:self-center shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setActiveClip({
+                                          ign: p.ign,
+                                          name: p.name || p.ign,
+                                          url: clip,
+                                          role: p.role || 'Draft Player',
+                                        })
+                                      }
+                                      className="px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 transition"
+                                    >
+                                      <Video className="size-3" />
+                                      <span>Watch Clip</span>
+                                    </button>
+                                    <a
+                                      href={clip}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Open direct clip URL"
+                                      className="p-1 rounded-md bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/60 transition"
+                                    >
+                                      <ExternalLink className="size-3" />
+                                    </a>
+                                  </div>
+                                ) : null
+                              })()}
                             </div>
                           ))}
                         </div>
@@ -1972,18 +2031,32 @@ export default function TournamentDetailPage() {
                 </button>
               </div>
 
-              <div className="p-6 text-center space-y-4">
-                <div className="aspect-video w-full rounded-xl bg-black flex flex-col items-center justify-center border border-border p-4 relative overflow-hidden">
-                  <Video className="size-12 text-primary/60 mb-2" />
-                  <p className="text-xs font-bold text-foreground">Gameplay Montage Link Provided by Player</p>
-                  <p className="text-[11px] font-mono text-primary truncate max-w-md mt-1 select-all bg-muted/30 px-3 py-1 rounded">
-                    {activeClip.url}
-                  </p>
+              <div className="p-5 text-center space-y-4">
+                {getEmbedUrl(activeClip.url) ? (
+                  <div className="aspect-video w-full rounded-xl overflow-hidden bg-black border border-border shadow-inner">
+                    <iframe
+                      src={getEmbedUrl(activeClip.url)!}
+                      title={`${activeClip.ign} Gameplay`}
+                      className="w-full h-full border-0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  </div>
+                ) : (
+                  <div className="aspect-video w-full rounded-xl bg-black flex flex-col items-center justify-center border border-border p-4 relative overflow-hidden">
+                    <Video className="size-12 text-primary/60 mb-2" />
+                    <p className="text-xs font-bold text-foreground">Gameplay Montage Link Provided by Player</p>
+                    <p className="text-[11px] font-mono text-primary truncate max-w-md mt-1 select-all bg-muted/30 px-3 py-1 rounded">
+                      {activeClip.url}
+                    </p>
+                  </div>
+                )}
+                <div className="flex items-center justify-center gap-3">
                   <a
                     href={activeClip.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-background font-bold text-xs hover:bg-primary/90 shadow-lg transition-all"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-background font-bold text-xs hover:bg-primary/90 shadow-lg transition-all"
                   >
                     <ExternalLink className="size-4" />
                     Open Video in New Tab (YouTube / Drive)

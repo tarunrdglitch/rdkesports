@@ -647,7 +647,7 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                     >
                       <div className="flex items-center gap-2.5">
                         <img
-                          src={p.photoUrl || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80'}
+                          src={p.photoUrl && !p.photoUrl.includes('photo-1566492031773-4f4e44671857') ? p.photoUrl : '/gg.png'}
                           alt={p.ign}
                           className="size-9 rounded-full object-cover border border-border"
                         />
@@ -737,7 +737,7 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                     <div className="md:col-span-5 space-y-4">
                       <div className="relative aspect-[3/4] max-h-72 rounded-lg overflow-hidden border border-border/80 bg-muted shadow-md group">
                         <img
-                          src={activePlayer.photoUrl || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80'}
+                          src={activePlayer.photoUrl && !activePlayer.photoUrl.includes('photo-1566492031773-4f4e44671857') ? activePlayer.photoUrl : '/gg.png'}
                           alt={activePlayer.ign}
                           className="w-full h-full object-cover"
                         />
@@ -1042,7 +1042,7 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                       <td className="p-3">
                         <div className="flex items-center gap-2.5">
                           <img
-                            src={p.photoUrl || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80'}
+                            src={p.photoUrl && !p.photoUrl.includes('photo-1566492031773-4f4e44671857') ? p.photoUrl : '/gg.png'}
                             alt={p.ign}
                             className="size-8 rounded-full object-cover border border-border"
                           />

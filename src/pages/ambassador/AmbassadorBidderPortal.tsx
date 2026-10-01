@@ -493,8 +493,9 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
                   <div className="relative shrink-0 mx-auto sm:mx-0">
                     <img
                       src={
-                        activePlayer.photoUrl ||
-                        'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80'
+                        activePlayer.photoUrl && !activePlayer.photoUrl.includes('photo-1566492031773-4f4e44671857')
+                          ? activePlayer.photoUrl
+                          : '/gg.png'
                       }
                       alt={activePlayer.ign}
                       className="size-28 sm:size-32 rounded-2xl object-cover border-2 border-primary/40 shadow-xl"
@@ -873,8 +874,9 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
                         <div className="flex items-center gap-3 min-w-0">
                           <img
                             src={
-                              player.photoUrl ||
-                              'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80'
+                              player.photoUrl && !player.photoUrl.includes('photo-1566492031773-4f4e44671857')
+                                ? player.photoUrl
+                                : '/gg.png'
                             }
                             alt={player.ign}
                             className="size-10 rounded-lg object-cover border border-border shrink-0"
@@ -973,8 +975,9 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
                     <div className="flex items-start gap-3">
                       <img
                         src={
-                          player.photoUrl ||
-                          'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80'
+                          player.photoUrl && !player.photoUrl.includes('photo-1566492031773-4f4e44671857')
+                            ? player.photoUrl
+                            : '/gg.png'
                         }
                         alt={player.ign}
                         className="size-14 rounded-xl object-cover border border-emerald-500/40 shrink-0"
