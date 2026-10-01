@@ -44,7 +44,7 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { parseStreamEmbed } from '@/utils/stream'
 import { TournamentRoadmapTree, TournamentRoadmap } from '@/components/tournament/TournamentRoadmapTree'
 import { compressImageFile } from '@/utils/imageCompressor'
-import { SHEET_CLIPS } from '@/data/sheetClips'
+import { SHEET_CLIPS, SHEET_ROLES, SHEET_NAMES } from '@/data/sheetClips'
 
 function getEmbedUrl(url: string): string | null {
   if (!url) return null
@@ -203,17 +203,19 @@ function mapTeamsToCandidates(teamList: any[], tourneyId: string = ''): AuctionP
     const ignKey = (ign || '').toLowerCase().trim()
     const nameKey = (name || '').toLowerCase().trim()
     const resolvedClipUrl = t.clipUrl || SHEET_CLIPS[ignKey] || SHEET_CLIPS[nameKey] || ''
+    const realRole = SHEET_ROLES[ignKey] || SHEET_ROLES[nameKey] || t.role || 'Rusher'
+    const realName = name && name !== ign ? name : (SHEET_NAMES[ignKey] || name)
 
     return {
       id: t.id || `candidate-${index + 1}`,
       auctionId: tourneyId,
       tournamentId: tourneyId,
-      name,
+      name: realName,
       ign,
       gameUid: t.players?.[0]?.gameUid || 'N/A',
       phone: t.captainPhone,
       email: t.captainEmail,
-      role: t.role || 'All-Rounder',
+      role: (realRole as any),
       tier: (t.tier || 'Tier 2 (Pro)') as any,
       basePrice: t.basePrice || 5000,
       currentBid: t.currentBid || 5000,
@@ -285,9 +287,9 @@ export default function TournamentDetailPage() {
   const [playerKd, setPlayerKd] = useState('4.20')
   const [playerAchievements, setPlayerAchievements] = useState('')
 
-  // Group filter for Teams tab
+  // Group filter for regular Teams tab
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<'ALL' | 'GROUP A' | 'GROUP B' | 'GROUP C'>('ALL')
-  const hasGroups = isAuction || teams.some((t) => t.group)
+  const hasGroups = !isAuction && teams.some((t) => t.group)
   const filteredTeams = selectedGroupFilter === 'ALL'
     ? teams
     : teams.filter((t) => (t.group || '').toUpperCase() === selectedGroupFilter)
@@ -296,20 +298,16 @@ export default function TournamentDetailPage() {
   const franchiseGroups = useMemo(() => {
     if (!isAuction) return []
 
-    // 1. Initialize 36 Franchise Teams (12 Group A, 12 Group B, 12 Group C)
+    // 1. Initialize 36 Franchise Teams
     const groups = TNBBL_36_TEAMS.map((tDef, idx) => ({
       index: idx + 1,
       ambassadorName: tDef.ambassador,
       teamName: tDef.name,
-      group: tDef.group,
       status: 'verified',
       players: [] as Array<{
         ign: string
         name?: string
         role?: string
-        experience?: string
-        achievements?: string
-        clipUrl?: string
       }>,
     }))
 
@@ -318,43 +316,38 @@ export default function TournamentDetailPage() {
       ign: string
       name?: string
       role?: string
-      experience?: string
-      achievements?: string
-      clipUrl?: string
       assignedTeam?: string
       assignedAmbassador?: string
     }> = []
 
-    teams.forEach((t) => {
+    const candidateSources = teams && teams.length > 0 ? teams : (auctionPlayers as any[])
+
+    candidateSources.forEach((t: any) => {
       if (t.players && t.players.length > 1) {
-        t.players.forEach((p) => {
+        t.players.forEach((p: any) => {
           const pIgnKey = (p.ign || '').toLowerCase().trim()
           const pNameKey = (p.name || '').toLowerCase().trim()
-          const resolvedClip = (p as any).clipUrl || t.clipUrl || SHEET_CLIPS[pIgnKey] || SHEET_CLIPS[pNameKey] || ''
+          const realRole = SHEET_ROLES[pIgnKey] || SHEET_ROLES[pNameKey] || p.role || t.role || 'Rusher'
+          const realName = p.name && p.name !== p.ign ? p.name : (SHEET_NAMES[pIgnKey] || p.ign)
           allCandidates.push({
             ign: p.ign,
-            name: p.name,
-            role: p.role || t.role || 'All-Rounder',
-            experience: p.experience || t.experience,
-            achievements: p.achievements || t.achievements,
-            clipUrl: resolvedClip,
+            name: realName,
+            role: realRole,
             assignedTeam: t.name,
             assignedAmbassador: t.ambassadorName,
           })
         })
       } else {
-        const ign = t.captainIgn || t.players?.[0]?.ign || t.name
-        const name = t.captainName || t.players?.[0]?.name
+        const ign = t.captainIgn || t.ign || t.players?.[0]?.ign || t.name
+        const name = t.captainName || t.name || t.players?.[0]?.name || ign
         const ignKey = (ign || '').toLowerCase().trim()
         const nameKey = (name || '').toLowerCase().trim()
-        const resolvedClip = t.clipUrl || SHEET_CLIPS[ignKey] || SHEET_CLIPS[nameKey] || ''
+        const realRole = SHEET_ROLES[ignKey] || SHEET_ROLES[nameKey] || t.role || 'Rusher'
+        const realName = name && name !== ign ? name : (SHEET_NAMES[ignKey] || name)
         allCandidates.push({
           ign,
-          name,
-          role: t.role || 'All-Rounder',
-          experience: t.experience,
-          achievements: t.achievements,
-          clipUrl: resolvedClip,
+          name: realName,
+          role: realRole,
           assignedTeam: t.name,
           assignedAmbassador: t.ambassadorName,
         })
@@ -403,12 +396,10 @@ export default function TournamentDetailPage() {
     })
 
     return groups
-  }, [teams, isAuction])
+  }, [teams, auctionPlayers, isAuction])
 
-  const filteredFranchiseGroups = useMemo(() => {
-    if (selectedGroupFilter === 'ALL') return franchiseGroups
-    return franchiseGroups.filter((g) => (g.group || '').toUpperCase() === selectedGroupFilter)
-  }, [franchiseGroups, selectedGroupFilter])
+  const filteredFranchiseGroups = franchiseGroups
+
 
   // Payment Screenshot State (Primary verification)
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null)
@@ -1635,9 +1626,7 @@ export default function TournamentDetailPage() {
             {hasGroups && (
               <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
                 {(['ALL', 'GROUP A', 'GROUP B', 'GROUP C'] as const).map((grp) => {
-                  const count = isAuction
-                    ? grp === 'ALL' ? franchiseGroups.length : franchiseGroups.filter((g) => g.group === grp).length
-                    : grp === 'ALL' ? teams.length : teams.filter((t) => t.group === grp).length
+                  const count = grp === 'ALL' ? teams.length : teams.filter((t) => t.group === grp).length
                   return (
                     <button
                       key={grp}
@@ -1703,19 +1692,6 @@ export default function TournamentDetailPage() {
                         </div>
 
                         <div className="flex flex-col items-end gap-1 shrink-0">
-                          {group.group && (
-                            <span
-                              className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
-                                group.group === 'GROUP A'
-                                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
-                                  : group.group === 'GROUP B'
-                                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
-                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                              }`}
-                            >
-                              {group.group}
-                            </span>
-                          )}
                           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-muted/60 text-muted-foreground border border-border">
                             {group.players.length} {group.players.length === 1 ? 'Player' : 'Players'}
                           </span>
@@ -1728,74 +1704,35 @@ export default function TournamentDetailPage() {
                           Team Roster & Drafted Players:
                         </span>
 
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           {group.players.map((p, pIdx) => (
                             <div
                               key={pIdx}
-                              className="p-2.5 rounded-xl bg-muted/30 border border-border/60 hover:bg-muted/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                              className="p-2.5 rounded-xl bg-muted/30 border border-border/60 hover:bg-muted/50 transition-colors flex items-center justify-between gap-2"
                             >
-                              <div className="flex items-start gap-2.5">
-                                <span className="size-5 rounded bg-background border border-border flex items-center justify-center text-[10px] font-mono text-muted-foreground shrink-0 mt-0.5">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="size-5 rounded bg-background border border-border flex items-center justify-center text-[10px] font-mono text-muted-foreground shrink-0">
                                   {pIdx + 1}
                                 </span>
-                                <div className="space-y-0.5">
-                                  <div className="flex flex-wrap items-center gap-1.5">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-heading font-black text-xs text-foreground tracking-wide">
                                       {p.ign}
                                     </span>
-                                    {p.role && (
-                                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/20">
-                                        {p.role}
+                                    {p.name && p.name.toLowerCase().trim() !== p.ign.toLowerCase().trim() && (
+                                      <span className="text-[10px] text-muted-foreground">
+                                        ({p.name})
                                       </span>
                                     )}
                                   </div>
-                                  {p.name && p.name !== p.ign && (
-                                    <p className="text-[10px] text-muted-foreground">{p.name}</p>
-                                  )}
-                                  {(p.experience || p.achievements) && (
-                                    <p className="text-[10px] text-muted-foreground/80 line-clamp-1">
-                                      {p.experience ? `${p.experience} exp` : ''}
-                                      {p.experience && p.achievements ? ' • ' : ''}
-                                      {p.achievements}
-                                    </p>
-                                  )}
                                 </div>
                               </div>
 
-                              {(() => {
-                                const pIgnKey = (p.ign || '').toLowerCase().trim()
-                                const pNameKey = (p.name || '').toLowerCase().trim()
-                                const clip = p.clipUrl || SHEET_CLIPS[pIgnKey] || SHEET_CLIPS[pNameKey] || ''
-
-                                return clip ? (
-                                  <div className="flex items-center gap-1.5 self-start sm:self-center shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setActiveClip({
-                                          ign: p.ign,
-                                          name: p.name || p.ign,
-                                          url: clip,
-                                          role: p.role || 'Draft Player',
-                                        })
-                                      }
-                                      className="px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 transition"
-                                    >
-                                      <Video className="size-3" />
-                                      <span>Watch Clip</span>
-                                    </button>
-                                    <a
-                                      href={clip}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      title="Open direct clip URL"
-                                      className="p-1 rounded-md bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/60 transition"
-                                    >
-                                      <ExternalLink className="size-3" />
-                                    </a>
-                                  </div>
-                                ) : null
-                              })()}
+                              {p.role && (
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 shrink-0 capitalize">
+                                  {p.role}
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
