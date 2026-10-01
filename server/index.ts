@@ -4452,10 +4452,261 @@ async function initDatabase() {
     } catch (crErr) {
       console.error('[Database] Notice syncing creator credentials to DB:', crErr)
     }
+
+    // Auto-seed TNBBL Season 2 36 District Franchise Teams & Ambassadors if not yet in PostgreSQL
+    try {
+      const tnbbl = TOURNAMENTS.find((t) => t.id === 't_1790865032559' || t.slug === 'tnbbl-season-2' || (t.name && t.name.toLowerCase().includes('tnbbl')))
+      if (tnbbl) {
+        const ambCount = await prisma.ambassador.count({ where: { tournamentId: tnbbl.id } })
+        if (ambCount === 0) {
+          console.log('[Database] Auto-seeding 36 District Franchise Teams & Ambassadors for TNBBL Season 2 into PostgreSQL...')
+          await seedTnbblData(tnbbl.id)
+        }
+      }
+    } catch (autoSeedErr) {
+      console.error('[Database] Notice during TNBBL auto-seed check:', autoSeedErr)
+    }
   } catch (err) {
     console.error('[Database] PostgreSQL sync notice:', err)
   }
 }
+
+// Official 36 District Franchise Teams & Ambassadors definition for database seeding
+const TNBBL_36_DISTRICTS = [
+  // GROUP A (12)
+  { name: 'MADURAI WARRIORS', group: 'GROUP A', ambassador: 'Madurai Warriors Ambassador' },
+  { name: 'KRISHNAGIRI ELITES', group: 'GROUP A', ambassador: 'Krishnagiri Elites Ambassador' },
+  { name: 'KARUR KNIGHTS', group: 'GROUP A', ambassador: 'Karur Knights Ambassador' },
+  { name: 'VELLORE EMPIRES', group: 'GROUP A', ambassador: 'Vellore Empires Ambassador' },
+  { name: 'CHENNAI CHALLENGERS', group: 'GROUP A', ambassador: 'Chennai Challengers Ambassador' },
+  { name: 'NAMAKKAL DOMINATORS', group: 'GROUP A', ambassador: 'Namakkal Dominators Ambassador' },
+  { name: 'KANCHIPURAM TITANS', group: 'GROUP A', ambassador: 'Kanchipuram Titans Ambassador' },
+  { name: 'KANYAKUMARI KODEX', group: 'GROUP A', ambassador: 'Kanyakumari Kodex Ambassador' },
+  { name: 'RAMANATHAPURAM ROYALS', group: 'GROUP A', ambassador: 'Ramanathapuram Royals Ambassador' },
+  { name: 'TIRUVANAMALAI THUNDERS', group: 'GROUP A', ambassador: 'Tiruvanamalai Thunders Ambassador' },
+  { name: 'VILLUPURAM WIPERS', group: 'GROUP A', ambassador: 'Villupuram Wipers Ambassador' },
+  { name: 'TRICHY UNITED', group: 'GROUP A', ambassador: 'Trichy United Ambassador' },
+
+  // GROUP B (12)
+  { name: 'CHEGALPATTU REBELS', group: 'GROUP B', ambassador: 'Chegalpattu Rebels Ambassador' },
+  { name: 'SALEM SPARTANS', group: 'GROUP B', ambassador: 'Salem Spartans Ambassador' },
+  { name: 'SIVAGANGAI SENATORS', group: 'GROUP B', ambassador: 'Sivagangai Senators Ambassador' },
+  { name: 'THANJAI LIONS', group: 'GROUP B', ambassador: 'Thanjai Lions Ambassador' },
+  { name: 'TIRUVARUR RAIDERS', group: 'GROUP B', ambassador: 'Tiruvarur Raiders Ambassador' },
+  { name: 'NELLAI TIGERS', group: 'GROUP B', ambassador: 'Nellai Tigers Ambassador' },
+  { name: 'COIMBATORE BLASTERS', group: 'GROUP B', ambassador: 'Coimbatore Blasters Ambassador' },
+  { name: 'DINDIGUL DRAGONS', group: 'GROUP B', ambassador: 'Dindigul Dragons Ambassador' },
+  { name: 'NILAGIRI NAUGHTYS', group: 'GROUP B', ambassador: 'Nilagiri Naughtys Ambassador' },
+  { name: 'TIRUVALLUR CHAMPS', group: 'GROUP B', ambassador: 'Tiruvallur Champs Ambassador' },
+  { name: 'ERODE RIVALS', group: 'GROUP B', ambassador: 'Erode Rivals Ambassador' },
+  { name: 'BHUVANESH FF', group: 'GROUP B', ambassador: 'Bhuvanesh FF Ambassador' },
+
+  // GROUP C (12)
+  { name: 'VIRUDHUNAGAR NINJAS', group: 'GROUP C', ambassador: 'Virudhunagar Ninjas Ambassador' },
+  { name: 'ARIYALUR JODZ', group: 'GROUP C', ambassador: 'Ariyalur Jodz Ambassador' },
+  { name: 'TIRUPPUR WOLVES', group: 'GROUP C', ambassador: 'Tiruppur Wolves Ambassador' },
+  { name: 'THOOTHYKUDI STRICKERS', group: 'GROUP C', ambassador: 'Thoothykudi Strickers Ambassador' },
+  { name: 'THENI GLADIATORS', group: 'GROUP C', ambassador: 'Theni Gladiators Ambassador' },
+  { name: 'RANIPET DESTROYERS', group: 'GROUP C', ambassador: 'Ranipet Destroyers Ambassador' },
+  { name: 'PUDUKOTTAI FLAWLESS', group: 'GROUP C', ambassador: 'Pudukottai Flawless Ambassador' },
+  { name: 'PERAMBALUR XTREMZ', group: 'GROUP C', ambassador: 'Perambalur Xtremz Ambassador' },
+  { name: 'MAYILADUTHURAI MONSTERS', group: 'GROUP C', ambassador: 'Mayiladuthurai Monsters Ambassador' },
+  { name: 'TENKASI WARRIORS', group: 'GROUP C', ambassador: 'Tenkasi Warriors Ambassador' },
+  { name: 'KALLAKURICHI KINGS', group: 'GROUP C', ambassador: 'Kallakurichi Kings Ambassador' },
+  { name: 'CUDDALORE HEROES', group: 'GROUP C', ambassador: 'Cuddalore Heroes Ambassador' },
+]
+
+async function seedTnbblData(targetId: string) {
+  const tourney = TOURNAMENTS.find((t) => t.id === targetId || t.slug === targetId || (t.name && t.name.toLowerCase().includes('tnbbl')))
+  if (!tourney) return { success: false, error: 'Tournament not found' }
+
+  const creatorId = tourney.creatorId || 'cr_1790692394131'
+  const tId = tourney.id
+  const tName = tourney.name
+
+  // 1. Seed 36 Ambassadors & Ephemeral Bidders
+  for (let idx = 0; idx < TNBBL_36_DISTRICTS.length; idx++) {
+    const item = TNBBL_36_DISTRICTS[idx]
+    const cleanSlug = item.name.toLowerCase().replace(/[^a-z0-9]/g, '_')
+    const ambId = `amb_tnbbl_${cleanSlug}`
+    const bidId = `bid_tnbbl_${cleanSlug}`
+    const email = `${cleanSlug}@auction.rdk`
+    const passkey = `AUCTION#${cleanSlug.slice(0, 4).toUpperCase()}2026`
+
+    // In-memory ambassador
+    const ambRecord: AmbassadorRecord = {
+      id: ambId,
+      name: item.ambassador,
+      email,
+      creatorId,
+      tournamentId: tId,
+      tournamentName: tName,
+      assignedTeamRange: item.name,
+      phone: '',
+      createdAt: new Date().toISOString(),
+    }
+    const existingAmbIdx = AMBASSADORS.findIndex((a) => a.id === ambId)
+    if (existingAmbIdx !== -1) AMBASSADORS[existingAmbIdx] = ambRecord
+    else AMBASSADORS.push(ambRecord)
+
+    // In-memory bidder
+    const bidRecord: EphemeralAuctionBidder = {
+      id: bidId,
+      auctionId: tId,
+      teamName: item.name,
+      loginCode: email,
+      passkey,
+      allocatedPurse: 150000,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    }
+    const existingBidIdx = EPHEMERAL_BIDDERS.findIndex((b) => b.id === bidId)
+    if (existingBidIdx !== -1) EPHEMERAL_BIDDERS[existingBidIdx] = bidRecord
+    else EPHEMERAL_BIDDERS.push(bidRecord)
+
+    // In-memory user
+    const userRec: UserRecord = {
+      id: `usr_${cleanSlug}`,
+      name: item.ambassador,
+      email,
+      role: 'ambassador',
+      password: passkey,
+      organizationName: item.name,
+      teamName: item.name,
+      isEphemeralAuctionBidder: true,
+      auctionId: tId,
+      tournamentId: tId,
+      tournamentName: tName,
+      allocatedPurse: 150000,
+      createdAt: new Date().toISOString(),
+    }
+    const existingUserIdx = USERS.findIndex((u) => u.email.toLowerCase() === email.toLowerCase())
+    if (existingUserIdx !== -1) USERS[existingUserIdx] = userRec
+    else USERS.push(userRec)
+
+    // Persist to PostgreSQL if configured
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.ambassador.upsert({
+          where: { id: ambId },
+          update: {
+            name: item.ambassador,
+            email,
+            creatorId,
+            tournamentId: tId,
+            tournamentName: tName,
+            assignedTeamRange: item.name,
+          },
+          create: {
+            id: ambId,
+            name: item.ambassador,
+            email,
+            creatorId,
+            tournamentId: tId,
+            tournamentName: tName,
+            assignedTeamRange: item.name,
+          },
+        })
+
+        await (prisma.ephemeralAuctionBidder as any).upsert({
+          where: { id: bidId },
+          update: {
+            teamName: item.name,
+            loginCode: email,
+            passkey,
+            allocatedPurse: 150000,
+            group: item.group,
+            status: 'active',
+          },
+          create: {
+            id: bidId,
+            auctionId: tId,
+            teamName: item.name,
+            loginCode: email,
+            passkey,
+            allocatedPurse: 150000,
+            spentAmount: 0,
+            group: item.group,
+            status: 'active',
+          },
+        })
+
+        await prisma.user.upsert({
+          where: { email },
+          update: {
+            name: item.ambassador,
+            role: 'ambassador',
+            password: passkey,
+            organizationName: item.name,
+          },
+          create: {
+            id: `usr_${cleanSlug}`,
+            name: item.ambassador,
+            email,
+            role: 'ambassador',
+            password: passkey,
+            organizationName: item.name,
+            status: 'active',
+          },
+        })
+      } catch (err) {
+        console.error(`[Database] Error seeding ${item.name}:`, err)
+      }
+    }
+  }
+
+  // 2. Allot candidate teams (6 players each) across the 36 franchise teams
+  const tourneyTeams = REGISTERED_TEAMS.filter((t) => t.tournamentId === tId)
+  if (tourneyTeams.length > 0) {
+    for (let idx = 0; idx < TNBBL_36_DISTRICTS.length; idx++) {
+      const item = TNBBL_36_DISTRICTS[idx]
+      const cleanSlug = item.name.toLowerCase().replace(/[^a-z0-9]/g, '_')
+      const ambId = `amb_tnbbl_${cleanSlug}`
+      const start = idx * 6
+      const end = Math.min(start + 6, tourneyTeams.length)
+
+      for (let j = start; j < end; j++) {
+        const teamObj = tourneyTeams[j]
+        teamObj.ambassadorId = ambId
+        teamObj.ambassadorName = item.ambassador
+        teamObj.group = item.group
+
+        if (isDatabaseConfigured) {
+          try {
+            await (prisma.registeredTeam as any).update({
+              where: { id: teamObj.id },
+              data: {
+                ambassadorId: ambId,
+                ambassadorName: item.ambassador,
+                group: item.group,
+              },
+            })
+          } catch (err) {
+            console.error(`[Database] Error updating team ${teamObj.id} allotment:`, err)
+          }
+        }
+      }
+    }
+  }
+
+  console.log(`[Database] Successfully seeded 36 District Franchise Teams & Ambassadors for ${tName} in PostgreSQL!`)
+  return { success: true, count: TNBBL_36_DISTRICTS.length, message: `Seeded 36 franchise teams and ambassadors for ${tName}` }
+}
+
+// Endpoint to seed or re-seed TNBBL 36 District Teams & Ambassadors
+app.post('/api/tournaments/:id/seed-tnbbl', async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id)
+    const result = await seedTnbblData(id)
+    if (!result.success) {
+      return res.status(404).json(result)
+    }
+    return res.json(result)
+  } catch (error: any) {
+    console.error('Error seeding TNBBL data:', error)
+    return res.status(500).json({ error: error.message || 'Failed to seed TNBBL data' })
+  }
+})
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`RDK Esports Tournament OS running on http://0.0.0.0:${PORT}`)
