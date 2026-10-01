@@ -205,14 +205,22 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
 
   // Active player on hammer
   const activePlayer = players.find((p) => p.id === activePlayerId) || players[0]
+  const basePrice = activePlayer?.basePrice || (tournament as any)?.basePrice || 5000
+  const maxSquadSize = (tournament as any)?.maxSquadSize || 6
 
   // Acquired Squad for this franchise
   const mySquad = players.filter(
     (p) => p.status === 'sold' && p.soldToTeam?.toLowerCase() === myTeamName.toLowerCase()
   )
 
+  const squadCount = mySquad.length
+  const isSquadFull = squadCount >= maxSquadSize
+  const remainingSlotsAfter = Math.max(0, maxSquadSize - (squadCount + 1))
+  const requiredReserve = remainingSlotsAfter * basePrice
+
   const totalSpent = mySquad.reduce((sum, p) => sum + (p.soldPrice || p.basePrice), 0)
   const remainingPurse = Math.max(0, allocatedPurse - totalSpent)
+  const maxAllowedBid = Math.max(0, remainingPurse - requiredReserve)
   const isWinningCurrentBid = highestBidderTeam.toLowerCase() === myTeamName.toLowerCase()
 
   // Handle Placing Bid
@@ -220,14 +228,19 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
     setErrorMsg('')
     setFeedbackMsg('')
 
+    if (isSquadFull) {
+      setErrorMsg(`Squad Roster Full! Your franchise already has ${squadCount}/${maxSquadSize} players and cannot place further bids.`)
+      return
+    }
+
     if (amount <= currentBid) {
       setErrorMsg(`Bid must be greater than current bid (₹${currentBid.toLocaleString()})`)
       return
     }
 
-    if (amount > remainingPurse) {
+    if (amount > maxAllowedBid) {
       setErrorMsg(
-        `Insufficient purse budget! You only have ₹${remainingPurse.toLocaleString()} remaining.`
+        `Purse Reserve Violation: You must maintain at least ₹${requiredReserve.toLocaleString()} (₹${basePrice.toLocaleString()} base bid × ${remainingSlotsAfter} slots) for remaining squad slots. Maximum bid allowed is ₹${maxAllowedBid.toLocaleString()}.`
       )
       return
     }
@@ -592,61 +605,101 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
 
                 {/* AMBASSADOR BIDDING CONTROLS */}
                 <div className="mt-6 space-y-4">
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">
-                    Place Official Bid as {myTeamName}
-                  </span>
-
-                  {/* Quick Bid Increment Buttons */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {[1000, 2500, 5000, 10000].map((inc) => {
-                      const targetBid = currentBid + inc
-                      const canAfford = targetBid <= remainingPurse
-                      return (
-                        <button
-                          key={inc}
-                          type="button"
-                          disabled={!canAfford || isSubmittingBid}
-                          onClick={() => handlePlaceBid(targetBid)}
-                          className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-border bg-card hover:border-primary hover:bg-primary/5 transition disabled:opacity-40 disabled:pointer-events-none"
-                        >
-                          <span className="text-xs font-black text-foreground">+₹{inc.toLocaleString()}</span>
-                          <span className="text-[10px] text-muted-foreground">
-                            (₹{targetBid.toLocaleString()})
-                          </span>
-                        </button>
-                      )
-                    })}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">
+                      Place Official Bid as {myTeamName}
+                    </span>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-muted text-foreground border border-border">
+                      Squad: {squadCount} / {maxSquadSize}
+                    </span>
                   </div>
 
-                  {/* Custom Bid Input & Submit */}
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-mono">
-                        ₹
-                      </span>
-                      <input
-                        type="number"
-                        placeholder={`Enter amount > ₹${currentBid.toLocaleString()}`}
-                        value={customBidAmount}
-                        onChange={(e) => setCustomBidAmount(e.target.value)}
-                        className="w-full pl-7 pr-3 py-2 text-xs rounded-lg border border-border bg-muted text-foreground focus:border-primary focus:outline-none font-mono"
-                      />
+                  {isSquadFull ? (
+                    <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 flex items-center gap-3">
+                      <CheckCircle2 className="size-6 text-emerald-400 shrink-0" />
+                      <div>
+                        <h5 className="font-bold text-emerald-400 text-xs uppercase tracking-wide">
+                          Squad Complete ({squadCount}/{maxSquadSize} Players Acquired)
+                        </h5>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                          Your franchise team has successfully drafted all {maxSquadSize} players! Bidding is concluded for your squad. You can review your squad lineup in the Roster tab.
+                        </p>
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      {/* Purse Reserve Gatekeeper Notice */}
+                      <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] flex items-start gap-2.5">
+                        <Shield className="size-4 text-amber-400 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-amber-400 uppercase tracking-wide text-[10px]">
+                              Purse Gatekeeper Constraint
+                            </span>
+                            <span className="text-[10px] font-mono text-muted-foreground">
+                              {remainingSlotsAfter} slots remaining
+                            </span>
+                          </div>
+                          <p className="text-muted-foreground leading-relaxed text-[11px]">
+                            You must reserve at least <strong className="text-foreground">₹{requiredReserve.toLocaleString()}</strong> (₹{basePrice.toLocaleString()} base bid × {remainingSlotsAfter} slots) for remaining squad athletes. Maximum permitted bid on this hammer: <strong className="text-amber-400 font-bold font-mono">₹{maxAllowedBid.toLocaleString()}</strong>.
+                          </p>
+                        </div>
+                      </div>
 
-                    <button
-                      type="button"
-                      disabled={
-                        !customBidAmount ||
-                        Number(customBidAmount) <= currentBid ||
-                        Number(customBidAmount) > remainingPurse ||
-                        isSubmittingBid
-                      }
-                      onClick={() => handlePlaceBid(Number(customBidAmount))}
-                      className="px-5 py-2 rounded-lg bg-primary font-bold text-xs text-background hover:bg-primary/90 transition disabled:opacity-40"
-                    >
-                      {isSubmittingBid ? 'Bidding...' : 'Place Bid'}
-                    </button>
-                  </div>
+                      {/* Quick Bid Increment Buttons */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[1000, 2500, 5000, 10000].map((inc) => {
+                          const targetBid = currentBid + inc
+                          const canAfford = targetBid <= maxAllowedBid && !isSquadFull
+                          return (
+                            <button
+                              key={inc}
+                              type="button"
+                              disabled={!canAfford || isSubmittingBid}
+                              onClick={() => handlePlaceBid(targetBid)}
+                              className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-border bg-card hover:border-primary hover:bg-primary/5 transition disabled:opacity-40 disabled:pointer-events-none"
+                            >
+                              <span className="text-xs font-black text-foreground">+₹{inc.toLocaleString()}</span>
+                              <span className="text-[10px] text-muted-foreground">
+                                (₹{targetBid.toLocaleString()})
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {/* Custom Bid Input & Submit */}
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-mono">
+                            ₹
+                          </span>
+                          <input
+                            type="number"
+                            placeholder={`Max safe bid: ₹${maxAllowedBid.toLocaleString()}`}
+                            value={customBidAmount}
+                            onChange={(e) => setCustomBidAmount(e.target.value)}
+                            className="w-full pl-7 pr-3 py-2 text-xs rounded-lg border border-border bg-muted text-foreground focus:border-primary focus:outline-none font-mono"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={
+                            !customBidAmount ||
+                            Number(customBidAmount) <= currentBid ||
+                            Number(customBidAmount) > maxAllowedBid ||
+                            isSquadFull ||
+                            isSubmittingBid
+                          }
+                          onClick={() => handlePlaceBid(Number(customBidAmount))}
+                          className="px-5 py-2 rounded-lg bg-primary font-bold text-xs text-background hover:bg-primary/90 transition disabled:opacity-40"
+                        >
+                          {isSubmittingBid ? 'Bidding...' : 'Place Bid'}
+                        </button>
+                      </div>
+                    </>
+                  )}
 
                   {/* Take / Finalize Player CTA (When winning) */}
                   {isWinningCurrentBid && activePlayer.status !== 'sold' && (

@@ -2,7 +2,13 @@ import express, { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import jwt from 'jsonwebtoken'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { prisma, isDatabaseConfigured } from './db'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const app = express()
 const PORT = Number(process.env.PORT) || 5000
@@ -329,6 +335,7 @@ export interface EphemeralAuctionBidder {
   loginCode: string
   passkey: string
   allocatedPurse: number
+  group?: string
   status: 'active' | 'revoked'
   createdAt: string
 }
@@ -403,8 +410,6 @@ let USERS: UserRecord[] = [
 // 3. Ambassadors Store
 let AMBASSADORS: AmbassadorRecord[] = []
 
-// 4. Ephemeral Auction Bidder Accounts (Created for Auction tournaments & wiped after completion)
-let AUCTION_EPHEMERAL_BIDDERS: EphemeralAuctionBidder[] = []
 
 // 5. Tournament, Team & Payment Data Models
 export interface TournamentRecord {
@@ -472,6 +477,9 @@ export interface TournamentRecord {
   partnerNet?: number
   isClosed?: boolean
   closedAt?: string | Date | null
+  maxSquadSize?: number
+  basePrice?: number
+  startingPurse?: number
   createdAt?: string | Date
 
 }
@@ -564,6 +572,13 @@ export interface RegisteredTeam {
   utr?: string
   paymentProofUrl?: string
   registeredAt: string
+  group?: string
+  ambassadorId?: string
+  ambassadorName?: string
+  role?: string
+  achievements?: string
+  experience?: string
+  clipUrl?: string
 }
 
 export interface PaymentSubmission {
@@ -589,9 +604,13 @@ export interface AuctionPlayer {
   name: string
   ign: string
   gameUid: string
-  role: 'Rusher' | 'Sniper' | 'IGL' | 'Support' | 'Assaulter' | 'Flanker'
+  role: 'Rusher' | 'Sniper' | 'IGL' | 'Support' | 'Assaulter' | 'Flanker' | string
   basePrice: number
-  tier: 'Tier 1 (Marquee)' | 'Tier 2 (Pro)' | 'Tier 3 (Emerging)'
+  tier?: 'Tier 1 (Marquee)' | 'Tier 2 (Pro)' | 'Tier 3 (Emerging)' | string
+  group?: string
+  experience?: string
+  achievements?: string
+  contactNumber?: string
   phone: string
   email: string
   clipUrl?: string // Video montage / highlight reel link (YouTube, Drive, Instagram)
@@ -766,6 +785,192 @@ let PLATFORM_AUDIT_LOGS: PlatformAuditLogRecord[] = []
 let AUCTION_REVERSALS: AuctionReversalRecord[] = []
 
 // ═══════════════════════════════════════════════════════════════
+// SEED TNBBL SEASON 2 COMPLETE AUCTION DATASET
+// ═══════════════════════════════════════════════════════════════
+export function seedTnbblSeason2Data(targetTourneyId?: string) {
+  try {
+    const possiblePaths = [
+      path.join(__dirname, 'tnbbl_season2_data.json'),
+      path.resolve(process.cwd(), 'server', 'tnbbl_season2_data.json'),
+      path.resolve(process.cwd(), 'tnbbl_season2_data.json'),
+    ]
+    const dataPath = possiblePaths.find((p) => fs.existsSync(p))
+    if (!dataPath) {
+      console.warn('[TNBBL Seed] tnbbl_season2_data.json not found in paths:', possiblePaths)
+      return null
+    }
+
+    const raw = fs.readFileSync(dataPath, 'utf8')
+    const seed = JSON.parse(raw)
+    const tourneyId = targetTourneyId || seed.tournament.id
+
+    const existingIdx = TOURNAMENTS.findIndex((t) => t.id === tourneyId || t.slug === seed.tournament.slug)
+
+    const tourneyRecord: TournamentRecord = {
+      id: tourneyId,
+      slug: seed.tournament.slug || 'tnbbl-season-2',
+      name: seed.tournament.name,
+      type: 'AUCTION TOURNAMENT',
+      creatorId: 'cr_tamil_aura_zoner',
+      creatorName: 'Tamil Aura Zoner',
+      creatorHandle: '@tamilaurazonerofficial',
+      creatorAvatar: seed.tournament.creatorAvatar,
+      game: 'Free Fire',
+      format: 'Auction Tournament',
+      banner: seed.tournament.bannerUrl,
+      teams: 36,
+      maxTeams: 36,
+      maxSlots: 36,
+      maxSquadSize: 6,
+      basePrice: 5000,
+      startingPurse: 150000,
+      status: 'live',
+      startDate: seed.tournament.startDate || '2026-10-01',
+      endDate: seed.tournament.endDate || '2026-10-15',
+      prizePool: seed.tournament.prizePool || '₹50,000',
+      entryFee: seed.tournament.entryFee || '₹60 / Player',
+      entryType: 'per_player',
+      registeredTeamsCount: 36,
+      rules: seed.tournament.rules,
+      roadmap: createDefaultRoadmap(seed.tournament.name),
+      createdAt: new Date().toISOString(),
+    }
+
+    if (existingIdx !== -1) {
+      TOURNAMENTS[existingIdx] = { ...TOURNAMENTS[existingIdx], ...tourneyRecord }
+    } else {
+      TOURNAMENTS.unshift(tourneyRecord)
+    }
+
+    // Clear previous entries for this tournament
+    REGISTERED_TEAMS = REGISTERED_TEAMS.filter((t) => t.tournamentId !== tourneyId)
+    AUCTION_PLAYERS = AUCTION_PLAYERS.filter((p) => p.auctionId !== tourneyId && p.tournamentId !== tourneyId)
+    EPHEMERAL_BIDDERS = EPHEMERAL_BIDDERS.filter((b) => b.auctionId !== tourneyId)
+    USERS = USERS.filter((u) => !(u.isEphemeralAuctionBidder && (u.auctionId === tourneyId || u.tournamentId === tourneyId)))
+
+    // 1. Add 36 Teams across Groups A, B, and C
+    for (const team of seed.teams) {
+      const teamRecord: RegisteredTeam = {
+        id: team.id,
+        tournamentId: tourneyId,
+        name: team.name,
+        group: team.group,
+        captainName: team.captainName,
+        captainEmail: team.captainEmail,
+        captainPhone: team.captainPhone,
+        captainIgn: team.captainIgn,
+        players: team.players.map((p: any) => ({
+          ign: p.ign,
+          name: p.name,
+          gameUid: p.gameUid,
+          role: p.role,
+          experience: p.experience,
+          achievements: p.achievements,
+          phone: p.phone,
+        })),
+        status: 'verified',
+        registeredAt: new Date().toISOString(),
+      }
+      REGISTERED_TEAMS.push(teamRecord)
+
+      // 2. Add Ambassador / Bidder
+      const bidder: EphemeralAuctionBidder = {
+        id: `bid_${team.id}`,
+        auctionId: tourneyId,
+        teamName: team.name,
+        group: team.group,
+        loginCode: team.ambassador.loginCode,
+        passkey: team.ambassador.passkey,
+        allocatedPurse: team.ambassador.allocatedPurse || 150000,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+      }
+      EPHEMERAL_BIDDERS.push(bidder)
+
+      // 3. Add into USERS store for ambassador portal authentication
+      USERS.push({
+        id: bidder.id,
+        name: `${team.name} (Ambassador)`,
+        email: bidder.loginCode,
+        role: 'ambassador',
+        password: bidder.passkey,
+        isEphemeralAuctionBidder: true,
+        auctionId: tourneyId,
+        tournamentId: tourneyId,
+        tournamentName: tourneyRecord.name,
+        organizationName: team.name,
+        teamName: team.name,
+        allocatedPurse: bidder.allocatedPurse,
+        createdAt: new Date().toISOString(),
+      })
+
+      // 4. Add into AMBASSADORS
+      const existingAmbIdx = AMBASSADORS.findIndex(
+        (a) => a.tournamentId === tourneyId && a.name.toLowerCase().includes(team.name.toLowerCase())
+      )
+      if (existingAmbIdx === -1) {
+        AMBASSADORS.push({
+          id: `amb_${team.id}`,
+          name: `${team.name} Ambassador`,
+          email: bidder.loginCode,
+          creatorId: 'cr_tamil_aura_zoner',
+          tournamentId: tourneyId,
+          tournamentName: tourneyRecord.name,
+          assignedTeamRange: team.name,
+          phone: team.captainPhone,
+          createdAt: new Date().toISOString(),
+        })
+      }
+    }
+
+    // 5. Add 216 Players
+    for (const p of seed.players) {
+      AUCTION_PLAYERS.push({
+        id: p.id,
+        auctionId: tourneyId,
+        tournamentId: tourneyId,
+        name: p.name,
+        ign: p.ign,
+        gameUid: p.gameUid,
+        role: p.role,
+        basePrice: p.basePrice || 5000,
+        tier: 'Tier 2 (Pro)',
+        group: p.group,
+        experience: p.experience,
+        achievements: p.achievements,
+        phone: p.phone,
+        contactNumber: p.phone,
+        email: p.email,
+        clipUrl: p.clipUrl,
+        photoUrl: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+        stats: {
+          kd: p.kd || '3.50',
+          matchesPlayed: 45,
+          headshotRate: '62%',
+          achievements: p.achievements || 'Registered Draft Athlete',
+        },
+        status: 'sold',
+        soldPrice: p.soldPrice || 5000,
+        soldToTeam: p.soldToTeam,
+        paymentStatus: 'verified',
+        registeredAt: new Date().toISOString(),
+      })
+    }
+
+    console.log(
+      `[TNBBL Seed] Initialized TNBBL Season 2: 36 Franchises (Groups A, B, C), 216 Players (6 per team), 36 Ambassadors with ₹150,000 purse!`
+    )
+    return tourneyRecord
+  } catch (error) {
+    console.error('[TNBBL Seed] Error seeding TNBBL Season 2:', error)
+    return null
+  }
+}
+
+// Pre-seed TNBBL Season 2 immediately on module execution
+seedTnbblSeason2Data()
+
+// ═══════════════════════════════════════════════════════════════
 // CENTRALIZED FINANCIAL CALCULATION SERVICE
 // ═══════════════════════════════════════════════════════════════
 export interface FinancialCalculationResult {
@@ -775,6 +980,7 @@ export interface FinancialCalculationResult {
   rdkFee: number
   partnerNet: number
   settlementStatus: string
+  canClose: boolean
 }
 
 export function calculateTournamentFinances(tourney: TournamentRecord): FinancialCalculationResult {
@@ -812,6 +1018,8 @@ export function calculateTournamentFinances(tourney: TournamentRecord): Financia
   const settlementStatus =
     existingSettlement?.status || tourney.settlementStatus || 'PENDING'
 
+  const canClose = grossRevenue === 0 || settlementStatus === 'VERIFIED'
+
   return {
     entryFee: fee,
     approvedEntries,
@@ -819,6 +1027,7 @@ export function calculateTournamentFinances(tourney: TournamentRecord): Financia
     rdkFee,
     partnerNet,
     settlementStatus,
+    canClose,
   }
 }
 
@@ -1470,112 +1679,6 @@ app.delete('/api/creators/ambassadors/:id', (req: Request, res: Response) => {
   return res.json({ success: true, message: 'Ambassador revoked successfully' })
 })
 
-// 6. Ephemeral Auction Credentials Engine
-// When an Official Creator begins an Auction tournament, generate unique credentials for all participating team bidders
-app.get('/api/auctions/:id/credentials', (req: Request, res: Response) => {
-  const { id } = req.params
-  const bidders = AUCTION_EPHEMERAL_BIDDERS.filter((b) => b.auctionId === id)
-  return res.json({ auctionId: id, count: bidders.length, bidders })
-})
-
-app.post('/api/auctions/:id/credentials/generate', (req: Request, res: Response) => {
-  try {
-    const id = String(req.params.id)
-    const { teams, purseAmount = 100000 } = req.body
-
-    const teamList: string[] = teams && Array.isArray(teams) && teams.length > 0
-      ? teams
-      : [
-          'Aura XtremeZ',
-          'Tamil Titans',
-          'Phoenix Esports',
-          'Shadow Squad',
-          'Night Raiders',
-          'Velocity Force',
-          'Dragon Slayers',
-          'Clashers Elite',
-        ]
-
-    // Clear any previous credentials for this auction
-    AUCTION_EPHEMERAL_BIDDERS = AUCTION_EPHEMERAL_BIDDERS.filter((b) => b.auctionId !== id)
-    USERS = USERS.filter((u) => !(u.isEphemeralAuctionBidder && u.auctionId === id))
-
-    const generated: EphemeralAuctionBidder[] = []
-
-    for (let i = 0; i < teamList.length; i++) {
-      const team = teamList[i]
-      const cleanPrefix = team.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
-      const randomSuffix = Math.floor(1000 + Math.random() * 9000)
-      const loginCode = `${cleanPrefix}_${randomSuffix}@auction.rdk`
-      const passkey = `BID#${randomSuffix}`
-
-      const bidderRecord: EphemeralAuctionBidder = {
-        id: `bidder_${id}_${i + 1}`,
-        auctionId: id,
-        teamName: team,
-        loginCode,
-        passkey,
-        allocatedPurse: purseAmount,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-      }
-
-      generated.push(bidderRecord)
-      AUCTION_EPHEMERAL_BIDDERS.push(bidderRecord)
-
-      // Create ephemeral user in USERS database with ambassador authority for live bidding
-      const ephemeralUser: UserRecord = {
-        id: bidderRecord.id,
-        name: `${team} (Bidder)`,
-        email: loginCode,
-        role: 'ambassador',
-        ign: `${team} Ambassador`,
-        organizationName: team,
-        password: passkey,
-        isEphemeralAuctionBidder: true,
-        auctionId: id,
-        createdAt: new Date().toISOString(),
-      }
-      USERS.push(ephemeralUser)
-    }
-
-    return res.status(201).json({
-      success: true,
-      message: `Generated ${generated.length} unique ephemeral auction credentials.`,
-      bidders: generated,
-    })
-  } catch (error) {
-    console.error('Error generating auction credentials:', error)
-    return res.status(500).json({ error: 'Failed to generate auction credentials' })
-  }
-})
-
-// 7. Auto-Delete / Purge Auction Credentials After Auction Over
-app.post('/api/auctions/:id/finalize', (req: Request, res: Response) => {
-  try {
-    const { id } = req.params
-
-    const purgedCount = USERS.filter((u) => u.isEphemeralAuctionBidder && u.auctionId === id).length
-
-    // 1. Permanently delete ephemeral accounts from USERS
-    USERS = USERS.filter((u) => !(u.isEphemeralAuctionBidder && u.auctionId === id))
-
-    // 2. Mark auction credentials as deleted/purged
-    AUCTION_EPHEMERAL_BIDDERS = AUCTION_EPHEMERAL_BIDDERS.filter((b) => b.auctionId !== id)
-
-    return res.json({
-      success: true,
-      auctionId: id,
-      purgedAccountsCount: purgedCount,
-      message: `Auction finalized successfully! All ${purgedCount} temporary bidder credentials and session tokens have been permanently deleted.`,
-      timestamp: new Date().toISOString(),
-    })
-  } catch (error) {
-    console.error('Error finalizing auction:', error)
-    return res.status(500).json({ error: 'Failed to finalize auction and purge credentials' })
-  }
-})
-
 // 8. Tournament Management & Public Endpoints
 app.get('/api/tournaments', (req: Request, res: Response) => {
   const { creatorId, game, status } = req.query
@@ -2052,6 +2155,482 @@ app.get('/api/tournaments/:id/teams', (req: Request, res: Response) => {
   return res.json(teams)
 })
 
+// ═══════════════════════════════════════════════════════════════
+// CSV PARSING UTILITY
+// ═══════════════════════════════════════════════════════════════
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = []
+  let currentRow: string[] = []
+  let currentVal = ''
+  let inQuotes = false
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    const nextChar = text[i + 1]
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentVal += '"'
+        i++
+      } else {
+        inQuotes = !inQuotes
+      }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentVal.trim())
+      currentVal = ''
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') i++
+      currentRow.push(currentVal.trim())
+      if (currentRow.some((col) => col.length > 0)) {
+        rows.push(currentRow)
+      }
+      currentRow = []
+      currentVal = ''
+    } else {
+      currentVal += char
+    }
+  }
+  if (currentVal || currentRow.length > 0) {
+    currentRow.push(currentVal.trim())
+    if (currentRow.some((col) => col.length > 0)) rows.push(currentRow)
+  }
+  return rows
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IMPORT TEAMS / PLAYERS FROM GOOGLE SHEETS OR CSV
+// ═══════════════════════════════════════════════════════════════
+app.post('/api/tournaments/:id/import-sheet', requirePartnerOrAdmin, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+    if (!tourney) {
+      return res.status(404).json({ error: 'Tournament not found' })
+    }
+
+    const {
+      sheetUrl,
+      csvData,
+      mode = 'individual', // 'individual' | 'squads'
+      playersPerTeam = 4,
+      teamNamePrefix = 'Team',
+      ambassadorId,
+      ambassadorName,
+      status = 'verified',
+    } = req.body
+
+    let rawCsv = (csvData || '').trim()
+
+    if (!rawCsv && sheetUrl) {
+      let exportUrl = sheetUrl.trim()
+      if (exportUrl.includes('docs.google.com/spreadsheets/d/')) {
+        exportUrl = exportUrl.replace(/\/edit(\?.*)?$/, '') + '/export?format=csv'
+        if (!exportUrl.includes('/export?format=csv')) {
+          exportUrl = exportUrl.replace(/\/$/, '') + '/export?format=csv'
+        }
+      }
+      const fetchRes = await fetch(exportUrl)
+      if (!fetchRes.ok) {
+        return res.status(400).json({
+          error: `Failed to fetch Google Sheet. Please ensure sharing is set to "Anyone with the link can view". (HTTP ${fetchRes.status})`,
+        })
+      }
+      rawCsv = await fetchRes.text()
+    }
+
+    if (!rawCsv) {
+      return res.status(400).json({ error: 'No CSV data or Google Sheet URL provided' })
+    }
+
+    const rows = parseCSV(rawCsv)
+    if (rows.length < 2) {
+      return res.status(400).json({ error: 'No data rows found in the sheet' })
+    }
+
+    const headers = rows[0].map((h) => h.toLowerCase().trim())
+    const nameIdx = headers.findIndex((h) => h.includes('name'))
+    const ignIdx = headers.findIndex((h) => h.includes('ign'))
+    const emailIdx = headers.findIndex((h) => h.includes('email'))
+    const phoneIdx = headers.findIndex(
+      (h) => h.includes('contact') || h.includes('phone') || h.includes('mobile') || h.includes('number')
+    )
+    const roleIdx = headers.findIndex((h) => h.includes('role'))
+    const expIdx = headers.findIndex((h) => h.includes('experience'))
+    const achieveIdx = headers.findIndex((h) => h.includes('achiv') || h.includes('achieve'))
+    const clipIdx = headers.findIndex((h) => h.includes('clip') || h.includes('gameplay'))
+    const proofIdx = headers.findIndex(
+      (h) => h.includes('ss') || h.includes('screenshot') || h.includes('entry') || h.includes('upload')
+    )
+
+    interface ParsedPlayer {
+      name: string
+      ign: string
+      email: string
+      phone: string
+      role: string
+      experience: string
+      achievements: string
+      clipUrl: string
+      proofUrl: string
+    }
+
+    const parsedPlayers: ParsedPlayer[] = []
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i]
+      if (!r || r.length === 0 || !r.some((c) => c.trim().length > 0)) continue
+      const name = (nameIdx >= 0 ? r[nameIdx] : `Player ${i}`) || `Player ${i}`
+      const ign = (ignIdx >= 0 ? r[ignIdx] : name) || name
+      const email = (emailIdx >= 0 ? r[emailIdx] : '') || ''
+      const phone = (phoneIdx >= 0 ? r[phoneIdx] : '') || ''
+      const role = (roleIdx >= 0 ? r[roleIdx] : 'Rusher') || 'Rusher'
+      const experience = (expIdx >= 0 ? r[expIdx] : '') || ''
+      const achievements = (achieveIdx >= 0 ? r[achieveIdx] : '') || ''
+      const clipUrl = (clipIdx >= 0 ? r[clipIdx] : '') || ''
+      const proofUrl = (proofIdx >= 0 ? r[proofIdx] : '') || ''
+
+      parsedPlayers.push({
+        name: name.trim(),
+        ign: ign.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone.trim(),
+        role: role.trim(),
+        experience: experience.trim(),
+        achievements: achievements.trim(),
+        clipUrl: clipUrl.trim(),
+        proofUrl: proofUrl.trim(),
+      })
+    }
+
+    if (parsedPlayers.length === 0) {
+      return res.status(400).json({ error: 'Could not extract valid players from the sheet' })
+    }
+
+    const newTeams: RegisteredTeam[] = []
+    const existingTeamsCount = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id).length
+
+    if (mode === 'squads') {
+      const pCount = Number(playersPerTeam) || 4
+      let squadIndex = existingTeamsCount + 1
+      for (let i = 0; i < parsedPlayers.length; i += pCount) {
+        const chunk = parsedPlayers.slice(i, i + pCount)
+        const captain = chunk[0]
+        const teamId = `team_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}_${i}`
+        const teamRecord: RegisteredTeam = {
+          id: teamId,
+          tournamentId: tourney.id,
+          name: `${teamNamePrefix} ${squadIndex}`,
+          captainName: captain.name,
+          captainEmail: captain.email || `captain${squadIndex}@rdkesports.in`,
+          captainPhone: captain.phone,
+          captainIgn: captain.ign,
+          players: chunk.map((p) => ({
+            ign: p.ign,
+            gameUid: 'N/A',
+          })),
+          status: status as any,
+          ambassadorId: ambassadorId || undefined,
+          ambassadorName: ambassadorName || undefined,
+          role: captain.role,
+          achievements: captain.achievements,
+          experience: captain.experience,
+          clipUrl: captain.clipUrl,
+          paymentProofUrl: captain.proofUrl,
+          registeredAt: new Date().toISOString(),
+        }
+        newTeams.push(teamRecord)
+        squadIndex++
+      }
+    } else {
+      // Individual slots (1 player per team slot)
+      for (let i = 0; i < parsedPlayers.length; i++) {
+        const p = parsedPlayers[i]
+        const teamId = `team_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}_${i}`
+        const teamRecord: RegisteredTeam = {
+          id: teamId,
+          tournamentId: tourney.id,
+          name: p.ign ? `${p.ign} (${p.name})` : p.name,
+          captainName: p.name,
+          captainEmail: p.email || `player${i + 1}@rdkesports.in`,
+          captainPhone: p.phone,
+          captainIgn: p.ign,
+          players: [{ ign: p.ign, gameUid: 'N/A' }],
+          status: status as any,
+          ambassadorId: ambassadorId || undefined,
+          ambassadorName: ambassadorName || undefined,
+          role: p.role,
+          achievements: p.achievements,
+          experience: p.experience,
+          clipUrl: p.clipUrl,
+          paymentProofUrl: p.proofUrl,
+          registeredAt: new Date().toISOString(),
+        }
+        newTeams.push(teamRecord)
+      }
+    }
+
+    // Add to in-memory state
+    REGISTERED_TEAMS.push(...newTeams)
+
+    // Sync to Auction Players pool if auction tournament
+    const isAuction = tourney.format === 'Auction Tournament' || tourney.type?.includes('AUCTION')
+    if (isAuction) {
+      for (const p of parsedPlayers) {
+        const playerId = `ap_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`
+        const exists = AUCTION_PLAYERS.some(
+          (ap) =>
+            (ap.auctionId === tourney.id || ap.tournamentId === tourney.id) &&
+            ap.ign.toLowerCase() === p.ign.toLowerCase()
+        )
+        if (!exists) {
+          AUCTION_PLAYERS.push({
+            id: playerId,
+            auctionId: tourney.id,
+            tournamentId: tourney.id,
+            name: p.name,
+            ign: p.ign,
+            gameUid: 'UID-' + Math.floor(100000 + Math.random() * 900000),
+            role: (p.role as any) || 'Rusher',
+            basePrice: 5000,
+            tier: 'Tier 2 (Pro)',
+            phone: p.phone,
+            email: p.email,
+            clipUrl: p.clipUrl,
+            photoUrl: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+            stats: {
+              kd: '3.50',
+              matchesPlayed: 75,
+              headshotRate: '60%',
+              achievements: p.achievements || 'Imported Registration',
+            },
+            status: 'available',
+            paymentStatus: 'verified',
+            registeredAt: new Date().toISOString(),
+          })
+        }
+      }
+    }
+
+    tourney.registeredTeamsCount = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id).length
+
+    // Optional Prisma persistence
+    try {
+      for (const t of newTeams) {
+        await prisma.registeredTeam
+          .create({
+            data: {
+              id: t.id,
+              tournamentId: t.tournamentId,
+              name: t.name,
+              captainName: t.captainName,
+              captainEmail: t.captainEmail,
+              captainPhone: t.captainPhone,
+              captainIgn: t.captainIgn,
+              players: JSON.stringify(t.players),
+              status: t.status,
+              paymentProofUrl: t.paymentProofUrl,
+            },
+          })
+          .catch(() => {})
+      }
+    } catch {
+      // Memory fallback
+    }
+
+    logAuditEvent({
+      tournamentId: tourney.id,
+      action: 'TEAMS_IMPORTED_FROM_SHEET',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Imported ${newTeams.length} entries (${parsedPlayers.length} players) from Google Sheets into "${tourney.name}".`,
+    })
+
+    return res.status(201).json({
+      success: true,
+      count: newTeams.length,
+      totalPlayers: parsedPlayers.length,
+      teams: newTeams,
+      message: `Successfully imported ${newTeams.length} ${mode === 'squads' ? 'squads' : 'teams'} (${parsedPlayers.length} players) from Google Sheets!`,
+    })
+  } catch (err: any) {
+    console.error('[Import Sheet Error]', err)
+    return res.status(500).json({ error: err.message || 'Failed to import sheet' })
+  }
+})
+
+// Quick Seed TNBBL Season 2 (Groups A, B, C with 36 Teams, 216 Players, and 36 Ambassadors)
+app.post('/api/tournaments/:id/seed-tnbbl', requirePartnerOrAdmin, (req: Request, res: Response) => {
+  const id = String(req.params.id)
+  const seeded = seedTnbblSeason2Data(id)
+  if (!seeded) {
+    return res.status(500).json({ error: 'Failed to seed TNBBL Season 2 data' })
+  }
+  return res.json({
+    success: true,
+    message: 'TNBBL Season 2 data successfully seeded: 36 Franchise Teams across Groups A, B, C with 216 drafted players (6 members per team) and 36 ambassador accounts (₹150,000 purse)!',
+    tournament: seeded,
+    teamsCount: 36,
+    playersCount: 216,
+  })
+})
+
+app.post('/api/tournaments/seed-tnbbl-season-2', (req: Request, res: Response) => {
+  const seeded = seedTnbblSeason2Data('tourney_tnbbl_s2')
+  if (!seeded) {
+    return res.status(500).json({ error: 'Failed to seed TNBBL Season 2 data' })
+  }
+  return res.json({
+    success: true,
+    message: 'TNBBL Season 2 data successfully initialized!',
+    tournament: seeded,
+  })
+})
+
+// Add Team Manually (Partner / Admin)
+app.post('/api/tournaments/:id/teams', requirePartnerOrAdmin, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+    if (!tourney) return res.status(404).json({ error: 'Tournament not found' })
+
+    const {
+      name,
+      captainName,
+      captainEmail,
+      captainPhone,
+      captainIgn,
+      players,
+      status = 'verified',
+      ambassadorId,
+      ambassadorName,
+      role,
+    } = req.body
+
+    if (!name || !captainName || !captainIgn) {
+      return res.status(400).json({ error: 'Team name, Captain Name, and Captain IGN are required' })
+    }
+
+    const teamId = `team_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`
+    const newTeam: RegisteredTeam = {
+      id: teamId,
+      tournamentId: tourney.id,
+      name: name.trim(),
+      captainName: captainName.trim(),
+      captainEmail: (captainEmail || `team_${Date.now()}@rdkesports.in`).trim().toLowerCase(),
+      captainPhone: captainPhone || '',
+      captainIgn: captainIgn.trim(),
+      players: Array.isArray(players) && players.length > 0 ? players : [{ ign: captainIgn.trim(), gameUid: 'N/A' }],
+      status: status as any,
+      ambassadorId: ambassadorId || undefined,
+      ambassadorName: ambassadorName || undefined,
+      role: role || undefined,
+      registeredAt: new Date().toISOString(),
+    }
+
+    REGISTERED_TEAMS.push(newTeam)
+    tourney.registeredTeamsCount = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id).length
+
+    return res.status(201).json({ success: true, team: newTeam })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to add team' })
+  }
+})
+
+// Update Team / Allot Ambassador (Partner / Admin)
+app.patch('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, (req: Request, res: Response) => {
+  try {
+    const { id, teamId } = req.params
+    const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+    if (!tourney) return res.status(404).json({ error: 'Tournament not found' })
+
+    const team = REGISTERED_TEAMS.find((t) => t.id === teamId && t.tournamentId === tourney.id)
+    if (!team) return res.status(404).json({ error: 'Team not found' })
+
+    const {
+      name,
+      captainName,
+      captainIgn,
+      captainPhone,
+      captainEmail,
+      players,
+      status,
+      ambassadorId,
+      ambassadorName,
+      role,
+    } = req.body
+
+    if (name !== undefined) team.name = name.trim()
+    if (captainName !== undefined) team.captainName = captainName.trim()
+    if (captainIgn !== undefined) team.captainIgn = captainIgn.trim()
+    if (captainPhone !== undefined) team.captainPhone = captainPhone
+    if (captainEmail !== undefined) team.captainEmail = captainEmail.trim().toLowerCase()
+    if (players !== undefined) team.players = players
+    if (status !== undefined) team.status = status
+    if (ambassadorId !== undefined) team.ambassadorId = ambassadorId || undefined
+    if (ambassadorName !== undefined) team.ambassadorName = ambassadorName || undefined
+    if (role !== undefined) team.role = role
+
+    return res.json({ success: true, team })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to update team' })
+  }
+})
+
+// Batch Allot Teams to Ambassador
+app.post('/api/tournaments/:id/teams/batch-allot', requirePartnerOrAdmin, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+    if (!tourney) return res.status(404).json({ error: 'Tournament not found' })
+
+    const { teamIds, ambassadorId, ambassadorName, rangeFrom, rangeTo } = req.body
+
+    const targetTeams = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id)
+    let updatedCount = 0
+
+    if (Array.isArray(teamIds) && teamIds.length > 0) {
+      targetTeams.forEach((t) => {
+        if (teamIds.includes(t.id)) {
+          t.ambassadorId = ambassadorId || undefined
+          t.ambassadorName = ambassadorName || undefined
+          updatedCount++
+        }
+      })
+    } else if (rangeFrom !== undefined && rangeTo !== undefined) {
+      const from = Math.max(1, Number(rangeFrom))
+      const to = Math.min(targetTeams.length, Number(rangeTo))
+      for (let i = from - 1; i < to; i++) {
+        targetTeams[i].ambassadorId = ambassadorId || undefined
+        targetTeams[i].ambassadorName = ambassadorName || undefined
+        updatedCount++
+      }
+    }
+
+    return res.json({ success: true, updatedCount })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to batch allot teams' })
+  }
+})
+
+// Delete Team (Partner / Admin)
+app.delete('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, (req: Request, res: Response) => {
+  try {
+    const { id, teamId } = req.params
+    const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+    if (!tourney) return res.status(404).json({ error: 'Tournament not found' })
+
+    const index = REGISTERED_TEAMS.findIndex((t) => t.id === teamId && t.tournamentId === tourney.id)
+    if (index === -1) return res.status(404).json({ error: 'Team not found' })
+
+    REGISTERED_TEAMS.splice(index, 1)
+    tourney.registeredTeamsCount = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id).length
+
+    return res.json({ success: true, message: 'Team removed' })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to delete team' })
+  }
+})
+
 // Audience / Team Captain / Auction Candidate Registration for Tournament
 app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
   try {
@@ -2130,15 +2709,18 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
         role,
         basePrice: Number(basePrice) || 5000,
         tier: Number(basePrice) >= 10000 ? 'Tier 1 (Marquee)' : (tier || 'Tier 2 (Pro)'),
-        phone: phone.trim(),
+        phone: phone.trim() || String(req.body.playerPhone || '').trim(),
+        contactNumber: phone.trim() || String(req.body.playerPhone || '').trim(),
         email: email.trim(),
+        experience: String(req.body.experience || req.body.playerExperience || '').trim(),
+        achievements: String(req.body.achievements || req.body.playerAchievements || achievements || '').trim(),
         clipUrl: clipUrl.trim(),
         photoUrl: photoUrl.trim() || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
         stats: {
           kd: kd ? String(kd) : '3.50',
           matchesPlayed: 75,
           headshotRate: '60%',
-          achievements: achievements.trim() || 'Registered Draft Candidate',
+          achievements: (achievements || req.body.playerAchievements || 'Registered Draft Candidate').trim(),
         },
         status: 'available',
         paymentProofUrl: screenshotUrl,
@@ -2235,6 +2817,8 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
       captainPhone: captainPhone || '',
       captainIgn: captainIgn.trim(),
       players: Array.isArray(players) && players.length > 0 ? players : [{ ign: captainIgn.trim(), gameUid: 'N/A' }],
+      experience: String(req.body.experience || req.body.teamExperience || '').trim(),
+      achievements: String(req.body.achievements || req.body.teamAchievements || '').trim(),
       status: isInstantVerified ? 'verified' : 'pending',
       utr: utr?.trim() || (screenshotUrl ? 'Screenshot Uploaded' : undefined),
       paymentProofUrl: screenshotUrl,
@@ -2660,10 +3244,59 @@ app.post('/api/auctions/:id/bid', requireAuctionBiddingAccess, (req: Request, re
     (b) => b.auctionId === id && b.teamName.toLowerCase() === String(teamName).toLowerCase()
   )
 
-  if (bidder && numAmount > bidder.allocatedPurse) {
+  const currentPurse = bidder ? bidder.allocatedPurse : 150000
+
+  if (numAmount > currentPurse) {
     return res.status(400).json({
-      error: `Purse Limit Exceeded: Team "${teamName}" only has ₹${bidder.allocatedPurse.toLocaleString()} remaining in purse tokens. Bid of ₹${numAmount.toLocaleString()} cannot be placed.`,
-      remainingPurse: bidder.allocatedPurse,
+      error: `Purse Limit Exceeded: Team "${teamName}" only has ₹${currentPurse.toLocaleString()} remaining in purse tokens. Bid of ₹${numAmount.toLocaleString()} cannot be placed.`,
+      remainingPurse: currentPurse,
+    })
+  }
+
+  // Find tournament settings
+  const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+  const maxSquadSize = tourney?.maxSquadSize || 6
+
+  // Find active player being bid on
+  const targetPlayerId = playerId || LIVE_AUCTION_STATE[id]?.activePlayerId
+  const activePlayer = AUCTION_PLAYERS.find(
+    (p) => (p.auctionId === id || p.tournamentId === id) && p.id === targetPlayerId
+  )
+  const baseBidPrice = activePlayer?.basePrice || tourney?.basePrice || 5000
+
+  // Count players already acquired by this franchise
+  const mySquad = AUCTION_PLAYERS.filter(
+    (p) =>
+      (p.auctionId === id || p.tournamentId === id) &&
+      p.status === 'sold' &&
+      p.soldToTeam?.toLowerCase() === String(teamName).toLowerCase()
+  )
+  const currentSquadCount = mySquad.length
+
+  if (currentSquadCount >= maxSquadSize) {
+    return res.status(400).json({
+      error: `Squad Roster Full: Team "${teamName}" has already reached its maximum roster limit of ${maxSquadSize} members (${currentSquadCount}/${maxSquadSize}). You cannot bid for additional players.`,
+      squadCount: currentSquadCount,
+      maxSquadSize,
+    })
+  }
+
+  // Budget Gatekeeper Constraint:
+  // After winning this player, the franchise will need remainingSlotsAfter = maxSquadSize - (currentSquadCount + 1)
+  // Each remaining player requires at least baseBidPrice.
+  // requiredReserve = remainingSlotsAfter * baseBidPrice.
+  // maxAllowedBid = currentPurse - requiredReserve.
+  const remainingSlotsAfter = Math.max(0, maxSquadSize - (currentSquadCount + 1))
+  const requiredReserve = remainingSlotsAfter * baseBidPrice
+  const maxAllowedBid = Math.max(0, currentPurse - requiredReserve)
+
+  if (numAmount > maxAllowedBid) {
+    return res.status(400).json({
+      error: `Purse Reserve Violation: Team "${teamName}" must keep at least ₹${requiredReserve.toLocaleString()} (₹${baseBidPrice.toLocaleString()} base bid × ${remainingSlotsAfter} slots) in reserve to complete the ${maxSquadSize}-member squad. Maximum allowed bid is ₹${maxAllowedBid.toLocaleString()}.`,
+      maxAllowedBid,
+      requiredReserve,
+      remainingSlotsAfter,
+      currentPurse,
     })
   }
 
@@ -2698,7 +3331,10 @@ app.post('/api/auctions/:id/bid', requireAuctionBiddingAccess, (req: Request, re
     success: true,
     message: `Bid of ₹${numAmount.toLocaleString()} placed by ${teamName}`,
     state,
-    remainingPurse: bidder ? bidder.allocatedPurse : undefined,
+    remainingPurse: currentPurse,
+    maxAllowedBid,
+    requiredReserve,
+    remainingSlotsAfter,
   })
 })
 
@@ -2733,6 +3369,24 @@ app.patch('/api/auctions/:id/players/:playerId', (req: Request, res: Response) =
       if (state) {
         state.currentBid = Number(soldPrice)
         state.highestBidderTeam = soldToTeam
+      }
+
+      // Sync into REGISTERED_TEAMS squad roster
+      const matchedTeam = REGISTERED_TEAMS.find(
+        (t) => (t.tournamentId === id || t.tournamentId === player.tournamentId) && t.name.toLowerCase() === soldToTeam.toLowerCase()
+      )
+      if (matchedTeam) {
+        if (!matchedTeam.players.some((p) => p.ign.toLowerCase() === player.ign.toLowerCase())) {
+          matchedTeam.players.push({
+            ign: player.ign,
+            gameUid: player.gameUid,
+            name: player.name,
+            role: player.role,
+            phone: player.phone,
+            experience: player.experience,
+            achievements: player.achievements,
+          } as any)
+        }
       }
 
       logAuditEvent({

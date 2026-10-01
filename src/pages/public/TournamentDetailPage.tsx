@@ -80,11 +80,12 @@ interface Tournament {
 interface Team {
   id: string
   name: string
+  group?: string
   captainName: string
   captainEmail: string
   captainPhone: string
   captainIgn: string
-  players: { ign: string; gameUid: string }[]
+  players: { ign: string; gameUid: string; name?: string; role?: string; phone?: string; experience?: string; achievements?: string }[]
   status: 'pending' | 'verified' | 'rejected'
   utr?: string
   paymentProofUrl?: string
@@ -149,12 +150,17 @@ export default function TournamentDetailPage() {
   const [player3Uid, setPlayer3Uid] = useState('')
   const [player4Ign, setPlayer4Ign] = useState('')
   const [player4Uid, setPlayer4Uid] = useState('')
+  const [player5Ign, setPlayer5Ign] = useState('')
+  const [player5Uid, setPlayer5Uid] = useState('')
+  const [teamExperience, setTeamExperience] = useState('')
+  const [teamAchievements, setTeamAchievements] = useState('')
 
   // Auction Candidate Registration State
   const [playerName, setPlayerName] = useState(user?.name || '')
   const [playerIgn, setPlayerIgn] = useState(user?.ign || '')
   const [playerGameUid, setPlayerGameUid] = useState('')
-  const [playerRole, setPlayerRole] = useState('Rusher')
+  const [playerRole, setPlayerRole] = useState('Primary Rusher')
+  const [playerExperience, setPlayerExperience] = useState('')
   const [playerBasePrice, setPlayerBasePrice] = useState('5000')
   const [playerPhone, setPlayerPhone] = useState('')
   const [playerEmail, setPlayerEmail] = useState(user?.email || '')
@@ -162,6 +168,13 @@ export default function TournamentDetailPage() {
   const [playerPhotoUrl, setPlayerPhotoUrl] = useState('')
   const [playerKd, setPlayerKd] = useState('4.20')
   const [playerAchievements, setPlayerAchievements] = useState('')
+
+  // Group filter for Teams tab
+  const [selectedGroupFilter, setSelectedGroupFilter] = useState<'ALL' | 'GROUP A' | 'GROUP B' | 'GROUP C'>('ALL')
+  const hasGroups = teams.some((t) => t.group)
+  const filteredTeams = selectedGroupFilter === 'ALL'
+    ? teams
+    : teams.filter((t) => (t.group || '').toUpperCase() === selectedGroupFilter)
 
   // Payment Screenshot State (Primary verification)
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null)
@@ -444,6 +457,7 @@ export default function TournamentDetailPage() {
           gameUid: playerGameUid.trim() || 'UID-' + Math.floor(100000 + Math.random() * 900000),
           role: playerRole,
           basePrice: Number(playerBasePrice) || 5000,
+          experience: playerExperience.trim(),
           phone: playerPhone.trim(),
           email: playerEmail.trim(),
           clipUrl: playerClipUrl.trim(),
@@ -482,6 +496,7 @@ export default function TournamentDetailPage() {
           ...(player2Ign ? [{ ign: player2Ign, gameUid: player2Uid || 'N/A' }] : []),
           ...(player3Ign ? [{ ign: player3Ign, gameUid: player3Uid || 'N/A' }] : []),
           ...(player4Ign ? [{ ign: player4Ign, gameUid: player4Uid || 'N/A' }] : []),
+          ...(player5Ign ? [{ ign: player5Ign, gameUid: player5Uid || 'N/A' }] : []),
         ]
 
         payload = {
@@ -490,6 +505,8 @@ export default function TournamentDetailPage() {
           captainEmail: captainEmail.trim(),
           captainPhone: captainPhone.trim(),
           captainIgn: captainIgn.trim(),
+          experience: teamExperience.trim(),
+          achievements: teamAchievements.trim(),
           players,
           screenshotUrl: screenshotPreview,
           utr: utrNumber.trim(),
@@ -851,19 +868,17 @@ export default function TournamentDetailPage() {
             </span>
           </button>
 
-          {!isAuction && (
-            <button
-              onClick={() => setActiveTab('teams')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-all border-b-2 whitespace-nowrap ${
-                activeTab === 'teams'
-                  ? 'border-primary text-primary bg-primary/5'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Users className="size-3.5" />
-              <span>Enrolled Squads ({teams.length})</span>
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab('teams')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-all border-b-2 whitespace-nowrap ${
+              activeTab === 'teams'
+                ? 'border-primary text-primary bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Users className="size-3.5" />
+            <span>{isAuction ? `Franchise Teams (${teams.length})` : `Enrolled Squads (${teams.length})`}</span>
+          </button>
 
           {/* Match Room Credentials Tab (Only available to registered players) */}
           {registeredAccess.isAuthorized && (
@@ -1298,77 +1313,152 @@ export default function TournamentDetailPage() {
           </div>
         )}
 
-        {/* ═══ TAB: REGISTERED SQUADS (FOR NON-AUCTION) ═══ */}
-        {activeTab === 'teams' && !isAuction && (
+        {/* ═══ TAB: REGISTERED SQUADS & FRANCHISE TEAMS ═══ */}
+        {activeTab === 'teams' && (
           <div className="mt-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="font-heading font-black text-sm uppercase tracking-wider text-foreground">
-                Enrolled Squads ({teams.length}/{tournament.maxTeams})
-              </h3>
+              <div>
+                <h3 className="font-heading font-black text-sm uppercase tracking-wider text-foreground">
+                  {isAuction
+                    ? `Franchise Teams (${filteredTeams.length}/${teams.length || tournament.maxTeams})`
+                    : `Enrolled Squads (${teams.length}/${tournament.maxTeams})`}
+                </h3>
+                {isAuction && (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    District Franchise Teams across Groups A, B, and C with 6 drafted players per roster.
+                  </p>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 {tournament.status === 'registration_open' && (
                   <button
                     onClick={() => setIsRegisterOpen(true)}
                     className="px-3 py-1.5 text-xs font-bold rounded bg-primary text-background hover:bg-primary/90 transition-colors shadow-sm"
                   >
-                    Register Squad
+                    {isAuction ? 'Register Draft Candidate' : 'Register Squad'}
                   </button>
                 )}
               </div>
             </div>
 
-            {teams.length === 0 ? (
+            {/* Group Tabs (GROUP A, GROUP B, GROUP C) if groups exist */}
+            {hasGroups && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
+                {(['ALL', 'GROUP A', 'GROUP B', 'GROUP C'] as const).map((grp) => {
+                  const count = grp === 'ALL' ? teams.length : teams.filter((t) => t.group === grp).length
+                  return (
+                    <button
+                      key={grp}
+                      type="button"
+                      onClick={() => setSelectedGroupFilter(grp)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                        selectedGroupFilter === grp
+                          ? grp === 'GROUP A'
+                            ? 'bg-purple-600 text-white shadow-md'
+                            : grp === 'GROUP B'
+                            ? 'bg-cyan-500 text-black shadow-md'
+                            : grp === 'GROUP C'
+                            ? 'bg-amber-500 text-black shadow-md'
+                            : 'bg-primary text-background shadow-md'
+                          : 'bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground'
+                      }`}
+                    >
+                      <span>{grp}</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
+                        {count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {filteredTeams.length === 0 ? (
               <div className="p-12 text-center border border-border rounded-xl bg-card">
                 <Users className="size-8 text-muted-foreground mx-auto mb-2 opacity-50" />
-                <p className="text-xs text-muted-foreground">No teams registered yet. Be the first to register!</p>
+                <p className="text-xs text-muted-foreground">
+                  {teams.length === 0
+                    ? 'No teams registered yet. Be the first to register!'
+                    : `No teams found in ${selectedGroupFilter}.`}
+                </p>
               </div>
             ) : (
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {teams.map((t, idx) => (
+                {filteredTeams.map((t, idx) => (
                   <div
                     key={t.id}
                     className="p-4 rounded-xl border border-border bg-card hover:border-border-strong transition-all flex flex-col justify-between"
                   >
                     <div>
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="size-6 rounded bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="size-6 rounded bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground shrink-0">
                             #{idx + 1}
                           </span>
-                          <span className="font-heading font-black text-sm text-foreground">
+                          <span className="font-heading font-black text-sm text-foreground truncate">
                             {t.name}
                           </span>
                         </div>
-                        <span
-                          className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${
-                            t.status === 'verified'
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          }`}
-                        >
-                          {t.status === 'verified' ? 'Verified' : 'Verification Pending'}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {t.group && (
+                            <span
+                              className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
+                                t.group === 'GROUP A'
+                                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                                  : t.group === 'GROUP B'
+                                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
+                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                              }`}
+                            >
+                              {t.group}
+                            </span>
+                          )}
+                          <span
+                            className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                              t.status === 'verified'
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            }`}
+                          >
+                            {t.status === 'verified' ? 'Verified' : 'Pending'}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="text-[11px] text-muted-foreground space-y-1 mb-3">
                         <p>
-                          Captain: <strong className="text-foreground">{t.captainName}</strong> ({t.captainIgn})
+                          Captain / Lead: <strong className="text-foreground">{t.captainName}</strong> ({t.captainIgn})
                         </p>
                       </div>
 
-                      {/* Players */}
-                      <div className="space-y-1 pt-2 border-t border-border">
-                        <span className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground block">
-                          Roster
-                        </span>
-                        <div className="flex flex-wrap gap-1">
+                      {/* Players Roster */}
+                      <div className="space-y-1.5 pt-2 border-t border-border">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground block">
+                            Squad Roster ({t.players?.length || 0}/6)
+                          </span>
+                          <span className="text-[9px] font-mono text-primary font-bold">
+                            {t.players?.length === 6 ? 'Full Squad' : `${6 - (t.players?.length || 0)} Slots Left`}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
                           {t.players?.map((p, i) => (
-                            <span
+                            <div
                               key={i}
-                              className="text-[10px] bg-muted/60 text-foreground px-2 py-0.5 rounded font-mono"
+                              className="p-1.5 rounded bg-muted/40 border border-border/50 text-[10px] flex items-center justify-between"
                             >
-                              {p.ign}
-                            </span>
+                              <div className="truncate">
+                                <span className="font-bold text-foreground block truncate">{p.ign}</span>
+                                {p.name && p.name !== p.ign && (
+                                  <span className="text-[8px] text-muted-foreground truncate block">{p.name}</span>
+                                )}
+                              </div>
+                              {p.role && (
+                                <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-primary/10 text-primary border border-primary/20 shrink-0 ml-1">
+                                  {p.role}
+                                </span>
+                              )}
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -1681,13 +1771,12 @@ export default function TournamentDetailPage() {
                             />
                             <div className="flex flex-wrap items-center gap-1 mt-1.5">
                               {[
-                                'Rusher',
+                                'Primary Rusher',
+                                'Secondary Rusher',
                                 'Sniper',
-                                'IGL',
-                                'Assaulter',
+                                'Nader + IGL',
                                 'Support',
-                                'Flanker',
-                                'Fragger',
+                                'All Rounder',
                               ].map((roleName) => (
                                 <button
                                   key={roleName}
@@ -1768,17 +1857,33 @@ export default function TournamentDetailPage() {
                           </div>
                         </div>
 
-                        <div>
-                          <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                            Esports Achievements & K/D
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g. 4.5 K/D | 120+ Headshots | City Open Finalist"
-                            value={playerAchievements}
-                            onChange={(e) => setPlayerAchievements(e.target.value)}
-                            className="w-full bg-background border border-border rounded px-3 py-2 text-foreground focus:outline-none focus:border-primary text-xs"
-                          />
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                              Esports Experience (Years / Tourneys) *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. 2 years, Semi-Pro, Tier-1 Scrims"
+                              value={playerExperience}
+                              onChange={(e) => setPlayerExperience(e.target.value)}
+                              className="w-full bg-background border border-border rounded px-3 py-2 text-foreground focus:outline-none focus:border-primary text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                              Esports Achievements
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. 4.5 K/D | 120+ Headshots | City Open Finalist"
+                              value={playerAchievements}
+                              onChange={(e) => setPlayerAchievements(e.target.value)}
+                              className="w-full bg-background border border-border rounded px-3 py-2 text-foreground focus:outline-none focus:border-primary text-xs"
+                            />
+                          </div>
                         </div>
                       </div>
                     ) : isSolo ? (
@@ -1987,6 +2092,49 @@ export default function TournamentDetailPage() {
                               onChange={(e) => setPlayer4Uid(e.target.value)}
                               className="bg-background border border-border rounded px-2.5 py-1.5 text-xs font-mono"
                             />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              placeholder="Player 5 / Sub IGN (Optional)"
+                              value={player5Ign}
+                              onChange={(e) => setPlayer5Ign(e.target.value)}
+                              className="bg-background border border-border rounded px-2.5 py-1.5 text-xs"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Player 5 UID (Optional)"
+                              value={player5Uid}
+                              onChange={(e) => setPlayer5Uid(e.target.value)}
+                              className="bg-background border border-border rounded px-2.5 py-1.5 text-xs font-mono"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border">
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                                Team Esports Experience
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Tier-1 Scrims, 2 Years"
+                                value={teamExperience}
+                                onChange={(e) => setTeamExperience(e.target.value)}
+                                className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                                Past Tournaments / Achievements
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Championship Winners"
+                                value={teamAchievements}
+                                onChange={(e) => setTeamAchievements(e.target.value)}
+                                className="w-full bg-background border border-border rounded px-2.5 py-1.5 text-xs"
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>

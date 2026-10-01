@@ -63,6 +63,7 @@ interface Bidder {
   allocatedPurse: number
   status: 'active' | 'revoked'
   createdAt: string
+  group?: string
 }
 
 interface AuctionPlayer {
@@ -144,7 +145,9 @@ export default function AuctionCredentialsPage() {
   const [teamsText, setTeamsText] = useState(
     'Aura XtremeZ, Tamil Titans, Phoenix Esports, Shadow Squad, Night Raiders, Velocity Force, Dragon Slayers, Clashers Elite'
   )
-  const [purse, setPurse] = useState(100000)
+  const [purse, setPurse] = useState(150000)
+  const [bidderGroupFilter, setBidderGroupFilter] = useState<'ALL' | 'GROUP A' | 'GROUP B' | 'GROUP C'>('ALL')
+  const [isSeedingTnbbl, setIsSeedingTnbbl] = useState(false)
 
   // Draft player pool & live bidding state
   const [players, setPlayers] = useState<AuctionPlayer[]>([])
@@ -168,6 +171,24 @@ export default function AuctionCredentialsPage() {
   // Google Sheets import state
   const [csvInput, setCsvInput] = useState('')
   const [isImporting, setIsImporting] = useState(false)
+
+  const handleSeedTnbbl = async () => {
+    setIsSeedingTnbbl(true)
+    setErr('')
+    setMsg('')
+    try {
+      const res = await fetch(`/api/tournaments/${auctionId}/seed-tnbbl`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to seed TNBBL data')
+      setMsg(data.message || 'TNBBL Season 2 seeded successfully with 36 franchise teams and ₹1,50,000 purse!')
+      await Promise.all([loadCredentials(), loadPlayers()])
+    } catch (e: unknown) {
+      if (e instanceof Error) setErr(e.message)
+      else setErr('Failed to seed TNBBL data')
+    } finally {
+      setIsSeedingTnbbl(false)
+    }
+  }
 
   useEffect(() => {
     if (auctionId) {
@@ -1177,7 +1198,17 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
               </div>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={handleSeedTnbbl}
+                disabled={isSeedingTnbbl}
+                className="inline-flex items-center gap-1.5 rounded border border-amber-500/40 bg-amber-500/10 px-3.5 py-2 text-xs font-bold text-amber-400 hover:bg-amber-500/20 transition disabled:opacity-60 shadow-sm"
+              >
+                <Trophy className="size-4 text-amber-400" />
+                {isSeedingTnbbl ? 'Seeding TNBBL Season 2…' : 'Seed TNBBL Season 2 (36 Franchises & ₹1.5L Purse)'}
+              </button>
+
               <button
                 onClick={handleGenerate}
                 disabled={isGenerating}
@@ -1191,7 +1222,7 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
 
           {/* Active Bidders Credentials Table */}
           <div className="rounded border border-border bg-card overflow-hidden">
-            <div className="border-b border-border p-4 flex items-center justify-between">
+            <div className="border-b border-border p-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Users className="size-4 text-primary" />
                 <h2 className="font-semibold text-sm text-foreground">Live Bidder Credentials</h2>
@@ -1211,6 +1242,31 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
               )}
             </div>
 
+            {/* Group Filter Chips */}
+            {bidders.some((b) => b.group) && (
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-muted/20 px-4 py-2.5 text-xs">
+                <span className="font-semibold text-muted-foreground mr-1 text-[11px]">Filter by Group:</span>
+                {(['ALL', 'GROUP A', 'GROUP B', 'GROUP C'] as const).map((grp) => {
+                  const count = grp === 'ALL' ? bidders.length : bidders.filter((b) => b.group === grp).length
+                  return (
+                    <button
+                      key={grp}
+                      type="button"
+                      onClick={() => setBidderGroupFilter(grp)}
+                      className={`px-3 py-1 rounded text-xs font-bold transition flex items-center gap-1 ${
+                        bidderGroupFilter === grp
+                          ? 'bg-primary text-background'
+                          : 'bg-muted text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <span>{grp}</span>
+                      <span className="opacity-75 text-[10px]">({count})</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-muted/50 border-b border-border text-muted-foreground">
@@ -1227,13 +1283,24 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                   {bidders.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="p-8 text-center text-muted-foreground">
-                        No active auction credentials generated. Click "Generate Unique Credentials" to create scoped accounts for this auction.
+                        No active auction credentials generated. Click "Generate Unique Credentials" or "Seed TNBBL Season 2" to create scoped accounts for this auction.
                       </td>
                     </tr>
                   ) : (
-                    bidders.map((b) => (
+                    bidders
+                      .filter((b) => bidderGroupFilter === 'ALL' || b.group === bidderGroupFilter)
+                      .map((b) => (
                       <tr key={b.id} className="hover:bg-muted/30 transition">
-                        <td className="p-3 font-bold text-foreground">{b.teamName}</td>
+                        <td className="p-3 font-bold text-foreground">
+                          <div className="flex items-center gap-2">
+                            <span>{b.teamName}</span>
+                            {b.group && (
+                              <span className="rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-black px-1.5 py-0.5">
+                                {b.group}
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="p-3 font-mono text-primary font-semibold select-all">
                           {b.loginCode}
                         </td>

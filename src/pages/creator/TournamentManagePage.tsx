@@ -32,6 +32,9 @@ import {
   Globe,
   Gavel,
   ShieldAlert,
+  Shield,
+  Upload,
+  Phone,
   Mail,
   Landmark,
   Receipt,
@@ -137,6 +140,13 @@ interface Team {
   status: 'pending' | 'verified' | 'rejected'
   utr?: string
   registeredAt: string
+  ambassadorId?: string
+  ambassadorName?: string
+  role?: string
+  experience?: string
+  achievements?: string
+  clipUrl?: string
+  group?: string
 }
 
 interface Payment {
@@ -152,6 +162,13 @@ interface Payment {
   status: 'pending' | 'approved' | 'rejected'
   submittedAt: string
   rejectionReason?: string
+}
+
+function parseFee(fee: string | number | undefined): number {
+  if (typeof fee === 'number') return fee
+  if (!fee) return 0
+  const cleaned = String(fee).replace(/[^0-9.]/g, '')
+  return cleaned ? parseFloat(cleaned) : 0
 }
 
 export default function TournamentManagePage() {
@@ -238,6 +255,40 @@ export default function TournamentManagePage() {
   const [rulesText, setRulesText] = useState('')
   const [isSavingRules, setIsSavingRules] = useState(false)
 
+  // Sheet Import & Team Management State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [isAddTeamModalOpen, setIsAddTeamModalOpen] = useState(false)
+  const [isBatchAllotModalOpen, setIsBatchAllotModalOpen] = useState(false)
+  const [importSheetUrl, setImportSheetUrl] = useState(
+    'https://docs.google.com/spreadsheets/d/1tEgKRgm-P-HuOtrWtvC9Xt6hXTQec6dVbm1lEUu7w1Y/edit?usp=sharing'
+  )
+  const [importMode, setImportMode] = useState<'individual' | 'squads'>('individual')
+  const [playersPerTeam, setPlayersPerTeam] = useState(4)
+  const [teamNamePrefix, setTeamNamePrefix] = useState('Team')
+  const [importAmbassadorId, setImportAmbassadorId] = useState('')
+  const [isImporting, setIsImporting] = useState(false)
+  const [ambassadorFilter, setAmbassadorFilter] = useState<'all' | 'unassigned' | string>('all')
+  const [teamGroupFilter, setTeamGroupFilter] = useState<'all' | 'GROUP A' | 'GROUP B' | 'GROUP C'>('all')
+
+  // Edit / Add Team Form State
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null)
+  const [teamForm, setTeamForm] = useState({
+    name: '',
+    captainName: '',
+    captainIgn: '',
+    captainPhone: '',
+    captainEmail: '',
+    playersText: '',
+    ambassadorId: '',
+  })
+  const [isSavingTeam, setIsSavingTeam] = useState(false)
+
+  // Batch Allot State
+  const [batchAmbassadorId, setBatchAmbassadorId] = useState('')
+  const [batchRangeFrom, setBatchRangeFrom] = useState(1)
+  const [batchRangeTo, setBatchRangeTo] = useState(18)
+  const [isBatchAllotting, setIsBatchAllotting] = useState(false)
+
   useEffect(() => {
     loadData()
   }, [id])
@@ -283,7 +334,7 @@ export default function TournamentManagePage() {
       loadSettlement()
 
       const isAuctionTournament = t.format === 'Auction Tournament' || t.format?.toLowerCase().includes('auction')
-      const isPaidTournament = Number(t.entryFee || 0) > 0
+      const isPaidTournament = parseFee(t.entryFee) > 0 && !String(t.entryFee || '').toLowerCase().includes('free')
 
       // Only show applicable tab as default
       if (isAuctionTournament) {
@@ -546,6 +597,196 @@ export default function TournamentManagePage() {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // GOOGLE SHEET IMPORT & TEAM ALLOTMENT HANDLERS
+  // ═══════════════════════════════════════════════════════════════
+  const handleImportSheet = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsImporting(true)
+    setError('')
+    setSuccessMsg('')
+    try {
+      const selectedAmb = ambassadors.find((a) => a.id === importAmbassadorId)
+      const res = await fetch(`/api/tournaments/${id}/import-sheet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sheetUrl: importSheetUrl,
+          mode: importMode,
+          playersPerTeam,
+          teamNamePrefix,
+          ambassadorId: importAmbassadorId || undefined,
+          ambassadorName: selectedAmb?.name || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to import sheet')
+
+      setSuccessMsg(data.message || `Successfully imported ${data.count} entries!`)
+      setIsImportModalOpen(false)
+      loadData()
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to import from sheet')
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  const handleQuickAssignAmbassador = async (teamId: string, ambassadorId: string) => {
+    const selectedAmb = ambassadors.find((a) => a.id === ambassadorId)
+    const ambName = selectedAmb ? selectedAmb.name : ''
+
+    // Optimistic UI update
+    setTeams((prev) =>
+      prev.map((t) =>
+        t.id === teamId
+          ? { ...t, ambassadorId: ambassadorId || undefined, ambassadorName: ambName || undefined }
+          : t
+      )
+    )
+
+    try {
+      const res = await fetch(`/api/tournaments/${id}/teams/${teamId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ambassadorId: ambassadorId || null,
+          ambassadorName: ambName || null,
+        }),
+      })
+      if (!res.ok) throw new Error('Failed to update ambassador')
+      setSuccessMsg(selectedAmb ? `Squad allotted to ${selectedAmb.name}!` : 'Ambassador unassigned')
+      setTimeout(() => setSuccessMsg(''), 2500)
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to allot ambassador')
+      loadData()
+    }
+  }
+
+  const handleOpenAddTeam = () => {
+    setEditingTeam(null)
+    setTeamForm({
+      name: '',
+      captainName: '',
+      captainIgn: '',
+      captainPhone: '',
+      captainEmail: '',
+      playersText: '',
+      ambassadorId: '',
+    })
+    setIsAddTeamModalOpen(true)
+  }
+
+  const handleOpenEditTeam = (t: Team) => {
+    setEditingTeam(t)
+    setTeamForm({
+      name: t.name,
+      captainName: t.captainName,
+      captainIgn: t.captainIgn,
+      captainPhone: t.captainPhone,
+      captainEmail: t.captainEmail,
+      playersText: t.players?.map((p) => p.ign).join('\n') || t.captainIgn,
+      ambassadorId: t.ambassadorId || '',
+    })
+    setIsAddTeamModalOpen(true)
+  }
+
+  const handleSaveTeam = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSavingTeam(true)
+    setError('')
+    try {
+      const selectedAmb = ambassadors.find((a) => a.id === teamForm.ambassadorId)
+      const parsedPlayers = teamForm.playersText
+        .split('\n')
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0)
+        .map((ign) => ({ ign, gameUid: 'N/A' }))
+
+      const payload = {
+        name: teamForm.name,
+        captainName: teamForm.captainName,
+        captainIgn: teamForm.captainIgn,
+        captainPhone: teamForm.captainPhone,
+        captainEmail: teamForm.captainEmail,
+        players: parsedPlayers.length > 0 ? parsedPlayers : [{ ign: teamForm.captainIgn, gameUid: 'N/A' }],
+        ambassadorId: teamForm.ambassadorId || null,
+        ambassadorName: selectedAmb ? selectedAmb.name : null,
+      }
+
+      const url = editingTeam
+        ? `/api/tournaments/${id}/teams/${editingTeam.id}`
+        : `/api/tournaments/${id}/teams`
+      const method = editingTeam ? 'PATCH' : 'POST'
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const d = await res.json()
+        throw new Error(d.error || 'Failed to save team')
+      }
+
+      setSuccessMsg(editingTeam ? 'Team updated successfully!' : 'Team added successfully!')
+      setIsAddTeamModalOpen(false)
+      setEditingTeam(null)
+      loadData()
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to save team')
+    } finally {
+      setIsSavingTeam(false)
+    }
+  }
+
+  const handleDeleteTeam = async (teamId: string, teamName: string) => {
+    if (!window.confirm(`Are you sure you want to remove "${teamName}" from the roster?`)) return
+    try {
+      const res = await fetch(`/api/tournaments/${id}/teams/${teamId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to remove team')
+      setSuccessMsg(`Team "${teamName}" removed`)
+      setTeams((prev) => prev.filter((t) => t.id !== teamId))
+      loadData()
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to delete team')
+    }
+  }
+
+  const handleBatchAllot = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsBatchAllotting(true)
+    setError('')
+    try {
+      const selectedAmb = ambassadors.find((a) => a.id === batchAmbassadorId)
+      const res = await fetch(`/api/tournaments/${id}/teams/batch-allot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rangeFrom: batchRangeFrom,
+          rangeTo: batchRangeTo,
+          ambassadorId: batchAmbassadorId || null,
+          ambassadorName: selectedAmb ? selectedAmb.name : null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to batch allot')
+
+      setSuccessMsg(`Allotted ${data.updatedCount} squads to ${selectedAmb ? selectedAmb.name : 'Unassigned'}!`)
+      setIsBatchAllotModalOpen(false)
+      loadData()
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to batch allot')
+    } finally {
+      setIsBatchAllotting(false)
+    }
+  }
+
   // Roadmap Match Customizer Handlers
   const handleUpdateSelectedMatch = (updated: Partial<BracketMatch>) => {
     if (!roadmap || !selectedMatch) return
@@ -645,9 +886,17 @@ export default function TournamentManagePage() {
   }
 
   const isAuction = tournament.format === 'Auction Tournament' || tournament.format?.toLowerCase().includes('auction')
-  const isPaid = Number(tournament.entryFee || 0) > 0
+  const entryFeeNumber = parseFee(tournament.entryFee)
+  const isPaid = entryFeeNumber > 0 && !String(tournament.entryFee || '').toLowerCase().includes('free')
   const pendingPayments = payments.filter((p) => p.status === 'pending')
   const approvedPayments = payments.filter((p) => p.status === 'approved')
+
+  const totalGrossCollected = settlementInfo?.finances?.grossRevenue ?? (entryFeeNumber * approvedPayments.length)
+  const totalRdkFeeDue = settlementInfo?.finances?.rdkFee ?? Math.round(totalGrossCollected * 0.10)
+  const totalPartnerNet = settlementInfo?.finances?.partnerNet ?? (totalGrossCollected - totalRdkFeeDue)
+  const canClose = settlementInfo?.finances?.canClose ?? (
+    !isPaid || totalGrossCollected === 0 || tournament.settlementStatus === 'VERIFIED'
+  )
 
   return (
     <div className="max-w-6xl mx-auto py-4 px-2 sm:px-4 space-y-6">
@@ -719,7 +968,7 @@ export default function TournamentManagePage() {
                 : 'bg-muted text-muted-foreground border border-border'
             }`}
           >
-            {isPaid ? `Entry Fee: ₹${tournament.entryFee}` : 'Free Entry (₹0)'}
+            {isPaid ? `Entry Fee: ₹${entryFeeNumber}` : 'Free Entry (₹0)'}
           </span>
         </div>
 
@@ -1722,7 +1971,7 @@ export default function TournamentManagePage() {
                 <span className="text-xs font-normal text-muted-foreground">Squads</span>
               </div>
               <p className="text-[11px] text-muted-foreground mt-1">
-                Fee: ₹{tournament.entryFee || '0'} per entry
+                Fee: ₹{entryFeeNumber} per entry
               </p>
             </div>
 
@@ -1731,7 +1980,7 @@ export default function TournamentManagePage() {
                 Gross Entry Collected
               </span>
               <div className="text-xl font-heading font-black text-foreground">
-                ₹{settlementInfo?.finances?.grossRevenue ?? (Number(tournament.entryFee || 0) * approvedPayments.length)}
+                ₹{totalGrossCollected.toLocaleString('en-IN')}
               </div>
               <p className="text-[11px] text-muted-foreground mt-1">
                 100% of verified entry payments
@@ -1743,7 +1992,7 @@ export default function TournamentManagePage() {
                 RDK 10% Platform Fee Due
               </span>
               <div className="text-xl font-heading font-black text-emerald-400">
-                ₹{settlementInfo?.finances?.rdkFee ?? Math.round((Number(tournament.entryFee || 0) * approvedPayments.length) * 0.10)}
+                ₹{totalRdkFeeDue.toLocaleString('en-IN')}
               </div>
               <p className="text-[11px] text-emerald-500/80 mt-1">
                 Strict 10% calculated strictly from approved entries
@@ -1755,7 +2004,7 @@ export default function TournamentManagePage() {
                 Partner Net Earnings (90%)
               </span>
               <div className="text-xl font-heading font-black text-primary">
-                ₹{settlementInfo?.finances?.partnerNet ?? Math.round((Number(tournament.entryFee || 0) * approvedPayments.length) * 0.90)}
+                ₹{totalPartnerNet.toLocaleString('en-IN')}
               </div>
               <p className="text-[11px] text-muted-foreground mt-1">
                 Retained by Official Partner
@@ -1764,7 +2013,7 @@ export default function TournamentManagePage() {
           </div>
 
           {/* Conditional Guidance Banner */}
-          {!isPaid || (settlementInfo?.finances?.grossRevenue === 0) ? (
+          {!isPaid ? (
             <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex items-start gap-3">
               <CheckCircle2 className="size-5 text-emerald-400 shrink-0 mt-0.5" />
               <div>
@@ -1772,7 +2021,19 @@ export default function TournamentManagePage() {
                   Free Entry Tournament — Platform Fee Waived
                 </h4>
                 <p className="text-xs text-emerald-200/80 mt-0.5">
-                  This tournament has ₹0 gross revenue. No RDK platform fee settlement is required. You may proceed to conclude the matches and officially close the tournament whenever ready.
+                  This is an official Free Entry Tournament. No RDK platform fee settlement is required. You may proceed to conclude the matches and officially close the tournament whenever ready.
+                </p>
+              </div>
+            </div>
+          ) : totalGrossCollected === 0 ? (
+            <div className="p-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 flex items-start gap-3">
+              <Clock className="size-5 text-cyan-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">
+                  Paid Tournament — 0 Paid Entries Collected Yet
+                </h4>
+                <p className="text-xs text-cyan-200/80 mt-0.5">
+                  Entry fee is <strong>₹{entryFeeNumber} per entry</strong>. RDK 10% platform fee is calculated dynamically on <strong>actual money collected from approved teams</strong> ({settlementInfo?.finances?.approvedEntries ?? approvedPayments.length}/{tournament.maxTeams} approved = ₹0 collected). As teams register and payments are approved, your gross revenue and 10% platform fee will update in real time.
                 </p>
               </div>
             </div>
@@ -1813,7 +2074,7 @@ export default function TournamentManagePage() {
                   Closure Gatekeeper Active — 10% Platform Settlement Required
                 </h4>
                 <p className="text-xs text-amber-200/80 mt-0.5">
-                  Per RDK Technologies platform terms, Official Partners remit 10% of gross entry fees collected (₹{settlementInfo?.finances?.rdkFee ?? 0}). Tournaments cannot transition to closed until this settlement is verified.
+                  Per RDK Technologies platform terms, Official Partners remit 10% of gross entry fees collected (₹{totalRdkFeeDue.toLocaleString('en-IN')}). Tournaments cannot transition to closed until this settlement is verified.
                 </p>
               </div>
             </div>
@@ -1875,7 +2136,7 @@ export default function TournamentManagePage() {
                 </div>
 
                 <div className="p-3 rounded-lg bg-muted/40 border border-border text-[11px] text-muted-foreground leading-relaxed">
-                  Transfer the exact 10% fee amount: <strong className="text-primary font-bold">₹{settlementInfo?.finances?.rdkFee ?? 0}</strong>. After completing the payment, note the Bank Reference / UTR Number and submit below.
+                  Transfer the exact 10% fee amount: <strong className="text-primary font-bold">₹{totalRdkFeeDue.toLocaleString('en-IN')}</strong>. After completing the payment, note the Bank Reference / UTR Number and submit below.
                 </div>
               </div>
 
@@ -1971,7 +2232,7 @@ export default function TournamentManagePage() {
                 </p>
                 <p>
                   Closure Gatekeeper:{' '}
-                  {settlementInfo?.finances?.canClose ? (
+                  {canClose ? (
                     <strong className="text-emerald-400">CLEARED (Ready for Closure)</strong>
                   ) : (
                     <strong className="text-amber-400">
@@ -1990,7 +2251,7 @@ export default function TournamentManagePage() {
                 <button
                   type="button"
                   onClick={handleOfficialClosure}
-                  disabled={isClosingTournament || !settlementInfo?.finances?.canClose}
+                  disabled={isClosingTournament || !canClose}
                   className="px-5 py-2.5 rounded-lg bg-primary text-background font-bold text-xs hover:bg-primary/90 transition shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
                   <Trophy className="size-4" />
@@ -2007,26 +2268,96 @@ export default function TournamentManagePage() {
       {/* TAB 3: Enrolled Teams Management */}
       {activeTab === 'teams' && (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Header & Controls Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-card p-4 rounded-xl border border-border">
             <div>
-              <h3 className="font-heading font-black text-sm uppercase tracking-wider text-foreground">
-                Enrolled Roster ({teams.length}/{tournament.maxTeams} Teams)
-              </h3>
+              <div className="flex items-center gap-2">
+                <Users className="size-4 text-primary" />
+                <h3 className="font-heading font-black text-sm uppercase tracking-wider text-foreground">
+                  Enrolled Roster ({teams.length}/{tournament.maxTeams} Teams)
+                </h3>
+              </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Verified squads eligible for room ID broadcast and bracket placement.
+                Verified squads eligible for room ID broadcast, match tracking, and ambassador coordination.
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Import from Google Sheet Button */}
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-xs font-bold text-emerald-400 hover:bg-emerald-500/20 transition shadow-sm"
+              >
+                <FileSpreadsheet className="size-3.5" />
+                <span>Import from Google Sheet</span>
+              </button>
+
+              {/* Add Squad Manually Button */}
+              <button
+                type="button"
+                onClick={handleOpenAddTeam}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-background text-xs font-bold hover:bg-primary/90 transition shadow-sm"
+              >
+                <Plus className="size-3.5" />
+                <span>Add Squad</span>
+              </button>
+
+              {/* Batch Allot Staff Button */}
+              {ambassadors.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsBatchAllotModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-500/40 bg-purple-500/10 text-xs font-bold text-purple-300 hover:bg-purple-500/20 transition shadow-sm"
+                >
+                  <ShieldCheck className="size-3.5" />
+                  <span>Batch Allot Staff</span>
+                </button>
+              )}
+
+              {/* Export to CSV Button */}
               <a
                 href={`/api/tournaments/${tournament.id}/export`}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-xs font-semibold text-foreground hover:bg-muted transition-colors shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-muted/60 text-xs font-semibold text-foreground hover:bg-muted transition-colors shadow-sm"
               >
-                <FileSpreadsheet className="size-3.5 text-emerald-400" />
-                <span>Export to Google Sheets (CSV)</span>
+                <Download className="size-3.5 text-muted-foreground" />
+                <span>Export CSV</span>
               </a>
+
+              {/* Ambassador Filter */}
+              {ambassadors.length > 0 && (
+                <select
+                  value={ambassadorFilter}
+                  onChange={(e) => setAmbassadorFilter(e.target.value)}
+                  className="bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary font-medium"
+                >
+                  <option value="all">All Staff ({teams.length})</option>
+                  <option value="unassigned">Unassigned ({teams.filter((t) => !t.ambassadorId).length})</option>
+                  {ambassadors.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ({teams.filter((t) => t.ambassadorId === a.id).length})
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {/* Group Filter */}
+              {teams.some((t) => t.group) && (
+                <select
+                  value={teamGroupFilter}
+                  onChange={(e) => setTeamGroupFilter(e.target.value as 'all' | 'GROUP A' | 'GROUP B' | 'GROUP C')}
+                  className="bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary font-medium"
+                >
+                  <option value="all">All Groups ({teams.length})</option>
+                  <option value="GROUP A">GROUP A ({teams.filter((t) => t.group === 'GROUP A').length})</option>
+                  <option value="GROUP B">GROUP B ({teams.filter((t) => t.group === 'GROUP B').length})</option>
+                  <option value="GROUP C">GROUP C ({teams.filter((t) => t.group === 'GROUP C').length})</option>
+                </select>
+              )}
+
+              {/* Search Bar */}
               <div className="relative">
                 <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
                 <input
@@ -2034,70 +2365,562 @@ export default function TournamentManagePage() {
                   placeholder="Search team or captain..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-muted border border-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary w-48"
+                  className="bg-muted border border-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary w-44"
                 />
               </div>
             </div>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {teams
-              .filter(
-                (t) =>
-                  t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  t.captainName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  t.captainIgn.toLowerCase().includes(searchQuery.toLowerCase())
-              )
-              .map((t, i) => (
-                <div
-                  key={t.id}
-                  className="p-4 rounded-xl border border-border bg-card space-y-2 flex flex-col justify-between"
+          {/* Teams Grid / Empty State */}
+          {teams.length === 0 ? (
+            <div className="p-12 text-center rounded-2xl border border-dashed border-border bg-card/60 space-y-4">
+              <div className="size-14 rounded-full bg-emerald-500/10 text-emerald-400 mx-auto flex items-center justify-center">
+                <FileSpreadsheet className="size-7" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h4 className="font-heading font-black text-base uppercase text-foreground">
+                  No Registered Squads in Roster Yet
+                </h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Import all registered players directly from your Google Form responses spreadsheet (e.g. TNBBL Season 2 responses), or add squads manually to begin match allotment.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 text-black font-heading font-black text-xs hover:bg-emerald-400 transition shadow-lg shadow-emerald-500/20"
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="size-6 rounded bg-muted flex items-center justify-center text-[10px] font-bold">
-                        #{i + 1}
-                      </span>
-                      <span className="font-heading font-black text-sm text-foreground">{t.name}</span>
-                    </div>
-                    <span
-                      className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${
-                        t.status === 'verified'
-                          ? 'bg-emerald-500/20 text-emerald-400'
-                          : 'bg-amber-500/20 text-amber-400'
-                      }`}
-                    >
-                      {t.status}
-                    </span>
-                  </div>
+                  <FileSpreadsheet className="size-4" />
+                  <span>Import from Google Sheet</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAddTeam}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-card text-xs font-bold text-foreground hover:bg-muted transition"
+                >
+                  <Plus className="size-4" />
+                  <span>Add Squad Manually</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {teams
+                .filter((t) => {
+                  const matchesSearch =
+                    t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    t.captainName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    t.captainIgn.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    (t.ambassadorName && t.ambassadorName.toLowerCase().includes(searchQuery.toLowerCase()))
 
-                  <div className="text-[11px] text-muted-foreground space-y-1">
-                    <p>
-                      Captain: <strong className="text-foreground">{t.captainName}</strong> ({t.captainIgn})
-                    </p>
-                    <p>
-                      Phone: <strong className="text-foreground">{t.captainPhone}</strong>
-                    </p>
-                  </div>
+                  if (!matchesSearch) return false
 
-                  <div className="pt-2 border-t border-border">
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground block mb-1">
-                      Squad Players
-                    </span>
-                    <div className="flex flex-wrap gap-1">
-                      {t.players?.map((p, idx) => (
-                        <span
-                          key={idx}
-                          className="text-[10px] bg-muted/60 text-foreground px-2 py-0.5 rounded font-mono"
-                        >
-                          {p.ign}
+                  if (teamGroupFilter !== 'all' && t.group !== teamGroupFilter) return false
+
+                  if (ambassadorFilter === 'all') return true
+                  if (ambassadorFilter === 'unassigned') return !t.ambassadorId
+                  return t.ambassadorId === ambassadorFilter
+                })
+                .map((t, i) => (
+                  <div
+                    key={t.id}
+                    className="p-4 rounded-xl border border-border bg-card space-y-3 flex flex-col justify-between hover:border-primary/40 transition shadow-sm"
+                  >
+                    <div>
+                      {/* Top Header */}
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="size-6 rounded bg-muted flex items-center justify-center text-[10px] font-bold text-foreground">
+                            #{i + 1}
+                          </span>
+                          <span className="font-heading font-black text-sm text-foreground truncate max-w-[140px]">
+                            {t.name}
+                          </span>
+                          {t.group && (
+                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                              {t.group}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                              t.status === 'verified'
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : 'bg-amber-500/20 text-amber-400'
+                            }`}
+                          >
+                            {t.status}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditTeam(t)}
+                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                            title="Edit Squad"
+                          >
+                            <Edit3 className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTeam(t.id, t.name)}
+                            className="p-1 rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+                            title="Remove Squad"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Captain & Contact */}
+                      <div className="text-[11px] text-muted-foreground space-y-1 bg-muted/30 p-2.5 rounded-lg border border-border/50">
+                        <p>
+                          Captain: <strong className="text-foreground">{t.captainName}</strong> ({t.captainIgn})
+                        </p>
+                        {t.captainPhone && (
+                          <p className="flex items-center gap-1 text-[11px]">
+                            <Phone className="size-3 text-muted-foreground" />
+                            <a
+                              href={`https://wa.me/${t.captainPhone.replace(/[^0-9]/g, '')}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-foreground hover:text-primary underline font-mono"
+                            >
+                              {t.captainPhone}
+                            </a>
+                          </p>
+                        )}
+                        {t.role && (
+                          <p className="text-[10px]">
+                            Role: <span className="text-primary font-semibold">{t.role}</span>
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Squad Players */}
+                      <div className="pt-2">
+                        <span className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground block mb-1">
+                          Squad Players ({t.players?.length || 1})
                         </span>
-                      ))}
+                        <div className="flex flex-wrap gap-1">
+                          {t.players?.map((p, idx) => (
+                            <span
+                              key={idx}
+                              className="text-[10px] bg-muted/80 text-foreground px-2 py-0.5 rounded font-mono border border-border/60"
+                            >
+                              {p.ign}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Ambassador Allotment Selector on each card */}
+                    <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Shield className="size-3.5 text-purple-400 shrink-0" />
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                          Staff:
+                        </span>
+                      </div>
+                      <select
+                        value={t.ambassadorId || ''}
+                        onChange={(e) => handleQuickAssignAmbassador(t.id, e.target.value)}
+                        className={`text-[10px] font-bold px-2 py-1 rounded border transition-colors focus:outline-none focus:border-primary max-w-[170px] truncate ${
+                          t.ambassadorId
+                            ? 'bg-purple-500/10 text-purple-300 border-purple-500/30'
+                            : 'bg-muted text-muted-foreground border-border'
+                        }`}
+                      >
+                        <option value="">Unassigned</option>
+                        {ambassadors.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name} ({a.assignedTeamRange || 'Franchise'})
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
+                ))}
+            </div>
+          )}
+
+          {/* MODAL 1: IMPORT FROM GOOGLE SHEET */}
+          {isImportModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet className="size-5 text-emerald-400" />
+                    <div>
+                      <h3 className="font-heading font-black text-base uppercase text-foreground">
+                        Import Roster from Google Sheet
+                      </h3>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Directly sync player responses from Google Forms / Google Sheets
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsImportModalOpen(false)}
+                    className="rounded p-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-4" />
+                  </button>
                 </div>
-              ))}
-          </div>
+
+                <form onSubmit={handleImportSheet} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Google Sheet URL *
+                    </label>
+                    <input
+                      type="url"
+                      required
+                      placeholder="https://docs.google.com/spreadsheets/d/..."
+                      value={importSheetUrl}
+                      onChange={(e) => setImportSheetUrl(e.target.value)}
+                      className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs font-mono text-foreground focus:border-primary focus:outline-none"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Ensure the sheet is public (<strong>"Anyone with the link can view"</strong>).
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                        Import Format *
+                      </label>
+                      <select
+                        value={importMode}
+                        onChange={(e) => setImportMode(e.target.value as any)}
+                        className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-bold"
+                      >
+                        <option value="individual">Individual Slots (1 Player per Slot / 216 Slots)</option>
+                        <option value="squads">4-Player Squads (Group into Squads of 4)</option>
+                      </select>
+                    </div>
+
+                    {importMode === 'squads' ? (
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                          Players per Squad
+                        </label>
+                        <input
+                          type="number"
+                          min={2}
+                          max={6}
+                          value={playersPerTeam}
+                          onChange={(e) => setPlayersPerTeam(Number(e.target.value) || 4)}
+                          className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                          Team Name Prefix
+                        </label>
+                        <input
+                          type="text"
+                          value={teamNamePrefix}
+                          onChange={(e) => setTeamNamePrefix(e.target.value)}
+                          placeholder="e.g. Team or Slot"
+                          className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Allot to Ambassador (Optional)
+                    </label>
+                    <select
+                      value={importAmbassadorId}
+                      onChange={(e) => setImportAmbassadorId(e.target.value)}
+                      className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-medium"
+                    >
+                      <option value="">Leave Unassigned (Allot manually later)</option>
+                      {ambassadors.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} ({a.assignedTeamRange || 'Franchise'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-[11px] text-emerald-200/90 leading-relaxed">
+                    ✓ Columns detected automatically: <strong>Name, IGN, Phone, Email, Role, Experience, Achievements, and Gameplay clips</strong>.
+                  </div>
+
+                  <div className="pt-2 flex justify-end gap-2 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => setIsImportModalOpen(false)}
+                      className="rounded-lg border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isImporting || !importSheetUrl}
+                      className="rounded-lg bg-emerald-500 text-black px-5 py-2 text-xs font-heading font-black hover:bg-emerald-400 transition shadow disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <FileSpreadsheet className="size-4" />
+                      {isImporting ? 'Importing Sheet…' : 'Import Roster from Google Sheet'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL 2: ADD / EDIT SQUAD */}
+          {isAddTeamModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
+                  <h3 className="font-heading font-black text-base uppercase text-foreground">
+                    {editingTeam ? 'Edit Squad Roster' : 'Add Squad Manually'}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddTeamModalOpen(false)
+                      setEditingTeam(null)
+                    }}
+                    className="rounded p-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveTeam} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Team / Clan Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Tamil Titans"
+                      value={teamForm.name}
+                      onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })}
+                      className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                        Captain Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Prabhanjan"
+                        value={teamForm.captainName}
+                        onChange={(e) => setTeamForm({ ...teamForm, captainName: e.target.value })}
+                        className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                        Captain In-Game Name (IGN) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Pr4bhaflick"
+                        value={teamForm.captainIgn}
+                        onChange={(e) => setTeamForm({ ...teamForm, captainIgn: e.target.value })}
+                        className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                        Captain Phone
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="6369159402"
+                        value={teamForm.captainPhone}
+                        onChange={(e) => setTeamForm({ ...teamForm, captainPhone: e.target.value })}
+                        className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                        Captain Email
+                      </label>
+                      <input
+                        type="email"
+                        placeholder="player@gmail.com"
+                        value={teamForm.captainEmail}
+                        onChange={(e) => setTeamForm({ ...teamForm, captainEmail: e.target.value })}
+                        className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Squad Player IGNs (One per line)
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="Player1_IGN&#10;Player2_IGN&#10;Player3_IGN&#10;Player4_IGN"
+                      value={teamForm.playersText}
+                      onChange={(e) => setTeamForm({ ...teamForm, playersText: e.target.value })}
+                      className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs font-mono text-foreground focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Allot to Ambassador
+                    </label>
+                    <select
+                      value={teamForm.ambassadorId}
+                      onChange={(e) => setTeamForm({ ...teamForm, ambassadorId: e.target.value })}
+                      className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-medium"
+                    >
+                      <option value="">Unassigned</option>
+                      {ambassadors.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} ({a.assignedTeamRange || 'Franchise'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="pt-2 flex justify-end gap-2 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddTeamModalOpen(false)
+                        setEditingTeam(null)
+                      }}
+                      className="rounded-lg border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingTeam}
+                      className="rounded-lg bg-primary text-background px-5 py-2 text-xs font-heading font-black hover:bg-primary/90 transition shadow disabled:opacity-50"
+                    >
+                      {isSavingTeam ? 'Saving…' : editingTeam ? 'Update Squad' : 'Save Squad'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL 3: BATCH ALLOT TO AMBASSADOR */}
+          {isBatchAllotModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="size-5 text-purple-400" />
+                    <div>
+                      <h3 className="font-heading font-black text-base uppercase text-foreground">
+                        Batch Allot Squads to Staff
+                      </h3>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Assign a sequential range of squads to an ambassador at once
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsBatchAllotModalOpen(false)}
+                    className="rounded p-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleBatchAllot} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Select Franchise Ambassador *
+                    </label>
+                    <select
+                      required
+                      value={batchAmbassadorId}
+                      onChange={(e) => setBatchAmbassadorId(e.target.value)}
+                      className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-bold"
+                    >
+                      <option value="">-- Choose Ambassador --</option>
+                      {ambassadors.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} ({a.assignedTeamRange || 'Franchise'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                        Squad Number From
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={teams.length || 100}
+                        value={batchRangeFrom}
+                        onChange={(e) => setBatchRangeFrom(Number(e.target.value) || 1)}
+                        className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                        Squad Number To
+                      </label>
+                      <input
+                        type="number"
+                        min={batchRangeFrom}
+                        max={teams.length || 100}
+                        value={batchRangeTo}
+                        onChange={(e) => setBatchRangeTo(Number(e.target.value) || batchRangeFrom)}
+                        className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-[11px] text-purple-200/90">
+                    This will assign all squads from <strong>#{batchRangeFrom}</strong> to <strong>#{batchRangeTo}</strong> to the selected ambassador.
+                  </div>
+
+                  <div className="pt-2 flex justify-end gap-2 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => setIsBatchAllotModalOpen(false)}
+                      className="rounded-lg border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isBatchAllotting || !batchAmbassadorId}
+                      className="rounded-lg bg-purple-600 text-white px-5 py-2 text-xs font-heading font-black hover:bg-purple-500 transition shadow disabled:opacity-50"
+                    >
+                      {isBatchAllotting ? 'Allotting…' : 'Confirm Batch Allotment'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2246,9 +3069,16 @@ export default function TournamentManagePage() {
                           </span>
                         </td>
                         <td className="p-3">
-                          <span className="rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-primary font-semibold text-[11px]">
-                            {a.assignedTeamRange}
-                          </span>
+                          <div className="flex flex-col gap-1 items-start">
+                            <span className="rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-primary font-semibold text-[11px]">
+                              {a.assignedTeamRange}
+                            </span>
+                            {teams.filter((t) => t.ambassadorId === a.id).length > 0 && (
+                              <span className="text-[10px] text-emerald-400 font-bold">
+                                {teams.filter((t) => t.ambassadorId === a.id).length} squads allotted
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-3 text-muted-foreground">{a.phone || '—'}</td>
                         <td className="p-3 text-right">

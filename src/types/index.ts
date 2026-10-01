@@ -122,6 +122,9 @@ export interface Tournament {
   partnerNet?: number
   isClosed?: boolean
   closedAt?: string
+  maxSquadSize?: number
+  basePrice?: number
+  startingPurse?: number
   createdAt?: string
 }
 
