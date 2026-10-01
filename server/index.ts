@@ -1690,11 +1690,19 @@ app.get('/api/tournaments/:id', (req: Request, res: Response) => {
     : rawTeams.map((t) => ({
       id: t.id,
       name: t.name,
+      captainName: t.captainName,
       captainIgn: t.captainIgn,
       players: t.players,
       status: t.status,
+      group: t.group,
+      ambassadorId: t.ambassadorId,
+      ambassadorName: t.ambassadorName,
+      role: t.role,
+      experience: t.experience,
+      achievements: t.achievements,
+      clipUrl: t.clipUrl,
       registeredAt: t.registeredAt,
-      // Captain phone and email are omitted for privacy
+      // Captain phone, email, and paymentProof are omitted for privacy
     }))
 
   return res.json({

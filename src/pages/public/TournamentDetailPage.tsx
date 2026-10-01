@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -89,6 +89,12 @@ interface Team {
   status: 'pending' | 'verified' | 'rejected'
   utr?: string
   paymentProofUrl?: string
+  ambassadorId?: string
+  ambassadorName?: string
+  role?: string
+  experience?: string
+  achievements?: string
+  clipUrl?: string
   registeredAt: string
 }
 
@@ -175,6 +181,75 @@ export default function TournamentDetailPage() {
   const filteredTeams = selectedGroupFilter === 'ALL'
     ? teams
     : teams.filter((t) => (t.group || '').toUpperCase() === selectedGroupFilter)
+
+  // Group teams and individual players by Ambassador & Franchise Team
+  const franchiseGroups = useMemo(() => {
+    const map = new Map<string, {
+      ambassadorName: string
+      teamName: string
+      group?: string
+      status: string
+      players: Array<{
+        ign: string
+        name?: string
+        role?: string
+        experience?: string
+        achievements?: string
+        clipUrl?: string
+      }>
+    }>()
+
+    teams.forEach((t) => {
+      const hasAmb = Boolean(t.ambassadorName && t.ambassadorName.trim())
+      const ambName = hasAmb ? t.ambassadorName!.trim() : (t.players && t.players.length > 1 ? t.captainName : 'Franchise Lead')
+      const franchiseTeam = hasAmb ? t.name : (t.name || 'Franchise Team')
+      const key = hasAmb ? t.ambassadorName!.trim().toLowerCase() : t.id
+
+      if (!map.has(key)) {
+        map.set(key, {
+          ambassadorName: ambName,
+          teamName: franchiseTeam,
+          group: t.group,
+          status: t.status,
+          players: [],
+        })
+      }
+
+      const entry = map.get(key)!
+      if (t.group && !entry.group) entry.group = t.group
+
+      if (t.players && t.players.length > 1) {
+        t.players.forEach((p) => {
+          entry.players.push({
+            ign: p.ign,
+            name: p.name,
+            role: p.role || t.role,
+            experience: p.experience || t.experience,
+            achievements: p.achievements || t.achievements,
+            clipUrl: t.clipUrl,
+          })
+        })
+      } else {
+        const ign = t.captainIgn || t.players?.[0]?.ign || t.name
+        const name = t.captainName || t.players?.[0]?.name
+        entry.players.push({
+          ign,
+          name,
+          role: t.role,
+          experience: t.experience,
+          achievements: t.achievements,
+          clipUrl: t.clipUrl,
+        })
+      }
+    })
+
+    return Array.from(map.values())
+  }, [teams])
+
+  const filteredFranchiseGroups = useMemo(() => {
+    if (selectedGroupFilter === 'ALL') return franchiseGroups
+    return franchiseGroups.filter((g) => (g.group || '').toUpperCase() === selectedGroupFilter)
+  }, [franchiseGroups, selectedGroupFilter])
 
   // Payment Screenshot State (Primary verification)
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null)
@@ -889,7 +964,7 @@ export default function TournamentDetailPage() {
             }`}
           >
             <Users className="size-3.5" />
-            <span>{isAuction ? `Franchise Teams (${teams.length})` : `Enrolled Squads (${teams.length})`}</span>
+            <span>{isAuction ? `Franchise Teams (${franchiseGroups.length})` : `Enrolled Squads (${teams.length})`}</span>
           </button>
 
           {/* Match Room Credentials Tab (Only available to registered players) */}
@@ -1347,12 +1422,12 @@ export default function TournamentDetailPage() {
               <div>
                 <h3 className="font-heading font-black text-sm uppercase tracking-wider text-foreground">
                   {isAuction
-                    ? `Franchise Teams (${filteredTeams.length}/${teams.length || tournament.maxTeams})`
-                    : `Enrolled Squads (${teams.length}/${tournament.maxTeams})`}
+                    ? `Franchise Teams (${filteredFranchiseGroups.length}/${franchiseGroups.length} Teams • ${teams.length} Players)`
+                    : `Enrolled Squads (${filteredTeams.length}/${teams.length || tournament.maxTeams})`}
                 </h3>
                 {isAuction && (
                   <p className="text-[11px] text-muted-foreground mt-0.5">
-                    District Franchise Teams across Groups A, B, and C with 6 drafted players per roster.
+                    District Franchise Teams & Ambassadors with all drafted players rostered below each team.
                   </p>
                 )}
               </div>
@@ -1376,7 +1451,9 @@ export default function TournamentDetailPage() {
             {hasGroups && (
               <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
                 {(['ALL', 'GROUP A', 'GROUP B', 'GROUP C'] as const).map((grp) => {
-                  const count = grp === 'ALL' ? teams.length : teams.filter((t) => t.group === grp).length
+                  const count = isAuction
+                    ? grp === 'ALL' ? franchiseGroups.length : franchiseGroups.filter((g) => g.group === grp).length
+                    : grp === 'ALL' ? teams.length : teams.filter((t) => t.group === grp).length
                   return (
                     <button
                       key={grp}
@@ -1404,7 +1481,8 @@ export default function TournamentDetailPage() {
               </div>
             )}
 
-            {filteredTeams.length === 0 ? (
+            {/* Empty State */}
+            {(isAuction ? filteredFranchiseGroups.length : filteredTeams.length) === 0 ? (
               <div className="p-12 text-center border border-border rounded-xl bg-card">
                 <Users className="size-8 text-muted-foreground mx-auto mb-2 opacity-50" />
                 <p className="text-xs text-muted-foreground">
@@ -1413,7 +1491,120 @@ export default function TournamentDetailPage() {
                     : `No teams found in ${selectedGroupFilter}.`}
                 </p>
               </div>
+            ) : isAuction ? (
+              /* AUCTION FRANCHISE TEAMS: Ambassador Name & Team Name + Players of that team below */
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredFranchiseGroups.map((group, idx) => (
+                  <div
+                    key={idx}
+                    className="p-5 rounded-2xl border border-border bg-card hover:border-primary/50 transition-all shadow-md flex flex-col justify-between"
+                  >
+                    <div>
+                      {/* Top Header: Team Name & Ambassador Name */}
+                      <div className="flex items-start justify-between gap-3 pb-3 border-b border-border">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="size-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-black shrink-0">
+                              #{idx + 1}
+                            </span>
+                            <h4 className="font-heading font-black text-base text-foreground uppercase tracking-wide">
+                              {group.teamName}
+                            </h4>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground pl-8">
+                            <Shield className="size-3.5 text-purple-400 shrink-0" />
+                            <span className="font-semibold text-muted-foreground">Ambassador:</span>
+                            <span className="font-bold text-foreground">{group.ambassadorName}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {group.group && (
+                            <span
+                              className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
+                                group.group === 'GROUP A'
+                                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                                  : group.group === 'GROUP B'
+                                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
+                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                              }`}
+                            >
+                              {group.group}
+                            </span>
+                          )}
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-muted/60 text-muted-foreground border border-border">
+                            {group.players.length} {group.players.length === 1 ? 'Player' : 'Players'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Below that: Players of that Team */}
+                      <div className="mt-3.5 space-y-2">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">
+                          Team Roster & Drafted Players:
+                        </span>
+
+                        <div className="space-y-2">
+                          {group.players.map((p, pIdx) => (
+                            <div
+                              key={pIdx}
+                              className="p-2.5 rounded-xl bg-muted/30 border border-border/60 hover:bg-muted/50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                            >
+                              <div className="flex items-start gap-2.5">
+                                <span className="size-5 rounded bg-background border border-border flex items-center justify-center text-[10px] font-mono text-muted-foreground shrink-0 mt-0.5">
+                                  {pIdx + 1}
+                                </span>
+                                <div className="space-y-0.5">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-heading font-black text-xs text-foreground tracking-wide">
+                                      {p.ign}
+                                    </span>
+                                    {p.role && (
+                                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/20">
+                                        {p.role}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {p.name && p.name !== p.ign && (
+                                    <p className="text-[10px] text-muted-foreground">{p.name}</p>
+                                  )}
+                                  {(p.experience || p.achievements) && (
+                                    <p className="text-[10px] text-muted-foreground/80 line-clamp-1">
+                                      {p.experience ? `${p.experience} exp` : ''}
+                                      {p.experience && p.achievements ? ' • ' : ''}
+                                      {p.achievements}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              {p.clipUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setActiveClip({
+                                      ign: p.ign,
+                                      name: p.name || p.ign,
+                                      url: p.clipUrl!,
+                                      role: p.role || 'Draft Player',
+                                    })
+                                  }
+                                  className="self-start sm:self-center px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1 transition shrink-0"
+                                >
+                                  <Video className="size-3" />
+                                  <span>Watch Clip</span>
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
+              /* REGULAR TOURNAMENT SQUADS */
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {filteredTeams.map((t, idx) => (
                   <div
