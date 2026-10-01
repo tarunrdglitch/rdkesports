@@ -3256,7 +3256,7 @@ app.get('/api/auctions/:id/credentials', (req: Request, res: Response) => {
 })
 
 // Ephemeral Auction Bidder Credentials: Batch generate unique credentials
-app.post('/api/auctions/:id/credentials/generate', (req: Request, res: Response) => {
+const handleGenerateBidderCredentials = (req: Request, res: Response) => {
   try {
     const id = String(req.params.id)
     const { teams, purseAmount = 100000 } = req.body
@@ -3267,9 +3267,15 @@ app.post('/api/auctions/:id/credentials/generate', (req: Request, res: Response)
 
     const generated: EphemeralAuctionBidder[] = []
 
-    for (const rawName of teams) {
-      const teamName = String(rawName).trim()
+    for (const rawItem of teams) {
+      const teamName = typeof rawItem === 'object' && rawItem !== null
+        ? String(rawItem.name || '').trim()
+        : String(rawItem).trim()
       if (!teamName) continue
+
+      const teamPurse = typeof rawItem === 'object' && rawItem !== null && rawItem.purse
+        ? Number(rawItem.purse)
+        : (Number(purseAmount) || 100000)
 
       const cleanSlug = teamName.toLowerCase().replace(/[^a-z0-9]/g, '_')
       const randDigits = Math.floor(1000 + Math.random() * 9000)
@@ -3282,7 +3288,7 @@ app.post('/api/auctions/:id/credentials/generate', (req: Request, res: Response)
         teamName,
         loginCode,
         passkey,
-        allocatedPurse: Number(purseAmount) || 100000,
+        allocatedPurse: teamPurse,
         status: 'active',
         createdAt: new Date().toISOString(),
       }
@@ -3333,7 +3339,10 @@ app.post('/api/auctions/:id/credentials/generate', (req: Request, res: Response)
     console.error('Error generating auction credentials:', error)
     return res.status(500).json({ error: 'Failed to generate credentials' })
   }
-})
+}
+
+app.post('/api/auctions/:id/credentials/generate', handleGenerateBidderCredentials)
+app.post('/api/auctions/:id/bidders/generate', handleGenerateBidderCredentials)
 
 // Ephemeral Auction Bidder Credentials: Finalize Auction & Delete All Ephemeral Credentials
 app.post('/api/auctions/:id/finalize', (req: Request, res: Response) => {
@@ -3395,9 +3404,10 @@ app.get('/api/auctions/:id/state', (req: Request, res: Response) => {
   return res.json(state)
 })
 
-app.post('/api/auctions/:id/bid', requireAuctionBiddingAccess, (req: Request, res: Response) => {
-  const id = String(req.params.id)
-  const { teamName, amount, playerId } = req.body
+const handlePlaceBid = (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id)
+    const { teamName, amount, playerId } = req.body
 
   if (!teamName || !amount) {
     return res.status(400).json({ error: 'Team name and bid amount are required' })
@@ -3496,16 +3506,22 @@ app.post('/api/auctions/:id/bid', requireAuctionBiddingAccess, (req: Request, re
     time: new Date().toLocaleTimeString(),
   })
 
-  return res.json({
-    success: true,
-    message: `Bid of ₹${numAmount.toLocaleString()} placed by ${teamName}`,
-    state,
-    remainingPurse: currentPurse,
-    maxAllowedBid,
-    requiredReserve,
-    remainingSlotsAfter,
-  })
-})
+    return res.json({
+      success: true,
+      message: `Bid of ₹${numAmount.toLocaleString()} placed by ${teamName}`,
+      state,
+      remainingPurse: currentPurse,
+      maxAllowedBid,
+      requiredReserve,
+      remainingSlotsAfter,
+    })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to place bid' })
+  }
+}
+
+app.post('/api/auctions/:id/bid', requireAuctionBiddingAccess, handlePlaceBid)
+app.post('/api/auctions/:id/bids', requireAuctionBiddingAccess, handlePlaceBid)
 
 // Auction Player Status & Bid Updates (Sold / Unsold / On Hammer)
 app.patch('/api/auctions/:id/players/:playerId', (req: Request, res: Response) => {
@@ -3541,21 +3557,35 @@ app.patch('/api/auctions/:id/players/:playerId', (req: Request, res: Response) =
       }
 
       // Sync into REGISTERED_TEAMS squad roster
-      const matchedTeam = REGISTERED_TEAMS.find(
-        (t) => (t.tournamentId === id || t.tournamentId === player.tournamentId) && t.name.toLowerCase() === soldToTeam.toLowerCase()
+      let matchedTeam = REGISTERED_TEAMS.find(
+        (t) => (t.tournamentId === id || t.tournamentId === player.tournamentId) && t.name.toLowerCase().trim() === soldToTeam.toLowerCase().trim()
       )
-      if (matchedTeam) {
-        if (!matchedTeam.players.some((p) => p.ign.toLowerCase() === player.ign.toLowerCase())) {
-          matchedTeam.players.push({
-            ign: player.ign,
-            gameUid: player.gameUid,
-            name: player.name,
-            role: player.role,
-            phone: player.phone,
-            experience: player.experience,
-            achievements: player.achievements,
-          } as any)
+      if (!matchedTeam) {
+        matchedTeam = {
+          id: `team_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
+          tournamentId: player.tournamentId || id,
+          name: soldToTeam.trim(),
+          captainName: `${soldToTeam.trim()} Official`,
+          captainEmail: `${soldToTeam.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}@franchise.rdk`,
+          captainPhone: '',
+          captainIgn: `${soldToTeam.trim()} Official`,
+          players: [],
+          status: 'verified',
+          registeredAt: new Date().toISOString(),
         }
+        REGISTERED_TEAMS.push(matchedTeam)
+      }
+
+      if (!matchedTeam.players.some((p) => p.ign?.toLowerCase() === player.ign.toLowerCase())) {
+        matchedTeam.players.push({
+          ign: player.ign,
+          gameUid: player.gameUid,
+          name: player.name,
+          role: player.role,
+          phone: player.phone,
+          experience: player.experience,
+          achievements: player.achievements,
+        } as any)
       }
 
       logAuditEvent({
@@ -3582,10 +3612,10 @@ app.patch('/api/auctions/:id/players/:playerId', (req: Request, res: Response) =
 // ═══════════════════════════════════════════════════════════════
 // AUCTION REVERSE SOLD MECHANISM
 // ═══════════════════════════════════════════════════════════════
-app.post('/api/auctions/:id/players/:playerId/reverse-sold', requirePartnerOrAdmin, (req: Request, res: Response) => {
+const handleReverseSold = (req: Request, res: Response) => {
   try {
     const id = String(req.params.id)
-    const playerId = String(req.params.playerId)
+    const playerId = String(req.params.playerId || req.body.playerId || '')
     const { reason = 'Accidental hammer / Rule correction' } = req.body
 
     const player = AUCTION_PLAYERS.find(
@@ -3608,6 +3638,14 @@ app.post('/api/auctions/:id/players/:playerId/reverse-sold', requirePartnerOrAdm
     )
     if (bidder) {
       bidder.allocatedPurse += refundAmount
+    }
+
+    // 1b. Remove player from previous franchise's squad roster
+    const prevTeam = REGISTERED_TEAMS.find(
+      (t) => (t.tournamentId === id || t.tournamentId === player.tournamentId) && t.name.toLowerCase().trim() === previousTeam.toLowerCase().trim()
+    )
+    if (prevTeam && Array.isArray(prevTeam.players)) {
+      prevTeam.players = prevTeam.players.filter((p) => p.ign?.toLowerCase() !== player.ign.toLowerCase())
     }
 
     // 2. Return player to available pool
@@ -3678,7 +3716,10 @@ app.post('/api/auctions/:id/players/:playerId/reverse-sold', requirePartnerOrAdm
     console.error('Error reversing player sale:', error)
     return res.status(500).json({ error: 'Failed to reverse player sale' })
   }
-})
+}
+
+app.post('/api/auctions/:id/players/:playerId/reverse-sold', requirePartnerOrAdmin, handleReverseSold)
+app.post('/api/auctions/:id/reversal', requirePartnerOrAdmin, handleReverseSold)
 
 // ═══════════════════════════════════════════════════════════════
 // RDK 10% PLATFORM SETTLEMENT SYSTEM
