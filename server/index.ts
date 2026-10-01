@@ -428,22 +428,22 @@ export interface TournamentRecord {
   maxTeams: number
   maxSlots?: number
   status:
-    | 'DRAFT'
-    | 'PUBLISHED'
-    | 'REGISTRATION_OPEN'
-    | 'REGISTRATION_CLOSED'
-    | 'AUCTION'
-    | 'LIVE'
-    | 'FINISHED'
-    | 'SETTLEMENT_PENDING'
-    | 'SETTLEMENT_VERIFIED'
-    | 'CLOSED'
-    | 'draft'
-    | 'registration_open'
-    | 'live'
-    | 'completed'
-    | 'paused'
-    | string
+  | 'DRAFT'
+  | 'PUBLISHED'
+  | 'REGISTRATION_OPEN'
+  | 'REGISTRATION_CLOSED'
+  | 'AUCTION'
+  | 'LIVE'
+  | 'FINISHED'
+  | 'SETTLEMENT_PENDING'
+  | 'SETTLEMENT_VERIFIED'
+  | 'CLOSED'
+  | 'draft'
+  | 'registration_open'
+  | 'live'
+  | 'completed'
+  | 'paused'
+  | string
   startDate: string
   endDate?: string
   registrationOpening?: string
@@ -785,190 +785,7 @@ let PLATFORM_AUDIT_LOGS: PlatformAuditLogRecord[] = []
 let AUCTION_REVERSALS: AuctionReversalRecord[] = []
 
 // ═══════════════════════════════════════════════════════════════
-// SEED TNBBL SEASON 2 COMPLETE AUCTION DATASET
-// ═══════════════════════════════════════════════════════════════
-export function seedTnbblSeason2Data(targetTourneyId?: string) {
-  try {
-    const possiblePaths = [
-      path.join(__dirname, 'tnbbl_season2_data.json'),
-      path.resolve(process.cwd(), 'server', 'tnbbl_season2_data.json'),
-      path.resolve(process.cwd(), 'tnbbl_season2_data.json'),
-    ]
-    const dataPath = possiblePaths.find((p) => fs.existsSync(p))
-    if (!dataPath) {
-      console.warn('[TNBBL Seed] tnbbl_season2_data.json not found in paths:', possiblePaths)
-      return null
-    }
-
-    const raw = fs.readFileSync(dataPath, 'utf8')
-    const seed = JSON.parse(raw)
-    const tourneyId = targetTourneyId || seed.tournament.id
-
-    const existingIdx = TOURNAMENTS.findIndex((t) => t.id === tourneyId || t.slug === seed.tournament.slug)
-
-    const tourneyRecord: TournamentRecord = {
-      id: tourneyId,
-      slug: seed.tournament.slug || 'tnbbl-season-2',
-      name: seed.tournament.name,
-      type: 'AUCTION TOURNAMENT',
-      creatorId: 'cr_tamil_aura_zoner',
-      creatorName: 'Tamil Aura Zoner',
-      creatorHandle: '@tamilaurazonerofficial',
-      creatorAvatar: seed.tournament.creatorAvatar,
-      game: 'Free Fire',
-      format: 'Auction Tournament',
-      banner: seed.tournament.bannerUrl,
-      teams: 36,
-      maxTeams: 36,
-      maxSlots: 36,
-      maxSquadSize: 6,
-      basePrice: 5000,
-      startingPurse: 150000,
-      status: 'live',
-      startDate: seed.tournament.startDate || '2026-10-01',
-      endDate: seed.tournament.endDate || '2026-10-15',
-      prizePool: seed.tournament.prizePool || '₹50,000',
-      entryFee: seed.tournament.entryFee || '₹60 / Player',
-      entryType: 'per_player',
-      registeredTeamsCount: 36,
-      rules: seed.tournament.rules,
-      roadmap: createDefaultRoadmap(seed.tournament.name),
-      createdAt: new Date().toISOString(),
-    }
-
-    if (existingIdx !== -1) {
-      TOURNAMENTS[existingIdx] = { ...TOURNAMENTS[existingIdx], ...tourneyRecord }
-    } else {
-      TOURNAMENTS.unshift(tourneyRecord)
-    }
-
-    // Clear previous entries for this tournament
-    REGISTERED_TEAMS = REGISTERED_TEAMS.filter((t) => t.tournamentId !== tourneyId)
-    AUCTION_PLAYERS = AUCTION_PLAYERS.filter((p) => p.auctionId !== tourneyId && p.tournamentId !== tourneyId)
-    EPHEMERAL_BIDDERS = EPHEMERAL_BIDDERS.filter((b) => b.auctionId !== tourneyId)
-    USERS = USERS.filter((u) => !(u.isEphemeralAuctionBidder && (u.auctionId === tourneyId || u.tournamentId === tourneyId)))
-
-    // 1. Add 36 Teams across Groups A, B, and C
-    for (const team of seed.teams) {
-      const teamRecord: RegisteredTeam = {
-        id: team.id,
-        tournamentId: tourneyId,
-        name: team.name,
-        group: team.group,
-        captainName: team.captainName,
-        captainEmail: team.captainEmail,
-        captainPhone: team.captainPhone,
-        captainIgn: team.captainIgn,
-        players: team.players.map((p: any) => ({
-          ign: p.ign,
-          name: p.name,
-          gameUid: p.gameUid,
-          role: p.role,
-          experience: p.experience,
-          achievements: p.achievements,
-          phone: p.phone,
-        })),
-        status: 'verified',
-        registeredAt: new Date().toISOString(),
-      }
-      REGISTERED_TEAMS.push(teamRecord)
-
-      // 2. Add Ambassador / Bidder
-      const bidder: EphemeralAuctionBidder = {
-        id: `bid_${team.id}`,
-        auctionId: tourneyId,
-        teamName: team.name,
-        group: team.group,
-        loginCode: team.ambassador.loginCode,
-        passkey: team.ambassador.passkey,
-        allocatedPurse: team.ambassador.allocatedPurse || 150000,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-      }
-      EPHEMERAL_BIDDERS.push(bidder)
-
-      // 3. Add into USERS store for ambassador portal authentication
-      USERS.push({
-        id: bidder.id,
-        name: `${team.name} (Ambassador)`,
-        email: bidder.loginCode,
-        role: 'ambassador',
-        password: bidder.passkey,
-        isEphemeralAuctionBidder: true,
-        auctionId: tourneyId,
-        tournamentId: tourneyId,
-        tournamentName: tourneyRecord.name,
-        organizationName: team.name,
-        teamName: team.name,
-        allocatedPurse: bidder.allocatedPurse,
-        createdAt: new Date().toISOString(),
-      })
-
-      // 4. Add into AMBASSADORS
-      const existingAmbIdx = AMBASSADORS.findIndex(
-        (a) => a.tournamentId === tourneyId && a.name.toLowerCase().includes(team.name.toLowerCase())
-      )
-      if (existingAmbIdx === -1) {
-        AMBASSADORS.push({
-          id: `amb_${team.id}`,
-          name: `${team.name} Ambassador`,
-          email: bidder.loginCode,
-          creatorId: 'cr_tamil_aura_zoner',
-          tournamentId: tourneyId,
-          tournamentName: tourneyRecord.name,
-          assignedTeamRange: team.name,
-          phone: team.captainPhone,
-          createdAt: new Date().toISOString(),
-        })
-      }
-    }
-
-    // 5. Add 216 Players
-    for (const p of seed.players) {
-      AUCTION_PLAYERS.push({
-        id: p.id,
-        auctionId: tourneyId,
-        tournamentId: tourneyId,
-        name: p.name,
-        ign: p.ign,
-        gameUid: p.gameUid,
-        role: p.role,
-        basePrice: p.basePrice || 5000,
-        tier: 'Tier 2 (Pro)',
-        group: p.group,
-        experience: p.experience,
-        achievements: p.achievements,
-        phone: p.phone,
-        contactNumber: p.phone,
-        email: p.email,
-        clipUrl: p.clipUrl,
-        photoUrl: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
-        stats: {
-          kd: p.kd || '3.50',
-          matchesPlayed: 45,
-          headshotRate: '62%',
-          achievements: p.achievements || 'Registered Draft Athlete',
-        },
-        status: 'sold',
-        soldPrice: p.soldPrice || 5000,
-        soldToTeam: p.soldToTeam,
-        paymentStatus: 'verified',
-        registeredAt: new Date().toISOString(),
-      })
-    }
-
-    console.log(
-      `[TNBBL Seed] Initialized TNBBL Season 2: 36 Franchises (Groups A, B, C), 216 Players (6 per team), 36 Ambassadors with ₹150,000 purse!`
-    )
-    return tourneyRecord
-  } catch (error) {
-    console.error('[TNBBL Seed] Error seeding TNBBL Season 2:', error)
-    return null
-  }
-}
-
-// Pre-seed TNBBL Season 2 immediately on module execution
-seedTnbblSeason2Data()
+// CENTRALIZED FINANCIAL CALCULATION SERVICE
 
 // ═══════════════════════════════════════════════════════════════
 // CENTRALIZED FINANCIAL CALCULATION SERVICE
@@ -1396,11 +1213,11 @@ app.delete('/api/creators/:id', requireSuperAdmin, async (req: Request, res: Res
       await prisma.officialCreator.updateMany({
         where: { id },
         data: { status: 'deactivated', isDeleted: true },
-      }).catch(() => {})
+      }).catch(() => { })
       await prisma.user.updateMany({
         where: { organizationId: id },
         data: { status: 'deactivated', isDeleted: true },
-      }).catch(() => {})
+      }).catch(() => { })
     }
 
     logAuditEvent({
@@ -1449,11 +1266,11 @@ app.patch('/api/creators/:id/status', requireSuperAdmin, async (req: Request, re
       await prisma.officialCreator.updateMany({
         where: { id },
         data: { status, isDeleted: status === 'deactivated' },
-      }).catch(() => {})
+      }).catch(() => { })
       await prisma.user.updateMany({
         where: { organizationId: id },
         data: { status, isDeleted: status === 'deactivated' },
-      }).catch(() => {})
+      }).catch(() => { })
     }
 
     logAuditEvent({
@@ -1501,7 +1318,7 @@ app.post('/api/creators/:id/reset-access', requireSuperAdmin, async (req: Reques
       await prisma.user.updateMany({
         where: { organizationId: id },
         data: { password: passwordToSet, status: 'active', isDeleted: false },
-      }).catch(() => {})
+      }).catch(() => { })
     }
 
     logAuditEvent({
@@ -1695,7 +1512,7 @@ app.get('/api/tournaments/stats', (_req: Request, res: Response) => {
   const totalTeams = REGISTERED_TEAMS.length
   const pendingPays = PAYMENT_SUBMISSIONS.filter((p) => p.status === 'pending').length
   const dynamicStats = [
-    { label: 'Active tournaments', value: String(activeCount), hint: `${TOURNAMENTS.filter(t=>t.status==='live').length} live now` },
+    { label: 'Active tournaments', value: String(activeCount), hint: `${TOURNAMENTS.filter(t => t.status === 'live').length} live now` },
     { label: 'Registered teams', value: String(totalTeams), hint: `across all events` },
     { label: 'Pending payments', value: String(pendingPays), hint: `${pendingPays} to verify`, warn: pendingPays > 0 },
     { label: 'Active ambassadors', value: String(AMBASSADORS.length), hint: 'created by creators' },
@@ -1747,8 +1564,8 @@ app.post('/api/tournaments', requirePartnerOrAdmin, (req: Request, res: Response
       (game === 'BGMI'
         ? 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=1200&q=80'
         : game === 'Valorant'
-        ? 'https://images.unsplash.com/photo-1560253023-3ec5d502959f?auto=format&fit=crop&w=1200&q=80'
-        : 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&q=80')
+          ? 'https://images.unsplash.com/photo-1560253023-3ec5d502959f?auto=format&fit=crop&w=1200&q=80'
+          : 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&q=80')
 
     const newTournament: TournamentRecord = {
       id,
@@ -1871,14 +1688,14 @@ app.get('/api/tournaments/:id', (req: Request, res: Response) => {
   const sanitizedTeams = isStaffOrAdmin
     ? rawTeams
     : rawTeams.map((t) => ({
-        id: t.id,
-        name: t.name,
-        captainIgn: t.captainIgn,
-        players: t.players,
-        status: t.status,
-        registeredAt: t.registeredAt,
-        // Captain phone and email are omitted for privacy
-      }))
+      id: t.id,
+      name: t.name,
+      captainIgn: t.captainIgn,
+      players: t.players,
+      status: t.status,
+      registeredAt: t.registeredAt,
+      // Captain phone and email are omitted for privacy
+    }))
 
   return res.json({
     tournament: {
@@ -2430,7 +2247,7 @@ app.post('/api/tournaments/:id/import-sheet', requirePartnerOrAdmin, async (req:
               paymentProofUrl: t.paymentProofUrl,
             },
           })
-          .catch(() => {})
+          .catch(() => { })
       }
     } catch {
       // Memory fallback
@@ -2458,33 +2275,6 @@ app.post('/api/tournaments/:id/import-sheet', requirePartnerOrAdmin, async (req:
   }
 })
 
-// Quick Seed TNBBL Season 2 (Groups A, B, C with 36 Teams, 216 Players, and 36 Ambassadors)
-app.post('/api/tournaments/:id/seed-tnbbl', requirePartnerOrAdmin, (req: Request, res: Response) => {
-  const id = String(req.params.id)
-  const seeded = seedTnbblSeason2Data(id)
-  if (!seeded) {
-    return res.status(500).json({ error: 'Failed to seed TNBBL Season 2 data' })
-  }
-  return res.json({
-    success: true,
-    message: 'TNBBL Season 2 data successfully seeded: 36 Franchise Teams across Groups A, B, C with 216 drafted players (6 members per team) and 36 ambassador accounts (₹150,000 purse)!',
-    tournament: seeded,
-    teamsCount: 36,
-    playersCount: 216,
-  })
-})
-
-app.post('/api/tournaments/seed-tnbbl-season-2', (req: Request, res: Response) => {
-  const seeded = seedTnbblSeason2Data('tourney_tnbbl_s2')
-  if (!seeded) {
-    return res.status(500).json({ error: 'Failed to seed TNBBL Season 2 data' })
-  }
-  return res.json({
-    success: true,
-    message: 'TNBBL Season 2 data successfully initialized!',
-    tournament: seeded,
-  })
-})
 
 // Add Team Manually (Partner / Admin)
 app.post('/api/tournaments/:id/teams', requirePartnerOrAdmin, (req: Request, res: Response) => {
@@ -2642,6 +2432,32 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
 
     const isAuction = tourney.format === 'Auction Tournament' || req.body.isAuctionRegistration
     const isPaid = tourney.entryFee && !tourney.entryFee.toLowerCase().includes('free')
+
+    // Gatekeeper: Reject registration if tournament is not open or slots are full
+    if (tourney.status !== 'registration_open') {
+      return res.status(400).json({
+        error:
+          tourney.status === 'live'
+            ? 'Tournament is currently live. Registration is closed.'
+            : tourney.status === 'completed'
+            ? 'Tournament has concluded. Registration is closed.'
+            : 'Registration is currently closed for this tournament.',
+      })
+    }
+
+    const currentCandidates = AUCTION_PLAYERS.filter(
+      (p) => p.auctionId === tourney.id || p.tournamentId === tourney.id
+    ).length
+    const currentTeams = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id).length
+    const totalCurrent = isAuction
+      ? Math.max(currentCandidates, tourney.registeredTeamsCount)
+      : Math.max(currentTeams, tourney.registeredTeamsCount)
+
+    if (totalCurrent >= tourney.maxTeams) {
+      return res.status(400).json({
+        error: `All slots are full (${totalCurrent}/${tourney.maxTeams}). Registration is closed.`,
+      })
+    }
 
     // ── CASE A: Auction Candidate Registration (Individual Player Draft Pool) ──
     if (isAuction) {
@@ -4117,7 +3933,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
             organizationId: matchingCreator.id,
             organizationName: matchingCreator.organizationName,
           },
-        }).catch(() => {})
+        }).catch(() => { })
       }
     }
 
@@ -4239,8 +4055,8 @@ app.get('/api/auth/me', (req: Request, res: Response) => {
       exists.role === 'super_admin' || payload.role === 'super_admin'
         ? 'super_admin'
         : matchingCreator
-        ? 'creator'
-        : (exists.role || payload.role)
+          ? 'creator'
+          : (exists.role || payload.role)
 
     if (matchingCreator && exists.role !== 'creator') {
       exists.role = 'creator'
@@ -4291,7 +4107,7 @@ async function initDatabase() {
       where: {
         id: { in: ['cr_clashers', 'cr_tamil_titans', 'cr_phoenix'] },
       },
-    }).catch(() => {})
+    }).catch(() => { })
 
     const dbCreators = await prisma.officialCreator.findMany()
     if (dbCreators.length > 0) {
