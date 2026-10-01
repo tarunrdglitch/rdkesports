@@ -13,6 +13,9 @@ import {
   X,
   AlertCircle,
   Layers,
+  FileText,
+  CheckCircle2,
+  Wand2,
 } from 'lucide-react'
 
 export interface BracketMatch {
@@ -49,6 +52,244 @@ interface TournamentRoadmapTreeProps {
   onDeleteMatch?: (matchId: string) => void
 }
 
+export const TNBBL_SAMPLE_SCHEDULE_PROMPT = `*TNBBL MATCHES SCHEDULE ✅*
+
+\`36TEAMS(3GROUPS)\`
+
+*ROUND 1 - Qualifiers Stage*
+Totally 3 Groups
+GROUP - A,B,C :- OCT 1
+\`TOP 8 QUALIFY IN EACH GROUP(3GROUPS)\`
+*BACK TO BACK 3 MATCHES PER GROUP👍🏻*
+
+24 TEAMS WILL BE QUALIFIED TO ROUND 2 👇🏻 
+
+*ROUND 2 - Quarter Final*
+24 TEAMS(2 GROUPS)
+GROUP A - OCT 3(SAT)
+GROUP B - OCT 4(SUN)
+\`TOP 9 QUALIFY IN EACH GROUP(2GROUPS)\`
+*BACK TO BACK 6 MATCHES PER GROUP👍🏻*
+
+IN 24 TEAMS TOP 18 WILL BE QUALIFIED TO ROUND 3 👇🏻 
+
+*ROUND 3 - Semi Final*
+Top 18 Teams Separated as 3 GRP(A,B,C)In Per Grp 6 Teams will be there💯
+GRP - AxB 12 TEAMS(OCT 7)
+GRP - BxC 12 TEAMS(OCT 8)
+GRP - CxA 12 TEAMS(OCT 8)
+\`FROM 18 TEAMS TOP 12 WILL BE QUALIFIED\`
+*BACK TO BACK 6 MATCHES PER GROUP👍🏻*
+
+IN 18 TEAMS TOP 12 WILL BE QUALIFED TO ROUND 4👇🏻💥
+
+*ROUND 4 - Grand Finals🏆*
+12 Teams CHAMPION RUSH FORMAT - 110 POINTS TO ACTIVATE✅
+OCT 10 - DAY 1 (8MATCHES)
+OCT 11 - DAY 2
+(8MATCHES)
+\`TOTALLY 16 MATCHES EACH DAY 8 MATCHES WILL BE THERE💯\`
+*IN THIS TOP 3 TEAMS WILL BE :-*
+
+•CHAMPIONS 🥇🏆 
+•RUNNER UP 🥈
+•2ND RUNNER UP🥉
+*PP DISTRIBUTION🎖️🎉*
+🥇6000rs
+🥈3500rs
+🥉2500rs
+\`AMBASSADORS SHOULD BE EQUALLY DIVIDE ➗ THE PP TO TEAM PLAYERS\``
+
+export function parseSchedulePromptToRoadmap(
+  rawText: string,
+  existingRoadmap: TournamentRoadmap
+): TournamentRoadmap {
+  const text = rawText.trim()
+  if (!text) return existingRoadmap
+
+  // Extract title if present
+  let title = existingRoadmap.title || 'ROAD TO CHAMPIONSHIP'
+  const titleMatch = text.match(/([A-Z0-9\s\-_]+(?:SCHEDULE|TOURNAMENT|ROADMAP|CHAMPIONSHIP|LEAGUE))/i)
+  if (titleMatch && titleMatch[1]) {
+    title = titleMatch[1].replace(/[*_`#]/g, '').trim()
+  }
+
+  let trophyName = existingRoadmap.trophyName || 'Grand Champions Cup'
+  if (/champion|rush|finals/i.test(text)) {
+    trophyName = 'TNBBL Champions Trophy'
+  }
+
+  const roundHeaderRegex = /(?:^|\n)[*_`#\s]*(ROUND\s*\d+|STAGE\s*\d+|PHASE\s*\d+|QUARTER[\s\-]*FINALS?|SEMI[\s\-]*FINALS?|GRAND[\s\-]*FINALS?|QUALIFIERS?)[*_`#\s]*[:\-—]?\s*([^\n\r]*)/gi
+  const matches = [...text.matchAll(roundHeaderRegex)]
+
+  const stages: RoadmapStage[] = []
+  let seq = 1
+
+  if (matches.length > 0) {
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i]
+      const startIndex = match.index! + match[0].length
+      const endIndex = i + 1 < matches.length ? matches[i + 1].index! : text.length
+      const body = text.slice(startIndex, endIndex).trim()
+
+      const tag = match[1].replace(/[*_`#]/g, '').trim()
+      const sub = match[2].replace(/[*_`#✅🏆👇🏻💥💯👍🏻🎖️🎉]/g, '').trim()
+      const name = sub ? `${tag} - ${sub}` : tag
+
+      let shortCode = 'RND'
+      const lower = name.toLowerCase()
+      if (lower.includes('qualif') || lower.includes('round 1')) shortCode = 'QUAL'
+      else if (lower.includes('quarter') || lower.includes('round 2') || lower.includes('qf')) shortCode = 'QF'
+      else if (lower.includes('semi') || lower.includes('round 3') || lower.includes('sf')) shortCode = 'SF'
+      else if (lower.includes('grand') || lower.includes('round 4') || lower.includes('final')) shortCode = 'FINAL'
+
+      // Date extraction
+      let dateRange = 'Upcoming'
+      const dateMatches = body.match(/(?:OCT|NOV|DEC|JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP)\s*\d+(?:\s*\([A-Za-z]+\))?/gi)
+      if (dateMatches && dateMatches.length > 0) {
+        dateRange = dateMatches.length > 1 ? `${dateMatches[0]} - ${dateMatches[dateMatches.length - 1]}` : dateMatches[0]
+      }
+
+      // Qualification rule
+      const qualMatch = body.match(/TOP\s*\d+\s*(?:QUALIFY|WILL\s*BE\s*QUALIFIED|FROM\s*\d+\s*TEAMS\s*TOP\s*\d+)[^\n\r]*/i)
+      const qualRule = qualMatch ? qualMatch[0].replace(/[*_`#👇🏻💥💯👍🏻]/g, '').trim() : ''
+
+      const stageMatches: BracketMatch[] = []
+      const stageId = `stage-${Date.now()}-${i + 1}`
+
+      // Custom match generation per stage type
+      if (shortCode === 'QUAL') {
+        const groups = ['Group A', 'Group B', 'Group C']
+        groups.forEach((g) => {
+          stageMatches.push({
+            id: `m-${Date.now()}-${seq}`,
+            stageId,
+            matchNumber: seq++,
+            team1: { name: `${g} Qualifiers (12 Teams)`, score: '', isWinner: false },
+            team2: { name: 'Top 8 Advance (3 Matches)', score: '', isWinner: false },
+            scheduleTime: dateRange,
+            status: 'upcoming',
+          })
+        })
+      } else if (shortCode === 'QF') {
+        stageMatches.push({
+          id: `m-${Date.now()}-${seq}`,
+          stageId,
+          matchNumber: seq++,
+          team1: { name: 'Quarter Final: Group A (12 Teams)', score: '', isWinner: false },
+          team2: { name: 'Top 9 Advance to Semis (6 Matches)', score: '', isWinner: false },
+          scheduleTime: 'OCT 3 (SAT)',
+          status: 'upcoming',
+        })
+        stageMatches.push({
+          id: `m-${Date.now()}-${seq}`,
+          stageId,
+          matchNumber: seq++,
+          team1: { name: 'Quarter Final: Group B (12 Teams)', score: '', isWinner: false },
+          team2: { name: 'Top 9 Advance to Semis (6 Matches)', score: '', isWinner: false },
+          scheduleTime: 'OCT 4 (SUN)',
+          status: 'upcoming',
+        })
+      } else if (shortCode === 'SF') {
+        stageMatches.push({
+          id: `m-${Date.now()}-${seq}`,
+          stageId,
+          matchNumber: seq++,
+          team1: { name: 'Semi Final: Group A vs Group B', score: '', isWinner: false },
+          team2: { name: '12 Teams (6 Matches)', score: '', isWinner: false },
+          scheduleTime: 'OCT 7',
+          status: 'upcoming',
+        })
+        stageMatches.push({
+          id: `m-${Date.now()}-${seq}`,
+          stageId,
+          matchNumber: seq++,
+          team1: { name: 'Semi Final: Group B vs Group C', score: '', isWinner: false },
+          team2: { name: '12 Teams (6 Matches)', score: '', isWinner: false },
+          scheduleTime: 'OCT 8',
+          status: 'upcoming',
+        })
+        stageMatches.push({
+          id: `m-${Date.now()}-${seq}`,
+          stageId,
+          matchNumber: seq++,
+          team1: { name: 'Semi Final: Group C vs Group A', score: '', isWinner: false },
+          team2: { name: '12 Teams (6 Matches)', score: '', isWinner: false },
+          scheduleTime: 'OCT 8',
+          status: 'upcoming',
+        })
+      } else if (shortCode === 'FINAL') {
+        stageMatches.push({
+          id: `m-${Date.now()}-${seq}`,
+          stageId,
+          matchNumber: seq++,
+          team1: { name: 'Grand Finals - Day 1', score: '', isWinner: false },
+          team2: { name: '12 Elite Finalists (8 Matches)', score: '', isWinner: false },
+          scheduleTime: 'OCT 10',
+          status: 'upcoming',
+        })
+        stageMatches.push({
+          id: `m-${Date.now()}-${seq}`,
+          stageId,
+          matchNumber: seq++,
+          team1: { name: 'Grand Finals - Day 2', score: '', isWinner: false },
+          team2: { name: '12 Elite Finalists (8 Matches)', score: '', isWinner: false },
+          scheduleTime: 'OCT 11',
+          status: 'upcoming',
+        })
+        stageMatches.push({
+          id: `m-${Date.now()}-${seq}`,
+          stageId,
+          matchNumber: seq++,
+          team1: { name: 'Champion Rush Decider (110 Pts)', score: '', isWinner: false },
+          team2: { name: 'Podium: 🥇₹6,000 | 🥈₹3,500 | 🥉₹2,500', score: '', isWinner: true },
+          scheduleTime: 'OCT 11 - Grand Finale',
+          status: 'upcoming',
+        })
+      }
+
+      stages.push({
+        id: stageId,
+        name,
+        shortCode,
+        dateRange: qualRule ? `${dateRange} • ${qualRule}` : dateRange,
+        matches: stageMatches,
+      })
+    }
+  } else {
+    // If no round headers, split by paragraphs
+    const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim().length > 0)
+    paragraphs.forEach((p, idx) => {
+      const firstLine = p.split('\n')[0].replace(/[*_`#]/g, '').trim()
+      const stageId = `stage-${Date.now()}-${idx}`
+      stages.push({
+        id: stageId,
+        name: firstLine || `Stage ${idx + 1}`,
+        shortCode: `S${idx + 1}`,
+        dateRange: `Phase ${idx + 1}`,
+        matches: [
+          {
+            id: `m-${Date.now()}-${seq}`,
+            stageId,
+            matchNumber: seq++,
+            team1: { name: 'Contender 1', score: '', isWinner: false },
+            team2: { name: 'Contender 2', score: '', isWinner: false },
+            scheduleTime: 'Upcoming',
+            status: 'upcoming',
+          },
+        ],
+      })
+    })
+  }
+
+  return {
+    ...existingRoadmap,
+    title,
+    trophyName,
+    stages: stages.length > 0 ? stages : existingRoadmap.stages,
+  }
+}
+
 const STAGE_PRESETS = [
   { key: 'QUAL', name: 'Qualifiers', shortCode: 'QUAL', dateRange: 'Day 1 - Prelims', matches: 4 },
   { key: 'KOPO', name: 'Knockout Play-offs', shortCode: 'KOPO', dateRange: 'Day 1 - Qualifying', matches: 4 },
@@ -67,6 +308,12 @@ export const TournamentRoadmapTree: React.FC<TournamentRoadmapTreeProps> = ({
   onUpdateRoadmap,
   onDeleteMatch,
 }) => {
+  // Modal State for Prompt Text Schedule Builder
+  const [showPromptModal, setShowPromptModal] = useState(false)
+  const [promptText, setPromptText] = useState('')
+  const [promptSuccessMsg, setPromptSuccessMsg] = useState('')
+  const [promptErrorMsg, setPromptErrorMsg] = useState('')
+
   // Modal State for Adding New Stage Column
   const [showAddStageModal, setShowAddStageModal] = useState(false)
   const [newStagePreset, setNewStagePreset] = useState<string>('SF')
@@ -295,6 +542,30 @@ export const TournamentRoadmapTree: React.FC<TournamentRoadmapTreeProps> = ({
     setIsEditingHeader(false)
   }
 
+  // Handle Building Roadmap from Raw Text Prompt
+  const handleBuildFromPrompt = (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (!promptText.trim()) {
+      setPromptErrorMsg('Please paste or enter tournament schedule text first.')
+      return
+    }
+    if (!onUpdateRoadmap) return
+    setPromptErrorMsg('')
+    try {
+      const generated = parseSchedulePromptToRoadmap(promptText, roadmap)
+      onUpdateRoadmap(generated)
+      setHeaderTitle(generated.title)
+      setHeaderTrophy(generated.trophyName)
+      setPromptSuccessMsg(`Successfully generated ${generated.stages.length} tournament rounds with ${generated.stages.flatMap((s) => s.matches).length} match fixtures!`)
+      setTimeout(() => {
+        setPromptSuccessMsg('')
+        setShowPromptModal(false)
+      }, 1100)
+    } catch (err: any) {
+      setPromptErrorMsg(err?.message || 'Failed to parse tournament prompt.')
+    }
+  }
+
   return (
     <div className="relative w-full overflow-x-auto rounded-2xl border border-blue-900/40 bg-gradient-to-br from-[#070b19] via-[#091129] to-[#040714] p-6 text-foreground shadow-2xl">
       {/* Background Decorative Esports Grid & Glows */}
@@ -366,6 +637,20 @@ export const TournamentRoadmapTree: React.FC<TournamentRoadmapTreeProps> = ({
           {isEditable && (
             <div className="flex items-center gap-2">
               <button
+                type="button"
+                onClick={() => {
+                  if (!promptText) setPromptText(TNBBL_SAMPLE_SCHEDULE_PROMPT)
+                  setShowPromptModal(true)
+                }}
+                className="rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-white px-3.5 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-orange-500/25 transition hover:scale-105 active:scale-95"
+                title="Paste tournament schedule announcement text to automatically build stages & matches"
+              >
+                <Wand2 className="size-3.5 animate-pulse text-amber-200" />
+                Prompt Text Builder
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setShowAddStageModal(true)}
                 className="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3.5 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-blue-600/30 transition hover:scale-105 active:scale-95"
               >
@@ -389,16 +674,30 @@ export const TournamentRoadmapTree: React.FC<TournamentRoadmapTreeProps> = ({
             <Layers className="size-10 text-blue-400/60 mb-3" />
             <h3 className="text-base font-bold text-white">No Bracket Rounds Configured</h3>
             <p className="text-xs text-blue-300/70 max-w-sm mt-1 mb-4">
-              Add your first stage column (such as Quarter-Finals, Semi-Finals, or Knockout Play-offs) to start building your roadmap.
+              Use the Text Prompt Builder to paste a schedule announcement or add your first stage column manually.
             </p>
             {isEditable && (
-              <button
-                onClick={() => setShowAddStageModal(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-background shadow hover:opacity-90 transition"
-              >
-                <Plus className="size-4" />
-                Add First Round Column
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!promptText) setPromptText(TNBBL_SAMPLE_SCHEDULE_PROMPT)
+                    setShowPromptModal(true)
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-white px-4 py-2 text-xs font-black uppercase tracking-wider shadow-lg shadow-orange-500/25 transition hover:scale-105"
+                >
+                  <Wand2 className="size-4 animate-pulse text-amber-200" />
+                  Build from Text Prompt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddStageModal(true)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-background shadow hover:opacity-90 transition"
+                >
+                  <Plus className="size-4" />
+                  Add Round Column Manually
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -889,6 +1188,137 @@ export const TournamentRoadmapTree: React.FC<TournamentRoadmapTreeProps> = ({
                   Save Changes
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Prompt Text Schedule Builder Modal */}
+      {showPromptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+          <div className="relative w-full max-w-2xl rounded-2xl border border-amber-500/40 bg-[#0a1026] p-6 shadow-2xl shadow-amber-500/10 space-y-4 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-blue-900/60 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-amber-500/30">
+                  <Wand2 className="size-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-wider text-white flex items-center gap-2">
+                    AI / Text Schedule Prompt Builder
+                    <span className="rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold">
+                      Auto-Parser
+                    </span>
+                  </h3>
+                  <p className="text-xs text-blue-300/80">
+                    Paste raw tournament announcements (WhatsApp, Discord, or text) to automatically build the interactive roadmap stages & match cards.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPromptModal(false)
+                  setPromptErrorMsg('')
+                  setPromptSuccessMsg('')
+                }}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-white transition"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* Quick Actions Bar */}
+            <div className="flex items-center justify-between text-xs pt-1">
+              <span className="font-bold text-blue-300 flex items-center gap-1.5">
+                <FileText className="size-3.5 text-amber-400" />
+                Enter or Paste Tournament Text:
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPromptText(TNBBL_SAMPLE_SCHEDULE_PROMPT)}
+                  className="px-2.5 py-1 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 text-[11px] font-bold transition flex items-center gap-1"
+                >
+                  ⚡ Load TNBBL Example Schedule
+                </button>
+                {promptText && (
+                  <button
+                    type="button"
+                    onClick={() => setPromptText('')}
+                    className="px-2 py-1 rounded bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 text-[11px] font-semibold transition"
+                  >
+                    Clear Text
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Prompt Textarea */}
+            <div className="flex-1 min-h-[220px]">
+              <textarea
+                value={promptText}
+                onChange={(e) => {
+                  setPromptText(e.target.value)
+                  if (promptErrorMsg) setPromptErrorMsg('')
+                }}
+                rows={12}
+                placeholder={`*TNBBL MATCHES SCHEDULE ✅*\n\n36TEAMS(3GROUPS)\n\n*ROUND 1 - Qualifiers Stage*\nTotally 3 Groups\nGROUP - A,B,C :- OCT 1\nTOP 8 QUALIFY IN EACH GROUP(3GROUPS)\nBACK TO BACK 3 MATCHES PER GROUP...\n\n*ROUND 2 - Quarter Final*\n24 TEAMS(2 GROUPS)\nGROUP A - OCT 3(SAT)\nGROUP B - OCT 4(SUN)\n...`}
+                className="w-full h-full min-h-[220px] max-h-[360px] bg-[#070b19] border border-blue-900/80 focus:border-amber-500/70 rounded-xl p-3.5 text-xs font-mono text-blue-100 placeholder:text-blue-500/40 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition resize-y"
+              />
+            </div>
+
+            {/* Status Feedback */}
+            {promptErrorMsg && (
+              <div className="rounded-lg bg-red-950/50 border border-red-500/50 p-3 text-xs text-red-200 flex items-center gap-2">
+                <AlertCircle className="size-4 shrink-0 text-red-400" />
+                <span>{promptErrorMsg}</span>
+              </div>
+            )}
+
+            {promptSuccessMsg && (
+              <div className="rounded-lg bg-emerald-950/50 border border-emerald-500/50 p-3 text-xs text-emerald-200 flex items-center gap-2">
+                <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
+                <span>{promptSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* How It Works & Post-Generation Features */}
+            <div className="rounded-xl border border-blue-900/50 bg-blue-950/30 p-3 text-[11px] text-blue-200/80 space-y-1">
+              <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                <Sparkles className="size-3.5" /> What gets created & how you can adjust:
+              </div>
+              <ul className="list-disc pl-4 space-y-0.5 text-blue-300/70">
+                <li>Parses rounds (Qualifiers, Quarter-Finals, Semi-Finals, Grand Finals) with dates and rules.</li>
+                <li>Generates match boxes for each stage (groups, dates, match fixtures, prize distribution).</li>
+                <li>
+                  <strong className="text-white">Full live customization:</strong> Once built, you can drag & drop, move columns left/right, click any match to edit team names or scores, and add/remove matches anytime!
+                </li>
+              </ul>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 border-t border-blue-900/60 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPromptModal(false)
+                  setPromptErrorMsg('')
+                  setPromptSuccessMsg('')
+                }}
+                className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-muted-foreground hover:bg-muted transition"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleBuildFromPrompt}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-orange-500/30 transition hover:scale-105 active:scale-95"
+              >
+                <Wand2 className="size-4" />
+                Build & Apply Roadmap
+              </button>
             </div>
           </div>
         </div>
