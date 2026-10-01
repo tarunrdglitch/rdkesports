@@ -1077,9 +1077,22 @@ export default function TournamentManagePage() {
   const pendingPayments = payments.filter((p) => p.status === 'pending')
   const approvedPayments = payments.filter((p) => p.status === 'approved')
 
-  const totalGrossCollected = settlementInfo?.finances?.grossRevenue ?? (entryFeeNumber * approvedPayments.length)
-  const totalRdkFeeDue = settlementInfo?.finances?.rdkFee ?? Math.round(totalGrossCollected * 0.10)
-  const totalPartnerNet = settlementInfo?.finances?.partnerNet ?? (totalGrossCollected - totalRdkFeeDue)
+  const confirmedEntriesCount = approvedPayments.length > 0
+    ? approvedPayments.length
+    : (teams.length > 0 ? (teams.filter((t) => t.status === 'verified').length || teams.length) : (tournament.registeredTeamsCount || 0))
+
+  const totalGrossCollected = (settlementInfo?.finances?.grossRevenue && settlementInfo.finances.grossRevenue > 0)
+    ? settlementInfo.finances.grossRevenue
+    : (entryFeeNumber * confirmedEntriesCount)
+
+  const totalRdkFeeDue = (settlementInfo?.finances?.rdkFee && settlementInfo.finances.rdkFee > 0)
+    ? settlementInfo.finances.rdkFee
+    : Math.round(totalGrossCollected * 0.10)
+
+  const totalPartnerNet = (settlementInfo?.finances?.partnerNet && settlementInfo.finances.partnerNet > 0)
+    ? settlementInfo.finances.partnerNet
+    : (totalGrossCollected - totalRdkFeeDue)
+
   const canClose = settlementInfo?.finances?.canClose ?? (
     !isPaid || totalGrossCollected === 0 || tournament.settlementStatus === 'VERIFIED'
   )
@@ -1953,22 +1966,84 @@ export default function TournamentManagePage() {
       {/* TAB 1: Payment Verification Queue */}
       {activeTab === 'payments' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-heading font-black text-sm uppercase tracking-wider text-foreground">
-              Manual UPI Verifications ({payments.length} Submissions)
-            </h3>
-            <span className="text-xs text-muted-foreground">
-              Inspect UTR numbers and approve valid transactions.
-            </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-heading font-black text-sm uppercase tracking-wider text-foreground">
+                Manual UPI Verifications ({payments.length > 0 ? payments.length : teams.length} Submissions)
+              </h3>
+              <span className="text-xs text-muted-foreground">
+                Inspect UTR numbers and approve valid transactions.
+              </span>
+            </div>
+            {isPaid && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2.5 py-1 rounded-md bg-primary/10 border border-primary/20 text-primary font-bold">
+                  Platform Fee (10%): ₹{totalRdkFeeDue.toLocaleString('en-IN')}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleApproveAllEntries}
+                  disabled={isApprovingAll}
+                  className="px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-md bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                  title="Mark all registered teams as verified and confirm fees"
+                >
+                  {isApprovingAll ? (
+                    <div className="size-3 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="size-3.5" />
+                  )}
+                  Mark All Paid
+                </button>
+              </div>
+            )}
           </div>
 
           {payments.length === 0 ? (
-            <div className="p-12 text-center border border-border rounded-xl bg-card">
-              <ShieldCheck className="size-8 text-muted-foreground mx-auto mb-2 opacity-40" />
-              <p className="text-xs text-muted-foreground">
-                No payments submitted yet for this tournament.
-              </p>
-            </div>
+            teams.length > 0 ? (
+              <div className="p-6 border border-primary/30 rounded-xl bg-card space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-lg bg-primary/10 text-primary shrink-0">
+                    <ShieldCheck className="size-6" />
+                  </div>
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-heading font-bold text-sm text-foreground">
+                        {teams.length} Teams Registered / Imported Directly
+                      </h4>
+                      <span className="text-[11px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded font-bold">
+                        Calculated Gross: ₹{((entryFeeNumber || 60) * teams.length).toLocaleString('en-IN')} • 10% Fee: ₹{totalRdkFeeDue.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      These {teams.length} teams were imported into the tournament directly by the organizer via Google Sheets.
+                      Player individual online UPI submissions were not required since registration was handled offline.
+                    </p>
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleApproveAllEntries}
+                        disabled={isApprovingAll}
+                        className="px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                      >
+                        {isApprovingAll ? (
+                          <div className="size-3.5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Sparkles className="size-3.5" />
+                        )}
+                        ⚡ Confirm & Mark All {teams.length} Teams as Paid (Sets RDK Fee to ₹{totalRdkFeeDue.toLocaleString('en-IN')})
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-12 text-center border border-border rounded-xl bg-card">
+                <ShieldCheck className="size-8 text-muted-foreground mx-auto mb-2 opacity-40" />
+                <p className="text-xs text-muted-foreground">
+                  No payments submitted yet for this tournament.
+                </p>
+              </div>
+            )
           ) : (
             <div className="space-y-3">
               {payments.map((p) => (
