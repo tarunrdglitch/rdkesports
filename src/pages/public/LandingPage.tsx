@@ -317,6 +317,14 @@ function TournamentCard({ t, user, index }: { t: Tournament; user: any; index: n
   const fill = Math.min(100, (t.teams / t.maxTeams) * 100)
   const fb = getFormatBadge(t.format)
 
+  const stLower = String(t.status || '').toLowerCase()
+  const isEnded =
+    stLower === 'completed' ||
+    stLower === 'finished' ||
+    stLower === 'ended' ||
+    stLower === 'closed' ||
+    Boolean((t as any).isClosed)
+
   return (
     <motion.div
       variants={cardVariant}
@@ -384,9 +392,13 @@ function TournamentCard({ t, user, index }: { t: Tournament; user: any; index: n
           </div>
           <Link
             to={`/tournaments/${t.id}`}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-bold text-primary hover:bg-primary hover:text-background transition-all duration-200"
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-bold transition-all duration-200 ${
+              isEnded
+                ? 'border-border bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                : 'border-primary/30 bg-primary/10 text-primary hover:bg-primary hover:text-background'
+            }`}
           >
-            {t.status === 'live' ? 'Live Lobby' : 'Register'}
+            {t.status === 'live' ? 'Live Lobby' : isEnded ? 'View Results' : 'Register'}
             <ChevronRight className="size-3.5" />
           </Link>
         </div>
@@ -405,7 +417,7 @@ export default function LandingPage() {
   const [tournaments, setTournaments] = useState<Tournament[]>([])
   const [creators, setCreators] = useState<any[]>(DEFAULT_CREATORS)
   const [stats, setStats] = useState<PlatformStats | null>(null)
-  const [activeTab, setActiveTab] = useState<'all' | 'live' | 'upcoming'>('all')
+  const [activeTab, setActiveTab] = useState<'all' | 'live' | 'upcoming' | 'completed'>('all')
   const [formatFilter, setFormatFilter] = useState<'all' | 'auction' | 'br_squad' | 'br_solo' | 'cs_norules' | 'cs_limited' | 'cs_onetap'>('all')
   const [navScrolled, setNavScrolled] = useState(false)
 
@@ -459,8 +471,24 @@ export default function LandingPage() {
   }, [openLogin, openRegister])
 
   const filteredTournaments = tournaments.filter((t) => {
-    if (activeTab === 'live' && t.status !== 'live') return false
-    if (activeTab === 'upcoming' && !(t.status === 'registration_open' || t.status === 'draft')) return false
+    const stLower = String(t.status || '').toLowerCase()
+    const isEnded =
+      stLower === 'completed' ||
+      stLower === 'finished' ||
+      stLower === 'ended' ||
+      stLower === 'closed' ||
+      Boolean((t as any).isClosed)
+
+    if (activeTab === 'live') {
+      if (t.status !== 'live') return false
+    } else if (activeTab === 'upcoming') {
+      if (isEnded || !(t.status === 'registration_open' || t.status === 'draft')) return false
+    } else if (activeTab === 'completed') {
+      if (!isEnded) return false
+    } else if (activeTab === 'all') {
+      // Default All Active view: Exclude ended tournaments from Live & Upcoming
+      if (isEnded) return false
+    }
 
     if (formatFilter === 'auction') return t.format === 'Auction Tournament' || t.format.toLowerCase().includes('auction')
     if (formatFilter === 'br_squad') return t.format === 'BR Squad' || t.format === 'Battle Royale'
@@ -758,17 +786,22 @@ export default function LandingPage() {
             </div>
 
             <div className="flex items-center bg-muted/60 border border-border rounded-xl p-1 gap-1 self-start sm:self-auto">
-              {(['all', 'live', 'upcoming'] as const).map((tab) => (
+              {[
+                { id: 'all', label: 'All Active' },
+                { id: 'live', label: 'Live' },
+                { id: 'upcoming', label: 'Upcoming' },
+                { id: 'completed', label: 'Completed' },
+              ].map((tab) => (
                 <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize transition-all duration-200 ${
-                    activeTab === tab
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
+                    activeTab === tab.id
                       ? 'bg-primary text-white shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {tab === 'live' ? 'Live' : tab === 'upcoming' ? 'Upcoming' : 'All'}
+                  {tab.label}
                 </button>
               ))}
             </div>
@@ -818,6 +851,11 @@ export default function LandingPage() {
                 <div className="col-span-3 py-20 text-center text-muted-foreground">
                   <Trophy className="size-12 mx-auto mb-4 opacity-30" />
                   <p className="font-heading font-bold text-lg">No tournaments in this category right now</p>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                    {activeTab === 'completed'
+                      ? 'No completed tournaments recorded yet.'
+                      : 'Check back soon for new live & upcoming championships, or switch to the Completed tab to view past tournament recaps.'}
+                  </p>
                 </div>
               )}
             </motion.div>
