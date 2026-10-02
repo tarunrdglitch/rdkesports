@@ -2025,77 +2025,75 @@ app.delete('/api/tournaments/:id', requirePartnerOrAdmin, async (req: Request, r
   }
 })
 
-// Purge All Test Data Endpoint (Super Admin Only)
+// Purge Test Data Endpoint (Super Admin Only - Fully Dynamic)
 app.post('/api/admin/purge-test-data', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const testIds = [
-      't_1790878862674',
-      't_1790878862897',
-      't_1790878245681',
-      't_1790878245911',
-      't_1790878246125',
-      't_1790878862259',
-      't_1790878245455',
-      't_1790878862467',
-      't_1790696057958',
-    ]
+    const customIds: string[] = Array.isArray(req.body?.tournamentIds) ? req.body.tournamentIds : []
 
     const matchedTourneys = TOURNAMENTS.filter((t) =>
-      testIds.includes(t.id) ||
+      customIds.includes(t.id) ||
       t.name.includes('[AUTO-TEST]') ||
       t.name.includes('AUTO-TEST') ||
-      t.name.toLowerCase() === 'rthtrh' ||
-      t.slug.toLowerCase() === 'rthtrh'
+      t.slug.toLowerCase().includes('auto-test')
     )
-    const tourneyIds = Array.from(new Set([...testIds, ...matchedTourneys.map((t) => t.id)]))
+    const tourneyIds = Array.from(new Set([...customIds, ...matchedTourneys.map((t) => t.id)]))
 
-    TOURNAMENTS = TOURNAMENTS.filter((t) => !tourneyIds.includes(t.id))
-    REGISTERED_TEAMS = REGISTERED_TEAMS.filter((t) => !tourneyIds.includes(t.tournamentId))
-    PAYMENT_SUBMISSIONS = PAYMENT_SUBMISSIONS.filter((p) => !tourneyIds.includes(p.tournamentId))
-    AUCTION_PLAYERS = AUCTION_PLAYERS.filter((p) => !tourneyIds.includes(p.tournamentId))
-    EPHEMERAL_BIDDERS = EPHEMERAL_BIDDERS.filter((b) => !tourneyIds.includes(b.auctionId))
-    AMBASSADORS = AMBASSADORS.filter((a) => !tourneyIds.includes(a.tournamentId))
-    PLATFORM_SETTLEMENTS = PLATFORM_SETTLEMENTS.filter((s) => !tourneyIds.includes(s.tournamentId))
+    if (tourneyIds.length > 0) {
+      TOURNAMENTS = TOURNAMENTS.filter((t) => !tourneyIds.includes(t.id))
+      REGISTERED_TEAMS = REGISTERED_TEAMS.filter((t) => !tourneyIds.includes(t.tournamentId))
+      PAYMENT_SUBMISSIONS = PAYMENT_SUBMISSIONS.filter((p) => !tourneyIds.includes(p.tournamentId))
+      AUCTION_PLAYERS = AUCTION_PLAYERS.filter((p) => !tourneyIds.includes(p.tournamentId))
+      EPHEMERAL_BIDDERS = EPHEMERAL_BIDDERS.filter((b) => !tourneyIds.includes(b.auctionId))
+      AMBASSADORS = AMBASSADORS.filter((a) => !tourneyIds.includes(a.tournamentId))
+      PLATFORM_SETTLEMENTS = PLATFORM_SETTLEMENTS.filter((s) => !tourneyIds.includes(s.tournamentId))
+    }
 
-    const testCreatorIds = ['cr_1790878244586', 'cr_1790878861356']
-    OFFICIAL_CREATORS = OFFICIAL_CREATORS.filter((c) =>
-      !testCreatorIds.includes(c.id) &&
-      !c.name.toLowerCase().includes('test partner') &&
-      !c.handle.toLowerCase().includes('testpartner')
+    const testCreators = OFFICIAL_CREATORS.filter((c) =>
+      c.name.toLowerCase().includes('test partner') ||
+      c.handle.toLowerCase().includes('testpartner')
     )
-    USERS = USERS.filter((u) =>
-      !testCreatorIds.includes(u.organizationId || '') &&
-      !u.email.toLowerCase().includes('testpartner')
-    )
+    const testCreatorIds = testCreators.map((c) => c.id)
+
+    if (testCreatorIds.length > 0) {
+      OFFICIAL_CREATORS = OFFICIAL_CREATORS.filter((c) => !testCreatorIds.includes(c.id))
+      USERS = USERS.filter((u) =>
+        !testCreatorIds.includes(u.organizationId || '') &&
+        !u.email.toLowerCase().includes('testpartner')
+      )
+    }
 
     if (isDatabaseConfigured) {
-      await prisma.registeredTeam.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-      await prisma.paymentSubmission.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-      await prisma.auctionPlayer.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-      await prisma.ephemeralAuctionBidder.deleteMany({ where: { auctionId: { in: tourneyIds } } }).catch(() => {})
-      await prisma.ambassador.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-      await prisma.platformSettlement.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-      await prisma.auctionReversal.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-      await prisma.platformAuditLog.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-      await prisma.tournament.deleteMany({ where: { id: { in: tourneyIds } } }).catch(() => {})
+      if (tourneyIds.length > 0) {
+        await prisma.registeredTeam.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
+        await prisma.paymentSubmission.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
+        await prisma.auctionPlayer.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
+        await prisma.ephemeralAuctionBidder.deleteMany({ where: { auctionId: { in: tourneyIds } } }).catch(() => {})
+        await prisma.ambassador.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
+        await prisma.platformSettlement.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
+        await prisma.auctionReversal.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
+        await prisma.platformAuditLog.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
+        await prisma.tournament.deleteMany({ where: { id: { in: tourneyIds } } }).catch(() => {})
+      }
 
-      await prisma.user.deleteMany({
-        where: {
-          OR: [
-            { organizationId: { in: testCreatorIds } },
-            { email: { contains: 'testpartner', mode: 'insensitive' } },
-          ],
-        },
-      }).catch(() => {})
-      await prisma.officialCreator.deleteMany({
-        where: {
-          OR: [
-            { id: { in: testCreatorIds } },
-            { name: { contains: 'Test Partner', mode: 'insensitive' } },
-            { handle: { contains: 'testpartner', mode: 'insensitive' } },
-          ],
-        },
-      }).catch(() => {})
+      if (testCreatorIds.length > 0) {
+        await prisma.user.deleteMany({
+          where: {
+            OR: [
+              { organizationId: { in: testCreatorIds } },
+              { email: { contains: 'testpartner', mode: 'insensitive' } },
+            ],
+          },
+        }).catch(() => {})
+        await prisma.officialCreator.deleteMany({
+          where: {
+            OR: [
+              { id: { in: testCreatorIds } },
+              { name: { contains: 'Test Partner', mode: 'insensitive' } },
+              { handle: { contains: 'testpartner', mode: 'insensitive' } },
+            ],
+          },
+        }).catch(() => {})
+      }
     }
 
     logAuditEvent({
@@ -2103,17 +2101,16 @@ app.post('/api/admin/purge-test-data', requireSuperAdmin, async (req: Request, r
       actorId: req.user?.id,
       actorName: req.user?.name,
       actorRole: req.user?.role,
-      details: `Purged all test data: ${tourneyIds.length} test tournaments, test partner accounts, and associated records permanently deleted.`,
+      details: `Purged test data: ${tourneyIds.length} test tournaments and ${testCreatorIds.length} test partner accounts.`,
     })
 
     return res.json({
       success: true,
-      message: `Successfully purged ${tourneyIds.length} test tournaments, test partners, and associated records.`,
+      message: `Successfully purged ${tourneyIds.length} test tournaments and ${testCreatorIds.length} test partners.`,
       purgedTournamentIds: tourneyIds,
     })
   } catch (error) {
     console.error('Error purging test data:', error)
-    return res.status(500).json({ error: 'Failed to purge test data' })
   }
 })
 
@@ -4713,76 +4710,6 @@ async function initDatabase() {
         id: { in: ['cr_clashers', 'cr_tamil_titans', 'cr_phoenix'] },
       },
     }).catch(() => { })
-
-    // ═══════════════════════════════════════════════════════════════
-    // PURGE TEST / DEMO DATA (ALL AUTO-TEST & 'rthtrh' TOURNAMENTS + TEST PARTNERS)
-    // ═══════════════════════════════════════════════════════════════
-    try {
-      const testTournamentIds = [
-        't_1790878862674',
-        't_1790878862897',
-        't_1790878245681',
-        't_1790878245911',
-        't_1790878246125',
-        't_1790878862259',
-        't_1790878245455',
-        't_1790878862467',
-        't_1790696057958',
-      ]
-
-      const testTourneys = await prisma.tournament.findMany({
-        where: {
-          OR: [
-            { id: { in: testTournamentIds } },
-            { name: { contains: '[AUTO-TEST]', mode: 'insensitive' } },
-            { name: { contains: 'AUTO-TEST', mode: 'insensitive' } },
-            { slug: 'rthtrh' },
-            { name: 'rthtrh' },
-          ],
-        },
-      })
-      const tourneyIdsToDelete = Array.from(new Set([...testTournamentIds, ...testTourneys.map((t) => t.id)]))
-
-      if (tourneyIdsToDelete.length > 0) {
-        await prisma.registeredTeam.deleteMany({ where: { tournamentId: { in: tourneyIdsToDelete } } }).catch(() => {})
-        await prisma.paymentSubmission.deleteMany({ where: { tournamentId: { in: tourneyIdsToDelete } } }).catch(() => {})
-        await prisma.auctionPlayer.deleteMany({ where: { tournamentId: { in: tourneyIdsToDelete } } }).catch(() => {})
-        await prisma.ephemeralAuctionBidder.deleteMany({ where: { auctionId: { in: tourneyIdsToDelete } } }).catch(() => {})
-        await prisma.ambassador.deleteMany({ where: { tournamentId: { in: tourneyIdsToDelete } } }).catch(() => {})
-        await prisma.platformSettlement.deleteMany({ where: { tournamentId: { in: tourneyIdsToDelete } } }).catch(() => {})
-        await prisma.auctionReversal.deleteMany({ where: { tournamentId: { in: tourneyIdsToDelete } } }).catch(() => {})
-        await prisma.platformAuditLog.deleteMany({ where: { tournamentId: { in: tourneyIdsToDelete } } }).catch(() => {})
-        await prisma.tournament.deleteMany({ where: { id: { in: tourneyIdsToDelete } } }).catch(() => {})
-        console.log(`[Database] Purged ${tourneyIdsToDelete.length} test tournaments and associated records from PostgreSQL.`)
-      }
-
-      // Purge test creators and test users
-      const testCreatorIds = ['cr_1790878244586', 'cr_1790878861356']
-      const testCreators = await prisma.officialCreator.findMany({
-        where: {
-          OR: [
-            { id: { in: testCreatorIds } },
-            { name: { contains: 'Test Partner', mode: 'insensitive' } },
-            { handle: { contains: 'testpartner', mode: 'insensitive' } },
-          ],
-        },
-      })
-      const creatorIdsToDelete = Array.from(new Set([...testCreatorIds, ...testCreators.map((c) => c.id)]))
-      if (creatorIdsToDelete.length > 0) {
-        await prisma.user.deleteMany({
-          where: {
-            OR: [
-              { organizationId: { in: creatorIdsToDelete } },
-              { email: { contains: 'testpartner', mode: 'insensitive' } },
-            ],
-          },
-        }).catch(() => {})
-        await prisma.officialCreator.deleteMany({ where: { id: { in: creatorIdsToDelete } } }).catch(() => {})
-        console.log(`[Database] Purged ${creatorIdsToDelete.length} test creators and users from PostgreSQL.`)
-      }
-    } catch (purgeErr) {
-      console.error('[Database] Notice during test data purge:', purgeErr)
-    }
 
     const dbCreators = await prisma.officialCreator.findMany()
     if (dbCreators.length > 0) {
