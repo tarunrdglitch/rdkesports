@@ -282,6 +282,25 @@ export function PointsTableManager({
     }
   }
 
+  // Clear / Reset All Matches in Points Table
+  const handleResetTable = async () => {
+    if (!confirm('Are you sure you want to clear all matches from this points table? This will remove all match scores and reset the leaderboard.')) return
+    try {
+      const res = await fetch(`/api/tournaments/${tournamentId}/points-table/reset`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error('Failed to reset points table')
+      setMatches([])
+      setStandings([])
+      setActiveView('overall')
+      setSuccessMsg('Points table cleared successfully. Ready for new matches.')
+      setTimeout(() => setSuccessMsg(''), 4000)
+      loadPointsTable()
+    } catch (err: any) {
+      setError(err.message || 'Failed to clear points table')
+    }
+  }
+
   // Save Point System
   const handleSavePointSystem = async () => {
     setIsSavingSystem(true)
@@ -664,8 +683,20 @@ export function PointsTableManager({
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* Export Graphic Poster */}
           <button
-            onClick={() => setIsExportModalOpen(true)}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-lg shadow-red-600/20 transition cursor-pointer"
+            onClick={() => {
+              if (matches.length === 0) {
+                alert('No matches have been recorded yet. Please record at least 1 match before exporting graphic poster.')
+                return
+              }
+              setIsExportModalOpen(true)
+            }}
+            disabled={matches.length === 0}
+            className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+              matches.length === 0
+                ? 'bg-muted/70 text-muted-foreground cursor-not-allowed opacity-60 border border-border'
+                : 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-lg shadow-red-600/20'
+            }`}
+            title={matches.length === 0 ? 'Record at least 1 match to export graphic poster' : 'Export official points table PNG'}
           >
             <ImageIcon className="size-3.5" />
             <span>Export Image (PNG)</span>
@@ -676,10 +707,10 @@ export function PointsTableManager({
               {/* Record Match */}
               <button
                 onClick={() => handleOpenAddMatch()}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-primary hover:bg-primary/90 text-background transition cursor-pointer"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-primary hover:bg-primary/90 text-background transition shadow-md cursor-pointer"
               >
                 <Plus className="size-3.5" />
-                <span>Record Match</span>
+                <span>{matches.length === 0 ? 'Record Match 1' : 'Record Match'}</span>
               </button>
 
               {/* Point System Settings */}
@@ -693,6 +724,17 @@ export function PointsTableManager({
               >
                 <Settings className="size-4" />
               </button>
+
+              {/* Reset Table (If matches exist) */}
+              {matches.length > 0 && (
+                <button
+                  onClick={() => handleResetTable()}
+                  className="p-2 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition cursor-pointer"
+                  title="Clear all matches & reset points table"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              )}
             </>
           )}
 
@@ -795,8 +837,32 @@ export function PointsTableManager({
               {activeView === 'overall' ? (
                 standings.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-10 text-center text-muted-foreground">
-                      No match scores recorded yet. Click "Record Match" to tally results.
+                    <td colSpan={6} className="p-12 text-center">
+                      <div className="flex flex-col items-center justify-center max-w-md mx-auto space-y-3">
+                        <div className="size-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shadow-inner">
+                          <Trophy className="size-7 opacity-80" />
+                        </div>
+                        <div>
+                          <p className="font-heading font-black text-sm text-foreground tracking-wide">
+                            NO MATCHES RECORDED YET
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                            {isOrganizer
+                              ? 'No match scores have been entered for this tournament yet. When your matches conclude, click "Record Match" to tally and publish official points.'
+                              : 'Official match results, kill scores, and team leaderboard standings will appear here once tournament officials record match results.'}
+                          </p>
+                        </div>
+                        {isOrganizer && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAddMatch()}
+                            className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-primary hover:bg-primary/90 text-background transition shadow-lg shadow-primary/25 cursor-pointer"
+                          >
+                            <Plus className="size-3.5" />
+                            <span>Record Match 1</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ) : (

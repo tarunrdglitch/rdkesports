@@ -2607,79 +2607,19 @@ app.get('/api/tournaments/:id/points-table', (req: Request, res: Response) => {
     }
   })
 
-  // Seed default demo matches if empty for TNBBL or any tournament
+  // Initialize clean points table with 0 matches by default (no mock data)
   if (!TOURNAMENT_POINTS_TABLES[targetId]) {
-    const isTnbbl = tourney.name.toLowerCase().includes('tnbbl')
-    const seedTeams = availableTeams.length >= 8
-      ? availableTeams.slice(0, 12).map((t) => t.name)
-      : [
-          'MADURAI WARRIORS',
-          'KRISHNAGIRI ELITES',
-          'KARUR KNIGHTS',
-          'VELLORE EMPIRES',
-          'CHENNAI CHALLENGERS',
-          'NAMAKKAL DOMINATORS',
-          'KANCHIPURAM TITANS',
-          'KANYAKUMARI KODEX',
-          'RAMANATHAPURAM ROYALS',
-          'TIRUVANAMALAI THUNDERS',
-          'VILLUPURAM WIPERS',
-          'TRICHY UNITED',
-        ]
-
-    const seedMatches: PointsMatchRecord[] = [
-      {
-        id: `match_1_${targetId}`,
-        matchNumber: 1,
-        map: 'Bermuda',
-        title: 'Match 1 - Bermuda (Battle Royale)',
-        status: 'completed',
-        createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-        results: [
-          { teamId: 't1', teamName: seedTeams[0] || 'MADURAI WARRIORS', rank: 1, kills: 14, placementPoints: 12, killPoints: 14, totalPoints: 26 },
-          { teamId: 't2', teamName: seedTeams[1] || 'KRISHNAGIRI ELITES', rank: 2, kills: 9, placementPoints: 9, killPoints: 9, totalPoints: 18 },
-          { teamId: 't3', teamName: seedTeams[2] || 'KARUR KNIGHTS', rank: 3, kills: 6, placementPoints: 8, killPoints: 6, totalPoints: 14 },
-          { teamId: 't4', teamName: seedTeams[3] || 'VELLORE EMPIRES', rank: 4, kills: 5, placementPoints: 7, killPoints: 5, totalPoints: 12 },
-          { teamId: 't5', teamName: seedTeams[4] || 'CHENNAI CHALLENGERS', rank: 5, kills: 4, placementPoints: 6, killPoints: 4, totalPoints: 10 },
-          { teamId: 't6', teamName: seedTeams[5] || 'NAMAKKAL DOMINATORS', rank: 6, kills: 3, placementPoints: 5, killPoints: 3, totalPoints: 8 },
-          { teamId: 't7', teamName: seedTeams[6] || 'KANCHIPURAM TITANS', rank: 7, kills: 2, placementPoints: 4, killPoints: 2, totalPoints: 6 },
-          { teamId: 't8', teamName: seedTeams[7] || 'KANYAKUMARI KODEX', rank: 8, kills: 2, placementPoints: 3, killPoints: 2, totalPoints: 5 },
-          { teamId: 't9', teamName: seedTeams[8] || 'RAMANATHAPURAM ROYALS', rank: 9, kills: 1, placementPoints: 2, killPoints: 1, totalPoints: 3 },
-          { teamId: 't10', teamName: seedTeams[9] || 'TIRUVANAMALAI THUNDERS', rank: 10, kills: 1, placementPoints: 1, killPoints: 1, totalPoints: 2 },
-          { teamId: 't11', teamName: seedTeams[10] || 'VILLUPURAM WIPERS', rank: 11, kills: 0, placementPoints: 0, killPoints: 0, totalPoints: 0 },
-          { teamId: 't12', teamName: seedTeams[11] || 'TRICHY UNITED', rank: 12, kills: 1, placementPoints: 0, killPoints: 1, totalPoints: 1 },
-        ],
-      },
-      {
-        id: `match_2_${targetId}`,
-        matchNumber: 2,
-        map: 'Purgatory',
-        title: 'Match 2 - Purgatory (Battle Royale)',
-        status: 'completed',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-        results: [
-          { teamId: 't2', teamName: seedTeams[1] || 'KRISHNAGIRI ELITES', rank: 1, kills: 12, placementPoints: 12, killPoints: 12, totalPoints: 24 },
-          { teamId: 't5', teamName: seedTeams[4] || 'CHENNAI CHALLENGERS', rank: 2, kills: 8, placementPoints: 9, killPoints: 8, totalPoints: 17 },
-          { teamId: 't1', teamName: seedTeams[0] || 'MADURAI WARRIORS', rank: 3, kills: 7, placementPoints: 8, killPoints: 7, totalPoints: 15 },
-          { teamId: 't3', teamName: seedTeams[2] || 'KARUR KNIGHTS', rank: 4, kills: 5, placementPoints: 7, killPoints: 5, totalPoints: 12 },
-          { teamId: 't7', teamName: seedTeams[6] || 'KANCHIPURAM TITANS', rank: 5, kills: 4, placementPoints: 6, killPoints: 4, totalPoints: 10 },
-          { teamId: 't4', teamName: seedTeams[3] || 'VELLORE EMPIRES', rank: 6, kills: 3, placementPoints: 5, killPoints: 3, totalPoints: 8 },
-          { teamId: 't6', teamName: seedTeams[5] || 'NAMAKKAL DOMINATORS', rank: 7, kills: 3, placementPoints: 4, killPoints: 3, totalPoints: 7 },
-          { teamId: 't10', teamName: seedTeams[9] || 'TIRUVANAMALAI THUNDERS', rank: 8, kills: 2, placementPoints: 3, killPoints: 2, totalPoints: 5 },
-          { teamId: 't8', teamName: seedTeams[7] || 'KANYAKUMARI KODEX', rank: 9, kills: 1, placementPoints: 2, killPoints: 1, totalPoints: 3 },
-          { teamId: 't9', teamName: seedTeams[8] || 'RAMANATHAPURAM ROYALS', rank: 10, kills: 0, placementPoints: 1, killPoints: 0, totalPoints: 1 },
-          { teamId: 't12', teamName: seedTeams[11] || 'TRICHY UNITED', rank: 11, kills: 2, placementPoints: 0, killPoints: 2, totalPoints: 2 },
-          { teamId: 't11', teamName: seedTeams[10] || 'VILLUPURAM WIPERS', rank: 12, kills: 1, placementPoints: 0, killPoints: 1, totalPoints: 1 },
-        ],
-      },
-    ]
-
     TOURNAMENT_POINTS_TABLES[targetId] = {
       tournamentId: targetId,
       pointSystem: getDefaultPointSystem(),
-      matches: seedMatches,
+      matches: [],
       updatedAt: new Date().toISOString(),
     }
+  } else {
+    // Purge any legacy mock/demo matches that may have been previously seeded
+    TOURNAMENT_POINTS_TABLES[targetId].matches = (TOURNAMENT_POINTS_TABLES[targetId].matches || []).filter(
+      (m) => !m.id.startsWith('match_1_') && !m.id.startsWith('match_2_')
+    )
   }
 
   const tableRecord = TOURNAMENT_POINTS_TABLES[targetId]
@@ -2867,6 +2807,46 @@ app.delete('/api/tournaments/:id/points-table/match/:matchId', (req: Request, re
     success: true,
     message: 'Match removed from points table',
     matches: current.matches,
+    standings,
+  })
+})
+
+// Clear / Reset All Matches in Points Table
+app.delete('/api/tournaments/:id/points-table/reset', (req: Request, res: Response) => {
+  const { id } = req.params
+  const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+  if (!tourney) {
+    return res.status(404).json({ error: 'Tournament not found' })
+  }
+
+  const targetId = tourney.id
+  const current = TOURNAMENT_POINTS_TABLES[targetId] || {
+    tournamentId: targetId,
+    pointSystem: getDefaultPointSystem(),
+    matches: [],
+    updatedAt: new Date().toISOString(),
+  }
+
+  current.matches = []
+  current.updatedAt = new Date().toISOString()
+  TOURNAMENT_POINTS_TABLES[targetId] = current
+  tourney.pointsTable = JSON.stringify(current)
+
+  if (isDatabaseConfigured) {
+    (prisma.tournament as any)
+      .updateMany({
+        where: { id: targetId },
+        data: { pointsTable: JSON.stringify(current) },
+      })
+      .catch((err: any) => console.error('[Database] Notice resetting points table in DB:', err))
+  }
+
+  const standings = computeStandings(current)
+
+  return res.json({
+    success: true,
+    message: 'All matches have been cleared from points table',
+    matches: [],
     standings,
   })
 })
@@ -5911,12 +5891,32 @@ async function initDatabase() {
       console.log(`[Database] Synced ${OFFICIAL_CREATORS.length} official creators from PostgreSQL.`)
     }
 
+    // Purge any legacy mock points tables containing mock match IDs from DB
+    await (prisma.tournament as any)
+      .updateMany({
+        where: {
+          pointsTable: {
+            contains: 'match_1_',
+          },
+        },
+        data: {
+          pointsTable: null,
+        },
+      })
+      .catch(() => {})
+
     const dbTourneys = await prisma.tournament.findMany()
     if (dbTourneys.length > 0) {
       TOURNAMENTS = dbTourneys.map((t) => {
         if ((t as any).pointsTable) {
           try {
-            TOURNAMENT_POINTS_TABLES[t.id] = JSON.parse((t as any).pointsTable)
+            const parsed = JSON.parse((t as any).pointsTable)
+            if (parsed && Array.isArray(parsed.matches)) {
+              parsed.matches = parsed.matches.filter(
+                (m: any) => !m.id?.startsWith('match_1_') && !m.id?.startsWith('match_2_')
+              )
+            }
+            TOURNAMENT_POINTS_TABLES[t.id] = parsed
           } catch {}
         }
         return {
