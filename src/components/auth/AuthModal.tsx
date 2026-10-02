@@ -3,25 +3,19 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import {
-  motion,
-  AnimatePresence,
-  useMotionValue,
-  useTransform,
-} from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, Eye, EyeOff, AlertCircle,
   Mail, Lock, User, Gamepad2,
   ArrowRight, CheckCircle2,
-  LogIn, UserPlus,
+  Shield, Zap, Trophy, Star,
 } from 'lucide-react'
-
 import { useAuth } from '@/stores/authStore'
 import { useAuthModal } from '@/stores/authModalStore'
 import { authService } from '@/services/api/authService'
 import { homeFor } from '@/app/config/roles'
 
-/* ── Schemas ────────────────────────────────────────────── */
+/* ── Schemas ─────────────────────────────────────────────── */
 const loginSchema = z.object({
   email:    z.string().email('Enter a valid email'),
   password: z.string().min(8, 'Minimum 8 characters'),
@@ -39,22 +33,30 @@ const registerSchema = z.object({
 type LoginForm    = z.infer<typeof loginSchema>
 type RegisterForm = z.infer<typeof registerSchema>
 
-/* ── Password strength ──────────────────────────────────── */
+/* ── Password strength ───────────────────────────────────── */
 function strength(pw: string) {
   let s = 0
-  if (pw.length >= 8) s++
-  if (/[A-Z]/.test(pw)) s++
-  if (/\d/.test(pw)) s++
-  if (/[^A-Za-z0-9]/.test(pw)) s++
-  const colors = ['', '#E53935', '#FF8F00', '#29B6F6', '#66BB6A']
+  if (pw.length >= 8)            s++
+  if (/[A-Z]/.test(pw))         s++
+  if (/\d/.test(pw))            s++
+  if (/[^A-Za-z0-9]/.test(pw))  s++
+  const colors = ['', '#EF4444', '#F59E0B', '#3B82F6', '#10B981']
   const labels = ['', 'Weak', 'Fair', 'Good', 'Strong']
   return { level: s, color: colors[s], label: labels[s] }
 }
 
-/* ── Input with icon ─────────────────────────────────────── */
+/* ── Field Component ──────────────────────────────────────── */
 function Field({
-  icon: Icon, type = 'text', placeholder, register, error,
-  showToggle, showPassword, onToggle, hint,
+  icon: Icon,
+  type = 'text',
+  placeholder,
+  register,
+  error,
+  showToggle,
+  showPassword,
+  onToggle,
+  hint,
+  label,
 }: {
   icon: React.ElementType
   type?: string
@@ -65,27 +67,55 @@ function Field({
   showPassword?: boolean
   onToggle?: () => void
   hint?: React.ReactNode
+  label?: string
 }) {
   return (
-    <div className="space-y-1">
-      <div className="input-icon-wrap">
-        <Icon className="input-icon size-4" />
+    <div className="space-y-1.5">
+      {label && (
+        <label className="block text-[11px] font-bold uppercase tracking-wider font-body"
+          style={{ color: 'rgba(255,255,255,0.4)' }}>
+          {label}
+        </label>
+      )}
+      <div className="relative">
+        {/* Icon left */}
+        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+          style={{ color: 'rgba(255,255,255,0.3)' }}>
+          <Icon className="size-4" />
+        </div>
         <input
           type={showToggle ? (showPassword ? 'text' : 'password') : type}
           placeholder={placeholder}
-          className="rdk-input"
-          style={{ paddingRight: showToggle ? '3rem' : undefined }}
-          {...(register as React.InputHTMLAttributes<HTMLInputElement>)}
+          className="w-full rounded-xl pl-10 pr-10 py-3 text-sm font-body text-white outline-none transition-all duration-200 placeholder:text-white/25"
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: error ? '1px solid rgba(239,68,68,0.6)' : '1px solid rgba(255,255,255,0.08)',
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.border = error
+              ? '1px solid rgba(239,68,68,0.7)'
+              : '1px solid rgba(245,26,26,0.5)'
+            e.currentTarget.style.background = 'rgba(255,255,255,0.06)'
+            e.currentTarget.style.boxShadow = error
+              ? '0 0 0 3px rgba(239,68,68,0.08)'
+              : '0 0 0 3px rgba(245,26,26,0.08)'
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.border = error ? '1px solid rgba(239,68,68,0.6)' : '1px solid rgba(255,255,255,0.08)'
+            e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+            e.currentTarget.style.boxShadow = 'none'
+          }}
           aria-invalid={!!error}
+          {...(register as React.InputHTMLAttributes<HTMLInputElement>)}
         />
         {showToggle && (
           <motion.button
             type="button"
             onClick={onToggle}
-            className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
-            style={{ color: '#555' }}
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 cursor-pointer transition-colors"
+            style={{ color: 'rgba(255,255,255,0.3)' }}
             whileTap={{ scale: 0.85 }}
-            whileHover={{ color: '#fff' }}
+            whileHover={{ color: 'rgba(255,255,255,0.8)' }}
             aria-label="Toggle password"
           >
             {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -97,8 +127,8 @@ function Field({
         {error && (
           <motion.p
             role="alert"
-            className="text-[11px] font-body flex items-center gap-1"
-            style={{ color: '#ff6b6b' }}
+            className="text-[11px] font-body flex items-center gap-1.5"
+            style={{ color: '#EF4444' }}
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
@@ -111,7 +141,7 @@ function Field({
   )
 }
 
-/* ── Login Panel ────────────────────────────────────────── */
+/* ── Login Panel ─────────────────────────────────────────── */
 function LoginPanel({ onSwitch }: { onSwitch: () => void }) {
   const [showPw, setShowPw] = useState(false)
   const [serverErr, setServerErr] = useState('')
@@ -138,19 +168,28 @@ function LoginPanel({ onSwitch }: { onSwitch: () => void }) {
   return (
     <motion.div
       key="login"
-      initial={{ opacity: 0, x: -24 }}
+      initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 24 }}
-      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      exit={{ opacity: 0, x: 20 }}
+      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
       className="space-y-5"
     >
+      {/* Title */}
+      <div className="mb-1">
+        <h2 className="font-heading text-2xl font-bold text-white">Welcome back</h2>
+        <p className="text-xs font-body mt-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
+          Sign in to access your tournament dashboard
+        </p>
+      </div>
+
       <AnimatePresence>
         {serverErr && (
           <motion.div
-            className="alert-box alert-danger"
+            className="flex items-center gap-2.5 rounded-xl p-3 text-xs font-body"
+            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#FCA5A5' }}
             initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
           >
-            <AlertCircle className="size-4 shrink-0" />{serverErr}
+            <AlertCircle className="size-4 shrink-0 text-red-400" />{serverErr}
           </motion.div>
         )}
       </AnimatePresence>
@@ -159,13 +198,15 @@ function LoginPanel({ onSwitch }: { onSwitch: () => void }) {
         <Field
           icon={Mail}
           type="email"
-          placeholder="Email address"
+          placeholder="your@email.com"
+          label="Email"
           register={register('email')}
           error={errors.email?.message}
         />
         <Field
           icon={Lock}
-          placeholder="Password"
+          placeholder="Min. 8 characters"
+          label="Password"
           register={register('password')}
           error={errors.password?.message}
           showToggle
@@ -173,11 +214,11 @@ function LoginPanel({ onSwitch }: { onSwitch: () => void }) {
           onToggle={() => setShowPw(s => !s)}
         />
 
-        <div className="flex justify-end">
+        <div className="flex justify-end -mt-1">
           <button
             type="button"
-            className="text-xs font-body transition-colors hover:text-white"
-            style={{ color: '#E53935' }}
+            className="text-xs font-body font-semibold transition-colors cursor-pointer"
+            style={{ color: 'rgba(245,26,26,0.85)' }}
             onClick={() => alert('Password recovery managed by RDK Technologies.')}
           >
             Forgot password?
@@ -187,14 +228,23 @@ function LoginPanel({ onSwitch }: { onSwitch: () => void }) {
         <motion.button
           type="submit"
           disabled={isSubmitting || done}
-          className="btn-primary w-full justify-center"
-          whileHover={!isSubmitting ? { scale: 1.01 } : {}}
+          className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold font-body transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+          style={{
+            background: done
+              ? 'linear-gradient(135deg, #10B981, #059669)'
+              : 'linear-gradient(135deg, #F51A1A, #C62828)',
+            boxShadow: done
+              ? '0 0 24px rgba(16,185,129,0.35)'
+              : '0 0 24px rgba(245,26,26,0.35), 0 4px 16px rgba(0,0,0,0.4)',
+            color: '#fff',
+          }}
+          whileHover={!isSubmitting ? { scale: 1.01, boxShadow: '0 0 32px rgba(245,26,26,0.5)' } : {}}
           whileTap={!isSubmitting ? { scale: 0.98 } : {}}
         >
           <AnimatePresence mode="wait">
             {done ? (
               <motion.span key="d" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <CheckCircle2 className="size-4" /> Signing you in…
+                <CheckCircle2 className="size-4" /> Signed in!
               </motion.span>
             ) : isSubmitting ? (
               <motion.span key="l" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -210,15 +260,15 @@ function LoginPanel({ onSwitch }: { onSwitch: () => void }) {
         </motion.button>
       </form>
 
-      <p className="text-center text-xs font-body" style={{ color: '#555' }}>
-        Don't have an account?{' '}
+      <p className="text-center text-xs font-body" style={{ color: 'rgba(255,255,255,0.35)' }}>
+        New to RDK Esports?{' '}
         <button
           type="button"
           onClick={onSwitch}
-          className="font-semibold transition-colors hover:text-white cursor-pointer"
-          style={{ color: '#E53935' }}
+          className="font-bold transition-colors hover:text-white cursor-pointer"
+          style={{ color: '#F51A1A' }}
         >
-          Create one now
+          Create an account →
         </button>
       </p>
     </motion.div>
@@ -255,35 +305,52 @@ function RegisterPanel({ onSwitch }: { onSwitch: () => void }) {
   return (
     <motion.div
       key="register"
-      initial={{ opacity: 0, x: 24 }}
+      initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -24 }}
-      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      exit={{ opacity: 0, x: -20 }}
+      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
       className="space-y-4"
     >
+      {/* Title */}
+      <div className="mb-1">
+        <h2 className="font-heading text-2xl font-bold text-white">Join the Arena</h2>
+        <p className="text-xs font-body mt-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
+          Create your free player account in seconds
+        </p>
+      </div>
+
       <AnimatePresence>
         {serverErr && (
           <motion.div
-            className="alert-box alert-danger"
+            className="flex items-center gap-2.5 rounded-xl p-3 text-xs font-body"
+            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#FCA5A5' }}
             initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
           >
-            <AlertCircle className="size-4 shrink-0" />{serverErr}
+            <AlertCircle className="size-4 shrink-0 text-red-400" />{serverErr}
           </motion.div>
         )}
       </AnimatePresence>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
-        {/* Name + IGN row */}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-3.5" noValidate>
+        {/* Name + IGN */}
         <div className="grid grid-cols-2 gap-3">
-          <Field icon={User} placeholder="Full name" register={register('name')} error={errors.name?.message} />
-          <Field icon={Gamepad2} placeholder="IGN (in-game)" register={register('ign')} error={errors.ign?.message} />
+          <Field icon={User} placeholder="Full name" label="Name" register={register('name')} error={errors.name?.message} />
+          <Field icon={Gamepad2} placeholder="IGN / Tag" label="In-Game Name" register={register('ign')} error={errors.ign?.message} />
         </div>
 
-        <Field icon={Mail} type="email" placeholder="Email address" register={register('email')} error={errors.email?.message} />
+        <Field
+          icon={Mail}
+          type="email"
+          placeholder="your@email.com"
+          label="Email"
+          register={register('email')}
+          error={errors.email?.message}
+        />
 
         <Field
           icon={Lock}
-          placeholder="Password (min 8 chars)"
+          placeholder="Min. 8 chars + uppercase + number"
+          label="Password"
           register={register('password')}
           error={errors.password?.message}
           showToggle
@@ -291,19 +358,19 @@ function RegisterPanel({ onSwitch }: { onSwitch: () => void }) {
           onToggle={() => setShowPw(s => !s)}
           hint={
             pw ? (
-              <div className="space-y-1 mt-1">
+              <div className="space-y-1 mt-1.5">
                 <div className="flex gap-1">
-                  {[1,2,3,4].map(seg => (
+                  {[1, 2, 3, 4].map(seg => (
                     <motion.div
                       key={seg}
-                      className="h-0.5 flex-1 rounded-full"
-                      animate={{ backgroundColor: seg <= str.level ? str.color : '#1E1E1E' }}
-                      transition={{ duration: 0.25 }}
+                      className="h-1 flex-1 rounded-full"
+                      animate={{ backgroundColor: seg <= str.level ? str.color : 'rgba(255,255,255,0.06)' }}
+                      transition={{ duration: 0.2 }}
                     />
                   ))}
                 </div>
                 {str.label && (
-                  <p className="text-[10px] font-body" style={{ color: str.color }}>
+                  <p className="text-[10px] font-body font-semibold" style={{ color: str.color }}>
                     {str.label} password
                   </p>
                 )}
@@ -315,14 +382,23 @@ function RegisterPanel({ onSwitch }: { onSwitch: () => void }) {
         <motion.button
           type="submit"
           disabled={isSubmitting || done}
-          className="btn-primary w-full justify-center mt-1"
-          whileHover={!isSubmitting ? { scale: 1.01 } : {}}
+          className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold font-body transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+          style={{
+            background: done
+              ? 'linear-gradient(135deg, #10B981, #059669)'
+              : 'linear-gradient(135deg, #F51A1A, #C62828)',
+            boxShadow: done
+              ? '0 0 24px rgba(16,185,129,0.35)'
+              : '0 0 24px rgba(245,26,26,0.35), 0 4px 16px rgba(0,0,0,0.4)',
+            color: '#fff',
+          }}
+          whileHover={!isSubmitting ? { scale: 1.01, boxShadow: '0 0 32px rgba(245,26,26,0.5)' } : {}}
           whileTap={!isSubmitting ? { scale: 0.98 } : {}}
         >
           <AnimatePresence mode="wait">
             {done ? (
               <motion.span key="d" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <CheckCircle2 className="size-4" /> Setting up profile…
+                <CheckCircle2 className="size-4" /> Account created!
               </motion.span>
             ) : isSubmitting ? (
               <motion.span key="l" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -338,15 +414,30 @@ function RegisterPanel({ onSwitch }: { onSwitch: () => void }) {
         </motion.button>
       </form>
 
-      <p className="text-center text-xs font-body" style={{ color: '#555' }}>
+      {/* Benefits row */}
+      <div className="grid grid-cols-3 gap-2 pt-1">
+        {[
+          { icon: Trophy, label: 'Join Tournaments' },
+          { icon: Zap, label: 'Track Progress' },
+          { icon: Star, label: 'Win Prizes' },
+        ].map(({ icon: Icon, label }) => (
+          <div key={label} className="flex flex-col items-center gap-1 py-2 rounded-xl text-center"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <Icon className="size-3.5" style={{ color: 'rgba(245,26,26,0.8)' }} />
+            <span className="text-[9px] font-body font-medium" style={{ color: 'rgba(255,255,255,0.4)' }}>{label}</span>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-center text-xs font-body" style={{ color: 'rgba(255,255,255,0.35)' }}>
         Already have an account?{' '}
         <button
           type="button"
           onClick={onSwitch}
-          className="font-semibold transition-colors hover:text-white cursor-pointer"
-          style={{ color: '#E53935' }}
+          className="font-bold transition-colors hover:text-white cursor-pointer"
+          style={{ color: '#F51A1A' }}
         >
-          Sign in instead
+          Sign in instead →
         </button>
       </p>
     </motion.div>
@@ -359,17 +450,11 @@ function RegisterPanel({ onSwitch }: { onSwitch: () => void }) {
 export function AuthModal() {
   const { isOpen, mode, setMode, close } = useAuthModal()
 
-  // Lock body scroll when open
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = ''
-    }
+    document.body.style.overflow = isOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [isOpen])
 
-  // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     window.addEventListener('keydown', handler)
@@ -380,82 +465,72 @@ export function AuthModal() {
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* ── Backdrop ── */}
+          {/* Backdrop */}
           <motion.div
             key="backdrop"
             className="fixed inset-0 z-50"
-            style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}
+            style={{ background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(12px) saturate(1.4)' }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
+            transition={{ duration: 0.22 }}
             onClick={close}
           />
 
-          {/* ── Modal ── */}
+          {/* Modal */}
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div
               key="modal"
-              className="relative w-full max-w-md overflow-hidden"
+              className="relative w-full max-w-[440px] overflow-hidden rounded-2xl"
               style={{
-                background: '#111111',
-                border: '1px solid #1E1E1E',
-                borderRadius: '16px',
-                boxShadow: '0 0 0 1px rgba(229,57,53,0.15), 0 24px 80px rgba(0,0,0,0.8), 0 0 60px rgba(229,57,53,0.06)',
+                background: 'linear-gradient(160deg, #0E0C10 0%, #0A080D 100%)',
+                border: '1px solid rgba(255,255,255,0.07)',
+                boxShadow: '0 0 0 1px rgba(245,26,26,0.1), 0 32px 100px rgba(0,0,0,0.85), 0 0 80px rgba(245,26,26,0.05)',
               }}
-              initial={{ opacity: 0, scale: 0.92, y: 24 }}
+              initial={{ opacity: 0, scale: 0.94, y: 28 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 24 }}
-              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              exit={{ opacity: 0, scale: 0.94, y: 28 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Red top accent line */}
-              <motion.div
-                className="absolute top-0 left-0 right-0 h-px"
-                style={{ background: 'linear-gradient(90deg, transparent, #E53935, transparent)' }}
-                initial={{ scaleX: 0 }}
-                animate={{ scaleX: 1 }}
-                transition={{ delay: 0.2, duration: 0.5 }}
-              />
+              {/* Top red line */}
+              <div className="absolute top-0 left-0 right-0 h-px"
+                style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(245,26,26,0.8) 50%, transparent 100%)' }} />
 
-              {/* Subtle grid background */}
-              <div
-                className="absolute inset-0 opacity-30 pointer-events-none"
+              {/* Background grid */}
+              <div className="absolute inset-0 opacity-20 pointer-events-none"
                 style={{
-                  backgroundImage: 'linear-gradient(rgba(229,57,53,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(229,57,53,0.04) 1px, transparent 1px)',
-                  backgroundSize: '32px 32px',
-                }}
-              />
+                  backgroundImage: 'linear-gradient(rgba(245,26,26,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(245,26,26,0.03) 1px, transparent 1px)',
+                  backgroundSize: '40px 40px',
+                }} />
 
-              {/* Glow orb */}
-              <div
-                className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-40 pointer-events-none"
-                style={{
-                  background: 'radial-gradient(ellipse, rgba(229,57,53,0.08) 0%, transparent 70%)',
-                  filter: 'blur(20px)',
-                }}
-              />
+              {/* Glow orb top */}
+              <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-80 h-60 pointer-events-none"
+                style={{ background: 'radial-gradient(ellipse, rgba(245,26,26,0.09) 0%, transparent 70%)' }} />
 
-              <div className="relative z-10 p-6">
+              <div className="relative z-10 p-7">
+
                 {/* ── Header ── */}
-                <div className="flex items-start justify-between mb-6">
+                <div className="flex items-center justify-between mb-7">
                   <div className="flex items-center gap-3">
-                    <img src="/logo.png" alt="RDK Esports" className="h-9 w-auto logo-glow" />
+                    <div className="relative">
+                      <img src="/logo.png" alt="RDK Esports" className="h-10 w-auto logo-glow" />
+                    </div>
                     <div>
-                      <p className="font-display text-sm tracking-[0.15em] text-white">
+                      <p className="font-display text-sm tracking-[0.18em] text-white leading-tight">
                         RDK ESPORTS
                       </p>
-                      <p className="text-[9px] font-body tracking-widest mt-0.5"
-                        style={{ color: '#444' }}>
-                        TOURNAMENT OPERATING SYSTEM
+                      <p className="text-[9px] font-body tracking-[0.12em] uppercase mt-0.5"
+                        style={{ color: 'rgba(255,255,255,0.3)' }}>
+                        Tournament OS · Powered by RDK Technologies
                       </p>
                     </div>
                   </div>
                   <motion.button
                     onClick={close}
-                    className="p-1.5 rounded-lg cursor-pointer transition-colors"
-                    style={{ color: '#555', background: '#1A1A1A' }}
-                    whileHover={{ background: '#222', color: '#fff' }}
+                    className="size-8 flex items-center justify-center rounded-xl cursor-pointer transition-colors"
+                    style={{ color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}
+                    whileHover={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}
                     whileTap={{ scale: 0.9 }}
                     aria-label="Close"
                   >
@@ -463,41 +538,35 @@ export function AuthModal() {
                   </motion.button>
                 </div>
 
-                {/* ── Tab switcher ── */}
-                <div
-                  className="flex items-center mb-6 relative"
-                  style={{
-                    background: '#0D0D0D',
-                    border: '1px solid #1E1E1E',
-                    borderRadius: '10px',
-                    padding: '3px',
-                  }}
-                >
-                  {/* Sliding indicator */}
+                {/* ── Tab Switcher ── */}
+                <div className="relative mb-7 rounded-xl p-1 flex"
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  {/* Sliding pill */}
                   <motion.div
-                    className="absolute top-[3px] bottom-[3px] rounded-lg"
-                    style={{ background: '#E53935', width: 'calc(50% - 3px)' }}
-                    animate={{ x: mode === 'login' ? 3 : 'calc(100% + 3px)' }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+                    className="absolute top-1 bottom-1 rounded-lg"
+                    style={{
+                      background: 'linear-gradient(135deg, #F51A1A, #C62828)',
+                      boxShadow: '0 0 16px rgba(245,26,26,0.4)',
+                      width: 'calc(50% - 4px)',
+                    }}
+                    animate={{ x: mode === 'login' ? 4 : 'calc(100% + 4px)' }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 40 }}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setMode('login')}
-                    className="relative z-10 flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-body font-semibold transition-colors cursor-pointer"
-                    style={{ color: mode === 'login' ? '#ffffff' : '#555' }}
-                  >
-                    <LogIn className="size-3.5" />
-                    Sign In
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode('register')}
-                    className="relative z-10 flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-body font-semibold transition-colors cursor-pointer"
-                    style={{ color: mode === 'register' ? '#ffffff' : '#555' }}
-                  >
-                    <UserPlus className="size-3.5" />
-                    Create Account
-                  </button>
+                  {[
+                    { id: 'login', icon: Shield, label: 'Sign In' },
+                    { id: 'register', icon: Zap, label: 'Create Account' },
+                  ].map(({ id, icon: Icon, label }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setMode(id as 'login' | 'register')}
+                      className="relative z-10 flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-body font-bold transition-colors cursor-pointer"
+                      style={{ color: mode === id ? '#ffffff' : 'rgba(255,255,255,0.35)' }}
+                    >
+                      <Icon className="size-3.5" />
+                      {label}
+                    </button>
+                  ))}
                 </div>
 
                 {/* ── Panel ── */}
@@ -509,6 +578,14 @@ export function AuthModal() {
                   )}
                 </AnimatePresence>
 
+                {/* ── Security footnote ── */}
+                <div className="mt-6 pt-5 flex items-center justify-center gap-2"
+                  style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                  <Shield className="size-3" style={{ color: 'rgba(255,255,255,0.2)' }} />
+                  <span className="text-[10px] font-body" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                    Secured by RDK Technologies · Data encrypted in transit
+                  </span>
+                </div>
 
               </div>
             </motion.div>
