@@ -6,9 +6,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import {
   motion,
   AnimatePresence,
-  useMotionValue,
-  useTransform,
-  useSpring,
 } from 'framer-motion'
 import {
   Eye, EyeOff, AlertCircle, Mail, Lock, ArrowRight,
@@ -159,91 +156,7 @@ function AnimatedGrid() {
   )
 }
 
-/* ─── Mouse-parallax card ───────────────────────────────── */
-function HeroCard() {
-  const mouseX = useMotionValue(0)
-  const mouseY = useMotionValue(0)
 
-  const rotateX = useTransform(mouseY, [-200, 200], [8, -8])
-  const rotateY = useTransform(mouseX, [-200, 200], [-8, 8])
-
-  const springX = useSpring(rotateX, { stiffness: 180, damping: 20 })
-  const springY = useSpring(rotateY, { stiffness: 180, damping: 20 })
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    mouseX.set(e.clientX - rect.left - rect.width / 2)
-    mouseY.set(e.clientY - rect.top - rect.height / 2)
-  }
-  const handleMouseLeave = () => { mouseX.set(0); mouseY.set(0) }
-
-  return (
-    <motion.div
-      className="relative"
-      style={{ perspective: 800 }}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-    >
-      <motion.div
-        className="relative rounded-2xl overflow-hidden bracket"
-        style={{
-          width: 320,
-          rotateX: springX,
-          rotateY: springY,
-          boxShadow: '0 0 40px rgba(229,57,53,0.25), 0 20px 60px rgba(0,0,0,0.8)',
-          border: '1px solid rgba(229,57,53,0.3)',
-        }}
-      >
-        <img
-          src="/creator-rdk.png"
-          alt="RDK Esports"
-          className="w-full object-cover"
-          style={{ aspectRatio: '3/4' }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
-
-        <div className="absolute bottom-0 left-0 right-0 p-5">
-          <div className="badge-red inline-flex mb-2 text-[9px]">
-            <ShieldCheck className="size-3" />
-            Platform Head
-          </div>
-          <p className="font-display text-white text-lg">RDK Esports</p>
-          <p className="text-xs text-white/40 font-body mt-0.5">@rdkesports</p>
-        </div>
-
-        <motion.div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: 'linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.03) 50%, transparent 60%)',
-            backgroundSize: '200% 100%',
-          }}
-          animate={{ backgroundPosition: ['200% 0', '-200% 0'] }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-        />
-      </motion.div>
-
-      <motion.div
-        className="absolute -top-4 -right-8 bg-card border border-border rounded-xl px-4 py-2.5"
-        animate={{ y: [0, -8, 0] }}
-        transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-        style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.6)' }}
-      >
-        <p className="font-display text-xl text-white">36+</p>
-        <p className="text-[10px] text-muted-foreground font-body">Tournaments</p>
-      </motion.div>
-
-      <motion.div
-        className="absolute -bottom-4 -left-8 bg-card border border-border rounded-xl px-4 py-2.5"
-        animate={{ y: [0, 8, 0] }}
-        transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }}
-        style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.6)' }}
-      >
-        <p className="font-display text-xl" style={{ color: '#E53935' }}>12K+</p>
-        <p className="text-[10px] text-muted-foreground font-body">Players</p>
-      </motion.div>
-    </motion.div>
-  )
-}
 
 /* ═══ Register Modal ════════════════════════════════════════ */
 function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
@@ -970,16 +883,12 @@ export default function LoginPage() {
 
           {/* Middle: headline + features */}
           <motion.div
-            className="relative z-10 space-y-8"
+            className="relative z-10 space-y-8 my-auto max-w-lg"
             variants={containerVariants}
             initial="hidden"
             animate="show"
           >
             <motion.div variants={itemVariants}>
-              <div className="badge-red inline-flex mb-5 text-xs">
-                <ShieldCheck className="size-3.5" />
-                Universal Single-Login Hub
-              </div>
               <h1 className="font-display text-4xl xl:text-5xl text-white leading-[1.1]">
                 Run Every
                 <br />
@@ -1021,16 +930,6 @@ export default function LoginPage() {
                 </motion.div>
               ))}
             </motion.div>
-          </motion.div>
-
-          {/* Hero parallax card */}
-          <motion.div
-            className="relative z-10 flex justify-center mt-4"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.5, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <HeroCard />
           </motion.div>
 
 
