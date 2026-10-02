@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Trophy, Plus, ExternalLink, Settings, ShieldCheck, ChevronRight } from 'lucide-react'
+import { Trophy, Plus, ExternalLink, Settings, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { Skeleton } from '@/components/common/Skeleton'
 import { useTournaments } from '@/hooks/useTournaments'
+import { useAuth } from '@/stores/authStore'
+import type { Tournament } from '@/types'
 
 const initialStats = [
   { label: 'Active tournaments', value: '0', hint: 'No active tournaments' },
@@ -17,7 +19,9 @@ const initialStats = [
 
 export default function DashboardPage() {
   const { data, isLoading, isError, refetch } = useTournaments()
+  const user = useAuth((s) => s.user)
   const [stats, setStats] = useState(initialStats)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/tournaments/stats')
@@ -27,6 +31,35 @@ export default function DashboardPage() {
       })
       .catch(() => {})
   }, [])
+
+  const handleDeleteTournament = async (t: Tournament) => {
+    if (!window.confirm(`Are you sure you want to permanently delete "${t.name}"? This action cannot be undone.`)) {
+      return
+    }
+    try {
+      setDeletingId(t.id)
+      const res = await fetch(`/api/tournaments/${t.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const respData = await res.json()
+      if (res.ok) {
+        refetch()
+        fetch('/api/tournaments/stats')
+          .then((r) => r.json())
+          .then((d) => {
+            if (Array.isArray(d)) setStats(d)
+          })
+          .catch(() => {})
+      } else {
+        alert(respData.error || 'Failed to delete tournament')
+      }
+    } catch (e: any) {
+      alert(e.message || 'Error deleting tournament')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <>
@@ -147,6 +180,17 @@ export default function DashboardPage() {
                       >
                         <ExternalLink className="size-3" />
                       </Link>
+                      {(user?.role === 'super_admin' || user?.id === t.creatorId || user?.organizationId === t.creatorId) && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTournament(t)}
+                          disabled={deletingId === t.id}
+                          className="inline-flex items-center gap-1 text-[11px] text-destructive hover:text-destructive/80 p-1 hover:bg-destructive/10 rounded transition disabled:opacity-50"
+                          title="Delete Tournament"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
