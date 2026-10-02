@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { motion, useInView, AnimatePresence } from 'framer-motion'
+import { motion, useInView, AnimatePresence, useScroll, useTransform } from 'framer-motion'
 import {
   Trophy,
   ShieldCheck,
@@ -8,20 +8,23 @@ import {
   QrCode,
   Gavel,
   ArrowRight,
-  Flame,
   CheckCircle2,
   Calendar,
   Gamepad2,
   Youtube,
   Instagram,
   MessageSquare,
-  Star,
   Target,
-  Swords,
   Crown,
   ChevronRight,
   TrendingUp,
   Award,
+  Zap,
+  Star,
+  ChevronDown,
+  Globe,
+  Shield,
+  Swords,
 } from 'lucide-react'
 import { tournamentService } from '@/services/api/tournamentService'
 import { creatorService } from '@/services/api/creatorService'
@@ -31,7 +34,6 @@ import { AuthModal } from '@/components/auth/AuthModal'
 import { homeFor } from '@/app/config/roles'
 import type { Tournament, PlatformStats } from '@/types'
 
-// ═══════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════
 // OFFICIAL CREATORS — Default & Dynamic Partners
 // ═══════════════════════════════════════════════════════════════
@@ -49,7 +51,7 @@ const DEFAULT_CREATORS = [
     totalTournaments: 36,
     verified: true,
     rank: 1,
-    accentColor: '#FF4D2D',
+    accentColor: '#FF3B3B',
     socials: {
       youtube: 'https://youtube.com/@rdkesports',
       instagram: 'https://instagram.com/rdkesports',
@@ -63,34 +65,69 @@ const OFFICIAL_CREATORS = DEFAULT_CREATORS
 // Animation variants
 // ═══════════════════════════════════════════════════════════════
 const fadeUp = {
-  hidden: { opacity: 0, y: 32 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] } },
+  hidden: { opacity: 0, y: 36 },
+  show:   { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
+}
+const fadeIn = {
+  hidden: { opacity: 0 },
+  show:   { opacity: 1, transition: { duration: 0.5 } },
 }
 const stagger = (delay = 0) => ({
-  hidden: { opacity: 0, y: 24 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1], delay } },
+  hidden: { opacity: 0, y: 28 },
+  show:   { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1], delay } },
 })
 const cardVariant = {
-  hidden: { opacity: 0, y: 40, scale: 0.97 },
-  show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] } },
+  hidden: { opacity: 0, y: 48, scale: 0.96 },
+  show:   { opacity: 1, y: 0, scale: 1, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Sub-components
+// Helpers
 // ═══════════════════════════════════════════════════════════════
-
-function SectionLabel({ icon: Icon, text }: { icon: React.ElementType; text: string }) {
-  return (
-    <div className="badge-primary inline-flex mb-4 text-xs">
-      <Icon className="size-3.5" />
-      {text}
-    </div>
-  )
+function formatOverallPrizePool(prizePool: string | undefined): string {
+  if (!prizePool) return '₹0'
+  const trimmed = prizePool.trim()
+  if (!trimmed.includes(':') && !trimmed.includes('|')) {
+    const rawNum = parseInt(trimmed.replace(/[^0-9]/g, ''), 10)
+    if (!isNaN(rawNum)) return `₹${rawNum.toLocaleString('en-IN')}`
+    return trimmed.startsWith('₹') ? trimmed : `₹${trimmed}`
+  }
+  const matches = trimmed.match(/(?:₹|INR|Rs\.?)\s*([0-9,]+)/gi)
+  if (matches && matches.length > 0) {
+    let total = 0
+    for (const m of matches) {
+      const val = parseInt(m.replace(/[^0-9]/g, ''), 10)
+      if (!isNaN(val)) total += val
+    }
+    if (total > 0) return `₹${total.toLocaleString('en-IN')}`
+  }
+  return trimmed
 }
 
-function AnimatedSection({ children, className = '', id = '' }: { children: React.ReactNode; className?: string; id?: string }) {
+function getFormatBadge(fmt: string) {
+  if (fmt === 'Auction Tournament' || fmt.toLowerCase().includes('auction'))
+    return { label: 'Auction', color: 'bg-amber-500/15 text-amber-300 border-amber-500/30' }
+  if (fmt === 'BR Squad' || fmt === 'Battle Royale')
+    return { label: 'BR Squad', color: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
+  if (fmt === 'BR Solo')
+    return { label: 'BR Solo', color: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' }
+  if (fmt === 'CS Squad No Rules')
+    return { label: 'CS No Rules', color: 'bg-orange-500/15 text-orange-300 border-orange-500/30' }
+  if (fmt === 'CS Squad Limited')
+    return { label: 'CS Limited', color: 'bg-purple-500/15 text-purple-300 border-purple-500/30' }
+  if (fmt === 'CS Squad One Tap')
+    return { label: 'CS One Tap', color: 'bg-rose-500/15 text-rose-300 border-rose-500/30' }
+  return { label: fmt, color: 'bg-primary/10 text-primary border-primary/20' }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AnimatedSection wrapper
+// ═══════════════════════════════════════════════════════════════
+function AnimatedSection({ children, className = '', id = '' }: {
+  children: React.ReactNode; className?: string; id?: string
+}) {
   const ref = useRef(null)
-  const inView = useInView(ref, { once: true, margin: '-60px' })
+  const inView = useInView(ref, { once: true, margin: '-80px' })
   return (
     <motion.section
       id={id}
@@ -105,115 +142,114 @@ function AnimatedSection({ children, className = '', id = '' }: { children: Reac
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Creator Card Component
+// Creator Card
 // ═══════════════════════════════════════════════════════════════
 function CreatorCard({ creator, index }: { creator: typeof OFFICIAL_CREATORS[0]; index: number }) {
   const [hovered, setHovered] = useState(false)
-
   return (
     <motion.div
       variants={cardVariant}
       custom={index}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="creator-card relative rounded-xl border border-border bg-card overflow-hidden flex flex-col group cursor-default"
+      className="creator-card border border-border bg-card flex flex-col cursor-default"
       style={{
-        boxShadow: hovered ? `0 0 30px ${creator.accentColor}22, 0 4px 24px rgba(0,0,0,0.4)` : '0 2px 12px rgba(0,0,0,0.25)',
-        borderColor: hovered ? `${creator.accentColor}55` : undefined,
+        boxShadow: hovered
+          ? `0 0 40px ${creator.accentColor}25, 0 8px 40px rgba(0,0,0,0.5)`
+          : '0 4px 20px rgba(0,0,0,0.3)',
+        borderColor: hovered ? `${creator.accentColor}60` : undefined,
         transition: 'box-shadow 0.35s ease, border-color 0.35s ease',
       }}
     >
       {/* Rank badge */}
       <div
-        className="absolute top-4 right-4 z-20 flex size-8 items-center justify-center rounded-full text-xs font-black"
-        style={{ background: `${creator.accentColor}22`, border: `1.5px solid ${creator.accentColor}60`, color: creator.accentColor }}
+        className="absolute top-4 right-4 z-20 flex size-9 items-center justify-center rounded-full text-xs font-black font-display"
+        style={{
+          background: `${creator.accentColor}18`,
+          border: `1.5px solid ${creator.accentColor}55`,
+          color: creator.accentColor,
+        }}
       >
         #{creator.rank}
       </div>
 
-      {/* Photo area — tall portrait format */}
-      <div className="relative w-full overflow-hidden" style={{ aspectRatio: '3/4', maxHeight: '340px' }}>
+      {/* Photo — tall portrait */}
+      <div className="relative w-full overflow-hidden" style={{ aspectRatio: '3/4', maxHeight: '320px' }}>
         <motion.img
           src={creator.photo}
           alt={creator.name}
-          className="w-full h-full object-cover object-center"
-          animate={{ scale: hovered ? 1.05 : 1 }}
-          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="w-full h-full object-cover object-top"
+          animate={{ scale: hovered ? 1.06 : 1 }}
+          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         />
-        {/* Bottom gradient fade */}
+        {/* Gradient overlay */}
         <div
           className="absolute inset-0"
           style={{
-            background: 'linear-gradient(to top, hsl(220 18% 8%) 0%, hsl(220 18% 8% / 0.5) 40%, transparent 75%)',
+            background: 'linear-gradient(to top, hsl(240 6% 9%) 0%, hsl(240 6% 9% / 0.55) 40%, transparent 75%)',
           }}
         />
-
-        {/* Game tags floating on photo */}
+        {/* Game tags */}
         <div className="absolute bottom-4 left-4 flex flex-wrap gap-1.5 z-10">
           {creator.games.map((g: string) => (
             <span
               key={g}
-              className="rounded-md border border-white/10 bg-background/70 backdrop-blur-sm px-2.5 py-0.5 text-[10px] font-bold text-white/90"
+              className="rounded-md border border-white/12 bg-black/60 backdrop-blur-sm px-2.5 py-0.5 text-[10px] font-semibold text-white/90 font-body"
             >
               {g}
             </span>
           ))}
         </div>
-
-        {/* Verified badge */}
+        {/* Verified */}
         {creator.verified && (
-          <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 rounded-full bg-primary/90 backdrop-blur-sm px-2.5 py-1 text-[10px] font-bold text-white">
+          <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 rounded-full bg-primary/90 backdrop-blur-sm px-2.5 py-1 text-[10px] font-bold text-white font-body">
             <ShieldCheck className="size-3" />
-            VERIFIED PARTNER
+            VERIFIED
           </div>
         )}
-
-        {/* Accent glow overlay on hover */}
+        {/* Accent glow */}
         <motion.div
           className="absolute inset-0 pointer-events-none"
           animate={{ opacity: hovered ? 1 : 0 }}
           transition={{ duration: 0.35 }}
           style={{
-            background: `radial-gradient(ellipse at 50% 100%, ${creator.accentColor}18 0%, transparent 70%)`,
+            background: `radial-gradient(ellipse at 50% 100%, ${creator.accentColor}20 0%, transparent 65%)`,
           }}
         />
       </div>
 
-      {/* Content area */}
+      {/* Content */}
       <div className="flex-1 flex flex-col p-5">
-        {/* Name & handle */}
         <div className="mb-3">
-          <h3 className="font-display text-xl text-foreground leading-tight">
+          <h3 className="font-heading text-xl font-bold text-foreground leading-tight">
             {creator.name}
           </h3>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex items-center gap-2 mt-1">
             <span className="text-xs text-muted-foreground font-mono">{creator.handle}</span>
             <span
-              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-              style={{ background: `${creator.accentColor}18`, color: creator.accentColor }}
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full font-body"
+              style={{ background: `${creator.accentColor}16`, color: creator.accentColor }}
             >
               {creator.subscribers}
             </span>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">{creator.title}</p>
+          <p className="text-[11px] text-muted-foreground mt-1 font-medium font-body">{creator.title}</p>
         </div>
-
-        {/* Bio */}
-        <p className="text-xs text-muted-foreground leading-relaxed flex-1 line-clamp-3">
+        <p className="text-xs text-muted-foreground leading-relaxed flex-1 line-clamp-3 font-body">
           {creator.bio}
         </p>
 
-        {/* Stats row */}
+        {/* Stats */}
         <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-4">
           <div className="text-center">
             <p className="font-display text-2xl font-bold" style={{ color: creator.accentColor }}>
               {creator.activeTournaments}
             </p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Active Now</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5 font-body">Active Now</p>
           </div>
           <div className="text-center">
             <p className="font-display text-2xl font-bold text-foreground">{creator.totalTournaments}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Total Hosted</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5 font-body">Total Hosted</p>
           </div>
         </div>
 
@@ -224,10 +260,9 @@ function CreatorCard({ creator, index }: { creator: typeof OFFICIAL_CREATORS[0];
               href={creator.socials.youtube}
               target="_blank"
               rel="noreferrer"
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/60 py-2 text-[11px] font-semibold text-muted-foreground hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10 transition-all duration-200"
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border bg-surface/60 py-2 text-[11px] font-semibold text-muted-foreground hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/08 transition-all duration-200"
             >
-              <Youtube className="size-3.5" />
-              YouTube
+              <Youtube className="size-3.5" />YouTube
             </a>
           )}
           {creator.socials.instagram && (
@@ -235,10 +270,9 @@ function CreatorCard({ creator, index }: { creator: typeof OFFICIAL_CREATORS[0];
               href={creator.socials.instagram}
               target="_blank"
               rel="noreferrer"
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/60 py-2 text-[11px] font-semibold text-muted-foreground hover:text-purple-400 hover:border-purple-500/40 hover:bg-purple-500/10 transition-all duration-200"
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border bg-surface/60 py-2 text-[11px] font-semibold text-muted-foreground hover:text-purple-400 hover:border-purple-500/40 hover:bg-purple-500/08 transition-all duration-200"
             >
-              <Instagram className="size-3.5" />
-              Instagram
+              <Instagram className="size-3.5" />Instagram
             </a>
           )}
           {creator.socials.discord && (
@@ -246,10 +280,9 @@ function CreatorCard({ creator, index }: { creator: typeof OFFICIAL_CREATORS[0];
               href={creator.socials.discord}
               target="_blank"
               rel="noreferrer"
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/60 py-2 text-[11px] font-semibold text-muted-foreground hover:text-indigo-400 hover:border-indigo-500/40 hover:bg-indigo-500/10 transition-all duration-200"
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border bg-surface/60 py-2 text-[11px] font-semibold text-muted-foreground hover:text-indigo-400 hover:border-indigo-500/40 hover:bg-indigo-500/08 transition-all duration-200"
             >
-              <MessageSquare className="size-3.5" />
-              Discord
+              <MessageSquare className="size-3.5" />Discord
             </a>
           )}
         </div>
@@ -258,60 +291,15 @@ function CreatorCard({ creator, index }: { creator: typeof OFFICIAL_CREATORS[0];
   )
 }
 
-function getFormatBadge(fmt: string) {
-  if (fmt === 'Auction Tournament' || fmt.toLowerCase().includes('auction')) {
-    return { label: 'Auction', color: 'bg-amber-500/15 text-amber-300 border-amber-500/30' }
-  }
-  if (fmt === 'BR Squad') {
-    return { label: 'BR Squad', color: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
-  }
-  if (fmt === 'BR Solo') {
-    return { label: 'BR Solo', color: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' }
-  }
-  if (fmt === 'CS Squad No Rules') {
-    return { label: 'CS No Rules', color: 'bg-orange-500/15 text-orange-300 border-orange-500/30' }
-  }
-  if (fmt === 'CS Squad Limited') {
-    return { label: 'CS Limited', color: 'bg-purple-500/15 text-purple-300 border-purple-500/30' }
-  }
-  if (fmt === 'CS Squad One Tap') {
-    return { label: 'CS One Tap', color: 'bg-rose-500/15 text-rose-300 border-rose-500/30' }
-  }
-  return { label: fmt, color: 'bg-primary/10 text-primary border-primary/20' }
-}
-
-function formatOverallPrizePool(prizePool: string | undefined): string {
-  if (!prizePool) return '₹0'
-  const trimmed = prizePool.trim()
-  if (!trimmed.includes(':') && !trimmed.includes('|')) {
-    const rawNum = parseInt(trimmed.replace(/[^0-9]/g, ''), 10)
-    if (!isNaN(rawNum)) return `₹${rawNum.toLocaleString('en-IN')}`
-    return trimmed.startsWith('₹') ? trimmed : `₹${trimmed}`
-  }
-  const matches = trimmed.match(/(?:₹|INR|Rs\.?)\s*([0-9,]+)/gi)
-  if (matches && matches.length > 0) {
-    let total = 0
-    for (const m of matches) {
-      const numStr = m.replace(/[^0-9]/g, '')
-      const val = parseInt(numStr, 10)
-      if (!isNaN(val)) total += val
-    }
-    if (total > 0) {
-      return `₹${total.toLocaleString('en-IN')}`
-    }
-  }
-  return trimmed
-}
-
 // ═══════════════════════════════════════════════════════════════
 // Tournament Card
 // ═══════════════════════════════════════════════════════════════
-function TournamentCard({ t, user, index }: { t: Tournament; user: any; index: number }) {
-  const statusConfig: Record<string, { label: string; color: string; dot: boolean }> = {
-    live: { label: '● LIVE', color: 'text-red-400 bg-red-500/15 border-red-500/30', dot: true },
-    registration_open: { label: 'OPEN', color: 'text-green-400 bg-green-500/15 border-green-500/30', dot: false },
-    draft: { label: 'SOON', color: 'text-yellow-400 bg-yellow-500/15 border-yellow-500/30', dot: false },
-    completed: { label: 'ENDED', color: 'text-muted-foreground bg-muted border-border', dot: false },
+function TournamentCard({ t, index }: { t: Tournament; index: number }) {
+  const statusConfig: Record<string, { label: string; color: string; pulse: boolean }> = {
+    live:              { label: 'LIVE', color: 'text-red-400 bg-red-500/14 border-red-500/35', pulse: true },
+    registration_open: { label: 'OPEN', color: 'text-emerald-400 bg-emerald-500/14 border-emerald-500/35', pulse: false },
+    draft:             { label: 'SOON', color: 'text-amber-400 bg-amber-500/14 border-amber-500/35', pulse: false },
+    completed:         { label: 'ENDED', color: 'text-muted-foreground bg-muted/60 border-border', pulse: false },
   }
   const st = statusConfig[t.status] ?? statusConfig.completed
   const fill = Math.min(100, (t.teams / t.maxTeams) * 100)
@@ -319,83 +307,106 @@ function TournamentCard({ t, user, index }: { t: Tournament; user: any; index: n
 
   const stLower = String(t.status || '').toLowerCase()
   const isEnded =
-    stLower === 'completed' ||
-    stLower === 'finished' ||
-    stLower === 'ended' ||
-    stLower === 'closed' ||
+    stLower === 'completed' || stLower === 'finished' || stLower === 'ended' || stLower === 'closed' ||
     Boolean((t as any).isClosed)
 
   return (
     <motion.div
       variants={cardVariant}
-      className="group relative rounded-xl border border-border bg-card overflow-hidden hover:border-primary/40 transition-all duration-300 flex flex-col"
-      style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.3)' }}
-      whileHover={{ y: -3 }}
+      className="tournament-card flex flex-col group"
+      whileHover={{ y: -4 }}
     >
-      {/* Banner */}
-      <div className="relative h-44 overflow-hidden">
+      {/* Banner image */}
+      <div className="relative h-48 overflow-hidden" style={{ borderRadius: '16px 16px 0 0' }}>
         <img
           src={t.banner || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&q=80'}
           alt={t.name}
-          className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
+          className="h-full w-full object-cover group-hover:scale-108 transition-transform duration-600"
+          style={{ transition: 'transform 0.6s cubic-bezier(0.22, 1, 0.36, 1)' }}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent" />
+        {/* Gradient overlays */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#13131D] via-[#13131D]/25 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/20 to-transparent" />
 
+        {/* Status badge */}
         <div className="absolute top-3 left-3">
-          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${st.color}`}>
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${st.color}`}>
+            {st.pulse && (
+              <span className="size-1.5 rounded-full bg-current animate-pulse" />
+            )}
             {st.label}
           </span>
         </div>
-        <div className="absolute top-3 right-3 rounded-md border border-white/10 bg-background/70 backdrop-blur px-2.5 py-1 text-[11px] font-bold text-white/90">
+
+        {/* Game badge */}
+        <div className="absolute top-3 right-3 rounded-lg border border-white/12 bg-black/60 backdrop-blur px-2.5 py-1 text-[11px] font-bold text-white/90 font-body">
           {t.game}
         </div>
 
         {/* Creator byline */}
         <div className="absolute bottom-3 left-3 flex items-center gap-2">
-          <div className="size-6 rounded-full border border-primary/50 bg-muted overflow-hidden">
+          <div className="size-6 rounded-full border border-primary/50 bg-surface overflow-hidden">
             <img src={t.creatorAvatar} alt={t.creatorName} className="w-full h-full object-cover" />
           </div>
-          <span className="text-[11px] font-semibold text-white/90">{t.creatorName}</span>
+          <span className="text-[11px] font-semibold text-white/90 font-body">{t.creatorName}</span>
         </div>
       </div>
 
+      {/* Card body */}
       <div className="p-5 flex-1 flex flex-col">
-        <h3 className="font-display text-base text-foreground leading-snug line-clamp-2">{t.name}</h3>
+        <h3 className="font-heading text-lg font-bold text-foreground leading-snug line-clamp-2">
+          {t.name}
+        </h3>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${fb.color}`}>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${fb.color}`}>
             {fb.label}
           </span>
-          <span>·</span>
-          <span className="flex items-center gap-1"><Calendar className="size-3" /> {t.startDate}</span>
+          <span className="text-border-strong">·</span>
+          <span className="flex items-center gap-1 font-body">
+            <Calendar className="size-3" />
+            {t.startDate}
+          </span>
         </div>
 
-        {/* Fill bar */}
+        {/* Teams fill bar */}
         <div className="mt-4">
-          <div className="flex justify-between text-[11px] mb-1.5">
-            <span className="text-muted-foreground">Teams</span>
-            <span className="font-bold text-foreground">{t.teams}/{t.maxTeams}</span>
+          <div className="flex justify-between text-[11px] mb-2">
+            <span className="text-muted-foreground font-body">Teams Registered</span>
+            <span className="font-bold text-foreground font-body">{t.teams}/{t.maxTeams}</span>
           </div>
-          <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
+          <div className="tournament-fill-bar">
             <motion.div
-              className="h-full rounded-full bg-primary"
+              className="tournament-fill-bar-inner"
               initial={{ width: 0 }}
               animate={{ width: `${fill}%` }}
-              transition={{ duration: 1, ease: 'easeOut', delay: 0.3 }}
+              transition={{ duration: 1.2, ease: 'easeOut', delay: 0.4 }}
             />
           </div>
         </div>
 
-        <div className="mt-auto pt-4 border-t border-border flex items-center justify-between">
+        {/* Footer */}
+        <div className="mt-auto pt-4 border-t border-border/60 flex items-center justify-between">
           <div>
-            <p className="text-[10px] uppercase font-bold text-muted-foreground">Prize Pool</p>
-            <p className="font-display text-lg font-bold text-primary">{formatOverallPrizePool(t.prizePool)}</p>
+            <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider font-body">
+              Prize Pool
+            </p>
+            <p className="font-display text-xl font-bold" style={{
+              background: 'linear-gradient(135deg, #FFB800, #FF8C00)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}>
+              {formatOverallPrizePool(t.prizePool)}
+            </p>
           </div>
           <Link
             to={`/tournaments/${t.id}`}
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-bold transition-all duration-200 ${
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-bold transition-all duration-200 font-body ${
               isEnded
-                ? 'border-border bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                : 'border-primary/30 bg-primary/10 text-primary hover:bg-primary hover:text-background'
+                ? 'border-border bg-surface/60 text-muted-foreground hover:bg-surface hover:text-foreground'
+                : t.status === 'live'
+                ? 'border-red-500/40 bg-red-500/12 text-red-400 hover:bg-red-500 hover:text-white'
+                : 'border-primary/35 bg-primary/10 text-primary-light hover:bg-primary hover:text-white'
             }`}
           >
             {t.status === 'live' ? 'Live Lobby' : isEnded ? 'View Results' : 'Register'}
@@ -421,7 +432,6 @@ export default function LandingPage() {
   const [formatFilter, setFormatFilter] = useState<'all' | 'auction' | 'br_squad' | 'br_solo' | 'cs_norules' | 'cs_limited' | 'cs_onetap'>('all')
   const [navScrolled, setNavScrolled] = useState(false)
 
-  // Register navigate so authModalStore redirects use SPA routing
   useEffect(() => {
     setAuthModalNavigate(nav)
   }, [nav])
@@ -432,14 +442,12 @@ export default function LandingPage() {
     creatorService.list().then((dbList) => {
       const activeList = (dbList || []).filter((c: any) => (!c.status || c.status === 'active') && !c.isDeleted)
       if (activeList.length > 0) {
-        const mapped = activeList.map((c, i) => ({
+        const mapped = activeList.map((c: any, i: number) => ({
           id: c.id,
           name: c.name,
           handle: c.handle,
           title: 'Official Partner Creator',
-          photo:
-            c.avatar ||
-            'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+          photo: c.avatar || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
           subscribers: c.subscribers || 'Official Partner',
           bio: c.bio,
           games: Array.isArray(c.games) ? c.games : ['Free Fire', 'BGMI'],
@@ -447,7 +455,7 @@ export default function LandingPage() {
           totalTournaments: c.totalTournaments || 0,
           verified: true,
           rank: i + 1,
-          accentColor: i === 0 ? '#FF4D2D' : i === 1 ? '#8B5CF6' : '#F59E0B',
+          accentColor: i === 0 ? '#FF3B3B' : i === 1 ? '#8B5CF6' : '#FFB800',
           socials: c.socials || {},
         }))
         setCreators(mapped)
@@ -455,17 +463,14 @@ export default function LandingPage() {
         setCreators(DEFAULT_CREATORS)
       }
     })
-    const onScroll = () => setNavScrolled(window.scrollY > 40)
+
+    const onScroll = () => setNavScrolled(window.scrollY > 50)
     window.addEventListener('scroll', onScroll)
 
-    // Auto-open modal if URL has ?auth=login, ?auth=register, or hashes
     const params = new URLSearchParams(window.location.search)
     const authQuery = params.get('auth')
-    if (authQuery === 'login' || window.location.hash === '#login') {
-      openLogin()
-    } else if (authQuery === 'register' || window.location.hash === '#register') {
-      openRegister()
-    }
+    if (authQuery === 'login' || window.location.hash === '#login') openLogin()
+    else if (authQuery === 'register' || window.location.hash === '#register') openRegister()
 
     return () => window.removeEventListener('scroll', onScroll)
   }, [openLogin, openRegister])
@@ -473,90 +478,78 @@ export default function LandingPage() {
   const filteredTournaments = tournaments.filter((t) => {
     const stLower = String(t.status || '').toLowerCase()
     const isEnded =
-      stLower === 'completed' ||
-      stLower === 'finished' ||
-      stLower === 'ended' ||
-      stLower === 'closed' ||
+      stLower === 'completed' || stLower === 'finished' || stLower === 'ended' || stLower === 'closed' ||
       Boolean((t as any).isClosed)
 
-    if (activeTab === 'live') {
-      if (t.status !== 'live') return false
-    } else if (activeTab === 'upcoming') {
-      if (isEnded || !(t.status === 'registration_open' || t.status === 'draft')) return false
-    } else if (activeTab === 'completed') {
-      if (!isEnded) return false
-    } else if (activeTab === 'all') {
-      // Default All Active view: Exclude ended tournaments from Live & Upcoming
-      if (isEnded) return false
-    }
+    if (activeTab === 'live')      { if (t.status !== 'live') return false }
+    else if (activeTab === 'upcoming') { if (isEnded || !(t.status === 'registration_open' || t.status === 'draft')) return false }
+    else if (activeTab === 'completed') { if (!isEnded) return false }
+    else if (activeTab === 'all')  { if (isEnded) return false }
 
-    if (formatFilter === 'auction') return t.format === 'Auction Tournament' || t.format.toLowerCase().includes('auction')
-    if (formatFilter === 'br_squad') return t.format === 'BR Squad' || t.format === 'Battle Royale'
-    if (formatFilter === 'br_solo') return t.format === 'BR Solo'
+    if (formatFilter === 'auction')   return t.format === 'Auction Tournament' || t.format.toLowerCase().includes('auction')
+    if (formatFilter === 'br_squad')  return t.format === 'BR Squad' || t.format === 'Battle Royale'
+    if (formatFilter === 'br_solo')   return t.format === 'BR Solo'
     if (formatFilter === 'cs_norules') return t.format === 'CS Squad No Rules'
     if (formatFilter === 'cs_limited') return t.format === 'CS Squad Limited'
     if (formatFilter === 'cs_onetap') return t.format === 'CS Squad One Tap'
-
     return true
   })
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col overflow-x-hidden">
 
-      {/* ── NAV ── */}
+      {/* ══════════════════════════════════
+          NAV
+      ══════════════════════════════════ */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
+        className="fixed top-0 left-0 right-0 z-50 transition-all duration-400"
         style={{
-          background: navScrolled ? 'rgba(10,10,10,0.97)' : 'transparent',
-          backdropFilter: navScrolled ? 'blur(20px) saturate(1.5)' : 'none',
-          borderBottom: navScrolled ? '1px solid #1A1A1A' : 'none',
+          background: navScrolled ? 'rgba(8,7,10,0.92)' : 'transparent',
+          backdropFilter: navScrolled ? 'blur(28px) saturate(1.8)' : 'none',
+          borderBottom: navScrolled ? '1px solid rgba(255,255,255,0.05)' : 'none',
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5 group">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
+          {/* Logo */}
+          <Link to="/" className="flex items-center gap-3 group shrink-0">
             <img
               src="/logo.png"
               alt="RDK Esports Logo"
-              className="h-10 w-auto logo-glow group-hover:scale-105 transition-transform"
+              className="h-9 w-auto logo-glow group-hover:scale-105 transition-transform duration-300"
             />
             <div className="flex flex-col leading-none">
-              <span className="font-display text-lg tracking-[0.15em] text-foreground">RDK ESPORTS</span>
-              <span className="text-[9px] tracking-[0.1em] text-muted-foreground font-body uppercase">Powered by RDK Technologies</span>
+              <span className="font-display text-base tracking-[0.18em] text-foreground">RDK ESPORTS</span>
+              <span className="text-[9px] tracking-[0.12em] text-muted-foreground font-body uppercase">Powered by RDK Technologies</span>
             </div>
           </Link>
 
+          {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-8 text-sm font-body font-medium text-muted-foreground">
-            {['What We Do', 'Tournaments', 'Creators', 'Features'].map((label, i) => {
-              const href = ['#what-we-do', '#tournaments', '#creators', '#features'][i]
-              return (
-                <a key={label} href={href} className="nav-link-underline hover:text-foreground transition-colors">{label}</a>
-              )
-            })}
+            {[
+              ['What We Do', '#what-we-do'],
+              ['Tournaments', '#tournaments'],
+              ['Creators', '#creators'],
+              ['Features', '#features'],
+            ].map(([label, href]) => (
+              <a key={label} href={href} className="nav-link-underline hover:text-foreground transition-colors duration-200">
+                {label}
+              </a>
+            ))}
           </nav>
 
-          <div className="flex items-center gap-3">
+          {/* Auth buttons */}
+          <div className="flex items-center gap-3 shrink-0">
             {user ? (
-              <Link
-                to={homeFor(user.role)}
-                className="btn-primary cursor-pointer"
-              >
+              <Link to={homeFor(user.role)} className="btn-primary">
                 <Crown className="size-3.5" />
                 Dashboard
               </Link>
             ) : (
               <>
-                <button
-                  type="button"
-                  onClick={openLogin}
-                  className="btn-ghost text-sm cursor-pointer"
-                >
+                <button type="button" onClick={openLogin} className="btn-ghost text-sm cursor-pointer hidden sm:inline-flex">
                   Sign In
                 </button>
-                <button
-                  type="button"
-                  onClick={openRegister}
-                  className="btn-accent hidden sm:inline-flex cursor-pointer"
-                >
+                <button type="button" onClick={openRegister} className="btn-primary cursor-pointer">
                   Register <ArrowRight className="size-3.5" />
                 </button>
               </>
@@ -565,63 +558,71 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* ── HERO ── */}
+      {/* ══════════════════════════════════
+          HERO
+      ══════════════════════════════════ */}
       <section className="relative min-h-screen flex items-center pt-16 overflow-hidden">
-        {/* Background grid */}
-        <div className="absolute inset-0 bg-grid-pattern animate-grid-pulse pointer-events-none" />
-        {/* Primary glow orb top-left */}
-        <div className="absolute -top-40 -left-40 w-[700px] h-[700px] rounded-full pointer-events-none"
-          style={{ background: 'radial-gradient(circle, rgba(229,57,53,0.12) 0%, transparent 70%)' }}
+        {/* Background layers */}
+        <div className="absolute inset-0 bg-grid-pattern animate-grid-pulse pointer-events-none opacity-60" />
+
+        {/* Ambient glow orbs */}
+        <div
+          className="hero-glow-sphere w-[900px] h-[900px] -top-60 -left-60 opacity-40"
+          style={{ background: 'radial-gradient(circle, rgba(245,26,26,0.15) 0%, transparent 65%)' }}
         />
-        {/* Accent orb bottom-right */}
-        <div className="absolute -bottom-60 -right-40 w-[600px] h-[600px] rounded-full pointer-events-none"
-          style={{ background: 'radial-gradient(circle, rgba(229,57,53,0.06) 0%, transparent 70%)' }}
+        <div
+          className="hero-glow-sphere w-[700px] h-[700px] -bottom-80 -right-40 opacity-30"
+          style={{ background: 'radial-gradient(circle, rgba(255,170,0,0.08) 0%, transparent 65%)' }}
         />
-        {/* Secondary ambient */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] rounded-full pointer-events-none opacity-20"
-          style={{ background: 'radial-gradient(ellipse, rgba(229,57,53,0.08) 0%, transparent 70%)' }}
+        <div
+          className="hero-glow-sphere w-[500px] h-[200px] top-1/3 left-1/2 -translate-x-1/2 opacity-20"
+          style={{ background: 'radial-gradient(ellipse, rgba(245,26,26,0.12) 0%, transparent 70%)' }}
         />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full py-20">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
 
-            {/* Left: Text */}
+            {/* Left: Hero text */}
             <motion.div
               initial="hidden"
               animate="show"
-              variants={{ show: { transition: { staggerChildren: 0.12 } } }}
+              variants={{ show: { transition: { staggerChildren: 0.1 } } }}
             >
+              {/* Eyebrow label */}
+              <motion.div variants={stagger(0)} className="mb-6">
+                <span className="section-eyebrow">
+                  <Swords className="size-3" />
+                  South India's #1 Esports Platform
+                </span>
+              </motion.div>
 
-
+              {/* Headline */}
               <motion.h1
-                variants={stagger(0.1)}
-                className="font-display text-5xl sm:text-6xl lg:text-7xl leading-[1.05] tracking-wide text-foreground"
+                variants={stagger(0.08)}
+                className="font-heading text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.0] tracking-wide"
               >
-                Run Every
+                <span className="text-foreground">Run Every</span>
                 <br />
-                <span className="gradient-text">Tournament.</span>
+                <span className="gradient-text-hero">Tournament.</span>
                 <br />
-                <span className="text-foreground/60">From Reg to Final.</span>
+                <span className="text-foreground/50" style={{ fontSize: '0.75em' }}>From Reg to Final.</span>
               </motion.h1>
 
-              <motion.p variants={stagger(0.2)} className="mt-6 text-base text-muted-foreground leading-relaxed max-w-xl font-body">
+              <motion.p
+                variants={stagger(0.18)}
+                className="mt-6 text-base text-muted-foreground leading-relaxed max-w-lg font-body"
+              >
                 RDK Technologies powers creator-led competitive gaming — UPI payments, IPL-style player auctions,
                 automated brackets, and real-time public leaderboards in one unified control center.
               </motion.p>
 
-              <motion.div variants={stagger(0.3)} className="mt-8 flex flex-wrap gap-4">
-                <a
-                  href="#tournaments"
-                  className="btn-primary cursor-pointer"
-                >
+              {/* CTA buttons */}
+              <motion.div variants={stagger(0.28)} className="mt-8 flex flex-wrap gap-4">
+                <a href="#tournaments" className="btn-primary">
                   <Trophy className="size-4" />
                   Explore Tournaments
                 </a>
-                <button
-                  type="button"
-                  onClick={openRegister}
-                  className="btn-ghost cursor-pointer"
-                >
+                <button type="button" onClick={openRegister} className="btn-outline-white cursor-pointer">
                   <Users className="size-4" />
                   Join as Gamer
                 </button>
@@ -629,37 +630,40 @@ export default function LandingPage() {
 
               {/* Stats bar */}
               <motion.div
-                variants={stagger(0.4)}
-                className="mt-14 pt-8 border-t border-border/30 grid grid-cols-2 sm:grid-cols-4 gap-6"
+                variants={stagger(0.38)}
+                className="mt-14 pt-8 border-t border-border/40"
               >
-                {[
-                  { label: 'Tournaments', value: stats?.totalTournamentsHosted ?? '36+', color: 'gradient-text' },
-                  { label: 'Prize Given', value: stats?.totalPrizeDistributed ?? '₹8.75L+', color: 'text-primary' },
-                  { label: 'Gamers', value: stats?.registeredGamers ?? '12K+', color: 'gradient-text' },
-                  { label: 'Partners', value: `${creators.length}`, color: 'gradient-text-gold' },
-                ].map((s) => (
-                  <div key={s.label}>
-                    <p className={`stat-number text-3xl ${s.color}`}>{s.value}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 font-body tracking-wide">{s.label}</p>
-                  </div>
-                ))}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                  {[
+                    { label: 'Tournaments', value: stats?.totalTournamentsHosted ?? '36+', accent: 'gradient-text' },
+                    { label: 'Prize Given', value: stats?.totalPrizeDistributed ?? '₹8.75L+', accent: 'gradient-text-gold' },
+                    { label: 'Gamers', value: stats?.registeredGamers ?? '12K+', accent: 'gradient-text' },
+                    { label: 'Partners', value: `${creators.length}`, accent: 'gradient-text-gold' },
+                  ].map((s) => (
+                    <div key={s.label}>
+                      <p className={`stat-number text-3xl font-bold ${s.accent}`}>{s.value}</p>
+                      <p className="text-[11px] text-muted-foreground mt-1 font-body tracking-wide uppercase">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
               </motion.div>
             </motion.div>
 
-            {/* Right: Hero creator card — the primary photo */}
+            {/* Right: Hero card */}
             <motion.div
-              initial={{ opacity: 0, x: 60, scale: 0.95 }}
+              initial={{ opacity: 0, x: 60, scale: 0.92 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
-              transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.3 }}
+              transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1], delay: 0.25 }}
               className="hidden lg:flex justify-center"
             >
               <div className="relative">
-                {/* Corner decoration */}
-                <div className="bracket relative rounded-2xl overflow-hidden"
+                {/* Main photo */}
+                <div
+                  className="bracket relative rounded-2xl overflow-hidden"
                   style={{
-                    width: '360px',
-                    boxShadow: '0 0 40px hsl(263 82% 58% / 0.25), 0 20px 60px rgba(0,0,0,0.5)',
-                    border: '1px solid hsl(263 82% 58% / 0.3)',
+                    width: '340px',
+                    boxShadow: '0 0 60px rgba(245,26,26,0.2), 0 30px 80px rgba(0,0,0,0.6)',
+                    border: '1px solid rgba(245,26,26,0.25)',
                   }}
                 >
                   <img
@@ -668,53 +672,91 @@ export default function LandingPage() {
                     className="w-full object-cover"
                     style={{ aspectRatio: '3/4' }}
                   />
-                  {/* Bottom overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-transparent to-transparent" />
                   {/* Info bar */}
                   <div className="absolute bottom-0 left-0 right-0 p-5">
-                    <div className="badge-primary inline-flex mb-2 text-[9px]">
+                    <div className="section-eyebrow inline-flex mb-2 text-[9px]">
                       <Crown className="size-3" />
                       Platform Head
                     </div>
-                    <p className="font-display text-xl text-white">RDK Esports</p>
-                    <p className="text-xs text-white/50 font-body font-mono">@rdkesports</p>
+                    <p className="font-heading text-2xl font-bold text-white">RDK Esports</p>
+                    <p className="text-xs text-white/45 font-mono mt-0.5">@rdkesports</p>
                   </div>
                 </div>
 
                 {/* Floating stat pills */}
                 <motion.div
-                  animate={{ y: [0, -8, 0] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-                  className="absolute -top-5 -right-8 rounded-xl border border-border bg-card/90 backdrop-blur-md px-4 py-2.5 shadow-lg"
+                  animate={{ y: [0, -10, 0] }}
+                  transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+                  className="absolute -top-6 -right-10 rounded-xl border border-border bg-card/95 backdrop-blur-md px-4 py-3 shadow-card-deep"
                 >
-                  <p className="font-display text-xl font-bold text-primary">36+</p>
-                  <p className="text-[10px] text-muted-foreground">Tournaments</p>
+                  <p className="font-display text-xl font-bold" style={{
+                    background: 'linear-gradient(135deg, #FFB800, #FF8C00)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                  }}>36+</p>
+                  <p className="text-[10px] text-muted-foreground font-body">Tournaments</p>
                 </motion.div>
-
                 <motion.div
-                  animate={{ y: [0, 8, 0] }}
-                  transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-                  className="absolute -bottom-5 -left-8 rounded-xl border border-border bg-card/90 backdrop-blur-md px-4 py-2.5 shadow-lg"
+                  animate={{ y: [0, 10, 0] }}
+                  transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }}
+                  className="absolute -bottom-6 -left-10 rounded-xl border border-border bg-card/95 backdrop-blur-md px-4 py-3 shadow-card-deep"
                 >
-                  <p className="font-display text-xl font-bold text-yellow-400">12K+</p>
-                  <p className="text-[10px] text-muted-foreground">Gamers</p>
+                  <p className="font-display text-xl font-bold gradient-text">12K+</p>
+                  <p className="text-[10px] text-muted-foreground font-body">Gamers</p>
+                </motion.div>
+                <motion.div
+                  animate={{ y: [0, -6, 0] }}
+                  transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 1.2 }}
+                  className="absolute top-1/3 -right-14 rounded-xl border border-border bg-card/95 backdrop-blur-md px-3 py-2 shadow-card-deep"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <p className="text-[10px] text-emerald-400 font-bold font-body">LIVE NOW</p>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground font-body mt-0.5">3 Active Tournaments</p>
                 </motion.div>
               </div>
             </motion.div>
 
           </div>
         </div>
+
+        {/* Scroll indicator */}
+        <motion.div
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.5, duration: 0.6 }}
+        >
+          <span className="text-[10px] text-muted-foreground font-body uppercase tracking-widest">Scroll</span>
+          <motion.div
+            animate={{ y: [0, 6, 0] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <ChevronDown className="size-4 text-muted-foreground" />
+          </motion.div>
+        </motion.div>
       </section>
 
-      {/* ── WHAT WE DO ── */}
-      <AnimatedSection id="what-we-do" className="py-24 border-t border-border">
+      {/* ══════════════════════════════════
+          WHAT WE DO
+      ══════════════════════════════════ */}
+      <AnimatedSection id="what-we-do" className="py-28 border-t border-border/60 relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div variants={fadeUp} className="text-center max-w-2xl mx-auto mb-16">
-            <SectionLabel icon={Target} text="What We Do" />
-            <h2 className="font-display text-4xl text-foreground tracking-wide">
+
+          <motion.div variants={fadeUp} className="text-center max-w-2xl mx-auto mb-20">
+            <div className="flex justify-center mb-4">
+              <span className="section-eyebrow">
+                <Target className="size-3" />
+                What We Do
+              </span>
+            </div>
+            <h2 className="font-heading text-4xl sm:text-5xl font-bold text-foreground">
               Everything for Professional Esports
             </h2>
-            <p className="mt-4 text-sm text-muted-foreground leading-relaxed font-body">
+            <div className="w-16 h-0.5 bg-gradient-to-r from-primary to-gold mx-auto mt-5 mb-5 rounded-full" />
+            <p className="text-sm text-muted-foreground leading-relaxed font-body">
               We eliminated the chaos of WhatsApp groups, lost Google Forms, and unverified UPI payments.
             </p>
           </motion.div>
@@ -722,25 +764,33 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
             {[
               {
-                icon: Gamepad2, color: 'text-primary bg-primary/10 border-primary/20',
+                icon: Gamepad2,
+                iconColor: 'text-primary bg-primary/10 border-primary/20',
+                accentBar: 'from-primary to-primary-light',
                 title: 'Multi-Format Engine',
                 desc: 'Free Fire BR, BGMI Custom Rooms, Valorant Knockout, and daily scrims all supported.',
                 features: ['Auto-bracket generation', 'Room ID & pass dispatch'],
               },
               {
-                icon: QrCode, color: 'text-green-400 bg-green-500/10 border-green-500/20',
+                icon: QrCode,
+                iconColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+                accentBar: 'from-emerald-500 to-emerald-400',
                 title: 'Manual UPI Payments',
                 desc: 'Zero gateway cuts. Organizers display their UPI QR. Teams upload UTR + screenshots directly.',
                 features: ['Ambassador audit desk', 'One-click Approve/Reject'],
               },
               {
-                icon: Gavel, color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',
+                icon: Gavel,
+                iconColor: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+                accentBar: 'from-amber-500 to-gold',
                 title: 'Live Player Auctions',
                 desc: 'IPL-style live bidding, real-time purse meters, and Sheets sync for the full player pool.',
                 features: ['Real-time bid sync', 'Instant budget deduction'],
               },
               {
-                icon: Users, color: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+                icon: Users,
+                iconColor: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+                accentBar: 'from-purple-500 to-purple-400',
                 title: 'Verified Creator Hub',
                 desc: 'Official partners get white-labeled control rooms, social showcases, and ambassador networks.',
                 features: ['Dedicated creator portfolio', 'Multi-tier RBAC authority'],
@@ -748,19 +798,22 @@ export default function LandingPage() {
             ].map((card, i) => (
               <motion.div
                 key={card.title}
-                variants={stagger(i * 0.08)}
-                className="rounded-xl border border-border bg-card p-6 flex flex-col hover:border-primary/30 transition-all duration-300 group"
-                whileHover={{ y: -4 }}
+                variants={stagger(i * 0.09)}
+                className="feature-card flex flex-col group cursor-default"
+                whileHover={{ y: -5 }}
               >
-                <div className={`size-12 rounded-xl border flex items-center justify-center mb-5 ${card.color}`}>
+                {/* Accent top border */}
+                <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r ${card.accentBar} opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-t-2xl`} />
+
+                <div className={`size-13 rounded-2xl border flex items-center justify-center mb-5 ${card.iconColor} transition-transform duration-300 group-hover:scale-110`}>
                   <card.icon className="size-5" />
                 </div>
-                <h3 className="font-heading font-black text-base text-foreground mb-2">{card.title}</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed flex-1">{card.desc}</p>
+                <h3 className="font-heading text-lg font-bold text-foreground mb-2">{card.title}</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed flex-1 font-body">{card.desc}</p>
                 <ul className="mt-5 space-y-2">
                   {card.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2 text-xs text-foreground/80">
-                      <CheckCircle2 className="size-3.5 text-green-400 shrink-0" />
+                    <li key={f} className="flex items-center gap-2 text-xs text-foreground/80 font-body">
+                      <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />
                       {f}
                     </li>
                   ))}
@@ -771,31 +824,44 @@ export default function LandingPage() {
         </div>
       </AnimatedSection>
 
-      {/* ── TOURNAMENTS ── */}
-      <AnimatedSection id="tournaments" className="py-24 border-t border-border bg-card/20">
+      {/* ══════════════════════════════════
+          TOURNAMENTS
+      ══════════════════════════════════ */}
+      <AnimatedSection
+        id="tournaments"
+        className="py-28 border-t border-border/60 relative bg-card/10"
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-end justify-between mb-10 gap-4">
-            <div>
 
-              <h2 className="font-heading font-black text-4xl text-foreground tracking-tight">
+          {/* Section header */}
+          <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-end justify-between mb-10 gap-6">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="section-eyebrow-gold">
+                  <Trophy className="size-3" />
+                  Championships
+                </span>
+              </div>
+              <h2 className="font-heading text-4xl sm:text-5xl font-bold text-foreground">
                 Live & Upcoming Tournaments
               </h2>
-              <p className="text-sm text-muted-foreground mt-2">
+              <p className="text-sm text-muted-foreground mt-2 font-body">
                 Championships conducted by verified creators. Powered by RDK Technologies.
               </p>
             </div>
 
-            <div className="flex items-center bg-muted/60 border border-border rounded-xl p-1 gap-1 self-start sm:self-auto">
+            {/* Tab switcher */}
+            <div className="flex items-center bg-surface/60 border border-border rounded-xl p-1 gap-1 self-start sm:self-auto shrink-0">
               {[
                 { id: 'all', label: 'All Active' },
-                { id: 'live', label: 'Live' },
+                { id: 'live', label: '● Live' },
                 { id: 'upcoming', label: 'Upcoming' },
                 { id: 'completed', label: 'Completed' },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 font-body ${
                     activeTab === tab.id
                       ? 'bg-primary text-white shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -807,27 +873,25 @@ export default function LandingPage() {
             </div>
           </motion.div>
 
-          {/* Format Filter Pills */}
-          <div className="flex flex-wrap items-center gap-1.5 mb-8 border-b border-border/40 pb-4">
-            <span className="text-[11px] text-muted-foreground font-bold uppercase tracking-wider mr-1">
-              Mode:
-            </span>
+          {/* Format pills */}
+          <div className="flex flex-wrap items-center gap-2 mb-8 pb-4 border-b border-border/40">
+            <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mr-1 font-body">Mode:</span>
             {[
               { id: 'all', label: 'All Formats' },
-              { id: 'auction', label: 'Auction' },
-              { id: 'br_squad', label: 'BR Squad' },
-              { id: 'br_solo', label: 'BR Solo' },
-              { id: 'cs_norules', label: 'CS No Rules' },
-              { id: 'cs_limited', label: 'CS Limited' },
-              { id: 'cs_onetap', label: 'CS One Tap' },
+              { id: 'auction', label: '🏆 Auction' },
+              { id: 'br_squad', label: '🎯 BR Squad' },
+              { id: 'br_solo', label: '👤 BR Solo' },
+              { id: 'cs_norules', label: '⚡ CS No Rules' },
+              { id: 'cs_limited', label: '🔒 CS Limited' },
+              { id: 'cs_onetap', label: '💀 CS One Tap' },
             ].map((f) => (
               <button
                 key={f.id}
                 onClick={() => setFormatFilter(f.id as any)}
-                className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-all duration-200 font-body ${
                   formatFilter === f.id
-                    ? 'bg-primary text-background border-primary font-bold shadow-xs'
-                    : 'border-border bg-card/60 text-muted-foreground hover:text-foreground hover:bg-muted'
+                    ? 'bg-primary text-white border-primary font-bold shadow-glow-red-sm'
+                    : 'border-border bg-card/60 text-muted-foreground hover:text-foreground hover:bg-surface hover:border-border-strong'
                 }`}
               >
                 {f.label}
@@ -835,26 +899,29 @@ export default function LandingPage() {
             ))}
           </div>
 
+          {/* Tournament grid */}
           <AnimatePresence mode="wait">
             <motion.div
               key={`${activeTab}-${formatFilter}`}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.35 }}
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
             >
               {filteredTournaments.map((t, i) => (
-                <TournamentCard key={t.id} t={t} user={user} index={i} />
+                <TournamentCard key={t.id} t={t} index={i} />
               ))}
               {filteredTournaments.length === 0 && (
-                <div className="col-span-3 py-20 text-center text-muted-foreground">
-                  <Trophy className="size-12 mx-auto mb-4 opacity-30" />
-                  <p className="font-heading font-bold text-lg">No tournaments in this category right now</p>
-                  <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                <div className="col-span-3 py-24 text-center">
+                  <div className="size-16 rounded-2xl bg-primary/08 border border-primary/15 flex items-center justify-center mx-auto mb-5">
+                    <Trophy className="size-8 text-primary/40" />
+                  </div>
+                  <p className="font-heading text-xl font-bold text-foreground">No tournaments in this category</p>
+                  <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto font-body">
                     {activeTab === 'completed'
                       ? 'No completed tournaments recorded yet.'
-                      : 'Check back soon for new live & upcoming championships, or switch to the Completed tab to view past tournament recaps.'}
+                      : 'Check back soon for new live & upcoming championships, or switch to the Completed tab to view past recaps.'}
                   </p>
                 </div>
               )}
@@ -863,22 +930,31 @@ export default function LandingPage() {
         </div>
       </AnimatedSection>
 
-      {/* ── OFFICIAL CREATORS ── */}
-      <AnimatedSection id="creators" className="py-24 border-t border-border">
+      {/* ══════════════════════════════════
+          OFFICIAL CREATORS
+      ══════════════════════════════════ */}
+      <AnimatedSection id="creators" className="py-28 border-t border-border/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div variants={fadeUp} className="text-center max-w-2xl mx-auto mb-16">
 
-            <h2 className="font-heading font-black text-4xl text-foreground tracking-tight">
+          <motion.div variants={fadeUp} className="text-center max-w-2xl mx-auto mb-20">
+            <div className="flex justify-center mb-4">
+              <span className="section-eyebrow">
+                <Star className="size-3" />
+                Official Partners
+              </span>
+            </div>
+            <h2 className="font-heading text-4xl sm:text-5xl font-bold text-foreground">
               Our Official Creators & Organizers
             </h2>
-            <p className="mt-4 text-sm text-muted-foreground leading-relaxed">
+            <div className="w-16 h-0.5 bg-gradient-to-r from-primary to-gold mx-auto mt-5 mb-5 rounded-full" />
+            <p className="text-sm text-muted-foreground leading-relaxed font-body">
               Official Creators are personally vetted and authorized by RDK Technologies.
               They organize championships, scrims, and player auctions with full platform backing.
             </p>
           </motion.div>
 
           <motion.div
-            variants={{ show: { transition: { staggerChildren: 0.1 } } }}
+            variants={{ show: { transition: { staggerChildren: 0.12 } } }}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
           >
             {creators.map((c, i) => (
@@ -886,25 +962,27 @@ export default function LandingPage() {
             ))}
           </motion.div>
 
-          {/* CTA to become partner */}
+          {/* Become a partner CTA */}
           <motion.div
             variants={fadeUp}
-            className="mt-12 relative rounded-xl overflow-hidden border border-primary/20"
-            style={{ background: 'linear-gradient(135deg, hsl(8 95% 58% / 0.08) 0%, hsl(270 80% 65% / 0.05) 100%)' }}
+            className="mt-14 relative rounded-2xl overflow-hidden border border-primary/20"
+            style={{ background: 'linear-gradient(135deg, hsl(0 90% 55% / 0.07) 0%, hsl(42 100% 50% / 0.04) 100%)' }}
           >
-            <div className="absolute inset-0 pointer-events-none"
-              style={{ background: 'radial-gradient(ellipse at left center, hsl(8 95% 58% / 0.1) 0%, transparent 60%)' }}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{ background: 'radial-gradient(ellipse at left center, hsl(0 90% 55% / 0.12) 0%, transparent 55%)' }}
             />
-            <div className="relative flex flex-col sm:flex-row items-center justify-between gap-6 p-8">
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+            <div className="relative flex flex-col sm:flex-row items-center justify-between gap-6 p-8 lg:p-10">
               <div>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-3">
                   <Award className="size-5 text-primary" />
-                  <span className="text-xs font-black uppercase tracking-widest text-primary">Become a Partner</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-primary font-body">Become a Partner</span>
                 </div>
-                <h4 className="font-heading font-black text-2xl text-foreground">
+                <h4 className="font-heading text-2xl sm:text-3xl font-bold text-foreground">
                   Gaming Creator, Clan Owner, or College Host?
                 </h4>
-                <p className="text-sm text-muted-foreground mt-2 max-w-lg">
+                <p className="text-sm text-muted-foreground mt-2 max-w-lg font-body leading-relaxed">
                   Apply for Official Creator status. Get verified, your own branded tournament control center,
                   ambassador delegation, and live auction capabilities.
                 </p>
@@ -912,7 +990,7 @@ export default function LandingPage() {
               <button
                 type="button"
                 onClick={openLogin}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-black text-white hover:opacity-90 transition glow-red shrink-0 cursor-pointer"
+                className="btn-primary glow-red shrink-0 cursor-pointer whitespace-nowrap"
               >
                 Access Creator Portal
                 <ArrowRight className="size-4" />
@@ -922,89 +1000,194 @@ export default function LandingPage() {
         </div>
       </AnimatedSection>
 
-      {/* ── PLATFORM FEATURES ── */}
-      <AnimatedSection id="features" className="py-24 border-t border-border bg-card/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div variants={fadeUp} className="text-center max-w-2xl mx-auto mb-16">
+      {/* ══════════════════════════════════
+          PLATFORM FEATURES
+      ══════════════════════════════════ */}
+      <AnimatedSection id="features" className="py-28 border-t border-border/60 relative overflow-hidden">
+        {/* Background decoration */}
+        <div className="absolute inset-0 bg-hex-pattern opacity-30 pointer-events-none" />
+        <div
+          className="absolute right-0 top-0 w-1/2 h-full pointer-events-none"
+          style={{ background: 'radial-gradient(ellipse at right top, hsl(42 100% 50% / 0.04) 0%, transparent 60%)' }}
+        />
 
-            <h2 className="font-heading font-black text-4xl text-foreground tracking-tight">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div variants={fadeUp} className="text-center max-w-2xl mx-auto mb-20">
+            <div className="flex justify-center mb-4">
+              <span className="section-eyebrow-gold">
+                <Zap className="size-3" />
+                Platform Features
+              </span>
+            </div>
+            <h2 className="font-heading text-4xl sm:text-5xl font-bold text-foreground">
               Built for Serious Tournament Ops
             </h2>
+            <div className="w-16 h-0.5 bg-gradient-to-r from-gold to-primary mx-auto mt-5 mb-5 rounded-full" />
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
               {
-                icon: Trophy, title: 'Auto Points & Leaderboards',
+                icon: Trophy,
+                gradient: 'from-primary/20 to-primary/5',
+                border: 'border-primary/20',
+                iconColor: 'text-primary',
+                title: 'Auto Points & Leaderboards',
                 desc: 'Configure custom kill multipliers, placement points, and tiebreaker logic for Free Fire, BGMI, and CODM. Auto-computed instantly after each match.',
               },
               {
-                icon: Users, title: 'Ambassador Delegation Desk',
+                icon: Shield,
+                gradient: 'from-purple-500/15 to-purple-500/5',
+                border: 'border-purple-500/20',
+                iconColor: 'text-purple-400',
+                title: 'Ambassador Delegation Desk',
                 desc: 'Assign campus ambassadors to batches of teams. Ambassadors collect payment proofs, confirm eligibility, and relay credentials securely.',
               },
               {
-                icon: TrendingUp, title: 'Google Sheets Two-Way Sync',
+                icon: Globe,
+                gradient: 'from-gold/15 to-gold/5',
+                border: 'border-gold/20',
+                iconColor: 'text-gold',
+                title: 'Google Sheets Two-Way Sync',
                 desc: 'Import thousands of auction players from Sheets. Export final rosters, bid logs, and match results with a single click.',
               },
             ].map((card, i) => (
               <motion.div
                 key={card.title}
-                variants={stagger(i * 0.1)}
-                className="rounded-xl border border-border bg-card p-7 hover:border-primary/25 transition-all duration-300 group"
-                whileHover={{ y: -3 }}
+                variants={stagger(i * 0.12)}
+                className={`feature-card group cursor-default bg-gradient-to-br ${card.gradient} border ${card.border}`}
+                whileHover={{ y: -5 }}
               >
-                <div className="size-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-5 text-primary group-hover:glow-red-sm transition">
-                  <card.icon className="size-5" />
+                <div className={`size-14 rounded-2xl bg-surface/80 border border-border flex items-center justify-center mb-6 ${card.iconColor} group-hover:scale-110 transition-transform duration-300`}>
+                  <card.icon className="size-6" />
                 </div>
-                <h3 className="font-heading font-black text-lg text-foreground mb-2">{card.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{card.desc}</p>
+                <h3 className="font-heading text-xl font-bold text-foreground mb-3">{card.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed font-body">{card.desc}</p>
+
+                {/* Bottom accent line */}
+                <div className={`absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r ${card.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-b-2xl`} />
               </motion.div>
             ))}
           </div>
+
+          {/* Stats row */}
+          <motion.div
+            variants={fadeUp}
+            className="mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4"
+          >
+            {[
+              { icon: Trophy, value: stats?.totalTournamentsHosted ?? '36+', label: 'Tournaments Hosted', color: 'text-primary' },
+              { icon: Users,  value: stats?.registeredGamers ?? '12K+',      label: 'Registered Gamers', color: 'gradient-text' },
+              { icon: Award,  value: stats?.totalPrizeDistributed ?? '₹8.75L+', label: 'Prize Distributed', color: 'gradient-text-gold' },
+              { icon: Zap,    value: `${creators.length}`,                    label: 'Official Partners', color: 'text-purple-400' },
+            ].map((s, i) => (
+              <motion.div
+                key={s.label}
+                variants={stagger(i * 0.08)}
+                className="stat-card text-center group cursor-default"
+              >
+                <s.icon className={`size-5 mx-auto mb-3 ${s.color === 'gradient-text' || s.color === 'gradient-text-gold' ? 'text-primary' : s.color}`} />
+                <p className={`stat-number text-3xl font-bold ${s.color}`}>{s.value}</p>
+                <p className="text-[11px] text-muted-foreground mt-1 font-body uppercase tracking-wide">{s.label}</p>
+              </motion.div>
+            ))}
+          </motion.div>
         </div>
       </AnimatedSection>
 
-      {/* ── FOOTER ── */}
-      <footer className="mt-auto border-t border-border bg-card/60 py-14">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
+      {/* ══════════════════════════════════
+          FOOTER
+      ══════════════════════════════════ */}
+      <footer className="mt-auto border-t border-border/60 relative overflow-hidden">
+        <div className="absolute inset-0 bg-surface/30 pointer-events-none" />
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
+            {/* Brand */}
             <div>
-              <div className="flex items-center gap-2 mb-3">
-                <img
-                  src="/logo.png"
-                  alt="RDK Esports Logo"
-                  className="h-9 w-auto drop-shadow-[0_0_6px_rgba(255,180,0,0.3)]"
-                />
-                <span className="font-heading font-black text-base tracking-widest text-foreground">RDK ESPORTS</span>
+              <div className="flex items-center gap-3 mb-4">
+                <img src="/logo.png" alt="RDK Esports" className="h-9 w-auto logo-glow" />
+                <span className="font-display text-base tracking-widest text-foreground">RDK ESPORTS</span>
               </div>
-              <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
+              <p className="text-xs text-muted-foreground leading-relaxed font-body max-w-xs">
                 The Tournament Operating System. Powered by{' '}
                 <span className="text-foreground font-semibold">RDK Technologies</span>.
+                South India's premier competitive gaming infrastructure.
               </p>
+              {/* Social icons */}
+              <div className="flex items-center gap-3 mt-5">
+                {[
+                  { href: 'https://youtube.com/@rdkesports', icon: Youtube, color: 'hover:text-red-400 hover:border-red-400/40' },
+                  { href: 'https://instagram.com/rdkesports', icon: Instagram, color: 'hover:text-purple-400 hover:border-purple-400/40' },
+                ].map(({ href, icon: Icon, color }) => (
+                  <a
+                    key={href}
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`size-8 rounded-lg border border-border bg-surface flex items-center justify-center text-muted-foreground transition-all duration-200 ${color}`}
+                  >
+                    <Icon className="size-3.5" />
+                  </a>
+                ))}
+              </div>
             </div>
 
-            <nav className="flex flex-wrap gap-x-8 gap-y-3 text-xs text-muted-foreground">
-              {[['What We Do', '#what-we-do'], ['Tournaments', '#tournaments'], ['Official Creators', '#creators'], ['Platform Features', '#features']].map(([label, href]) => (
-                <a key={label} href={href} className="hover:text-foreground transition nav-link-underline">{label}</a>
-              ))}
-              <button type="button" onClick={openLogin} className="hover:text-foreground transition nav-link-underline cursor-pointer">Portal Login</button>
-              <button type="button" onClick={openRegister} className="hover:text-foreground transition nav-link-underline cursor-pointer">Register</button>
-            </nav>
+            {/* Navigation */}
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-foreground mb-4 font-body">Navigation</p>
+              <nav className="flex flex-col gap-2.5">
+                {[
+                  ['What We Do', '#what-we-do'],
+                  ['Tournaments', '#tournaments'],
+                  ['Official Creators', '#creators'],
+                  ['Platform Features', '#features'],
+                ].map(([label, href]) => (
+                  <a key={label} href={href} className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 nav-link-underline font-body w-fit">
+                    {label}
+                  </a>
+                ))}
+              </nav>
+            </div>
+
+            {/* Platform access */}
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-foreground mb-4 font-body">Platform</p>
+              <div className="flex flex-col gap-3">
+                <button type="button" onClick={openLogin} className="btn-ghost text-sm w-fit cursor-pointer">
+                  <Shield className="size-3.5" />
+                  Portal Login
+                </button>
+                <button type="button" onClick={openRegister} className="btn-primary text-sm w-fit cursor-pointer">
+                  <Users className="size-3.5" />
+                  Register as Gamer
+                </button>
+              </div>
+              <div className="mt-5 p-3 rounded-xl border border-border bg-surface/40">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-[10px] text-emerald-400 font-bold font-body">All Systems Operational</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground font-body">Platform uptime 99.9%</p>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-[11px] text-muted-foreground">
+          {/* Bottom bar */}
+          <div className="pt-6 border-t border-border/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-[11px] text-muted-foreground font-body">
               © {new Date().getFullYear()} RDK Technologies. All rights reserved.
             </p>
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span className="size-1.5 rounded-full bg-green-400 animate-pulse" />
-              All systems operational
+            <div className="flex items-center gap-4 text-[11px] text-muted-foreground font-body">
+              <span>South India's #1 Esports Platform</span>
+              <span className="w-1 h-1 rounded-full bg-border-strong" />
+              <span>Competitive Gaming Infrastructure</span>
             </div>
           </div>
         </div>
       </footer>
 
-      {/* Auth Modal */}
       <AuthModal />
     </div>
   )
