@@ -35,33 +35,6 @@ import { homeFor } from '@/app/config/roles'
 import type { Tournament, PlatformStats } from '@/types'
 
 // ═══════════════════════════════════════════════════════════════
-// OFFICIAL CREATORS — Default & Dynamic Partners
-// ═══════════════════════════════════════════════════════════════
-const DEFAULT_CREATORS = [
-  {
-    id: 'rdk_head',
-    name: 'RDK Esports',
-    handle: '@rdkesports',
-    title: 'Platform Head & Tournament Director',
-    photo: '/creator-rdk.png',
-    subscribers: '12K+ Community',
-    bio: 'The architect behind RDK Esports — running high-stakes tournaments, IPL-style player auctions, and building the next generation of South Indian competitive gaming.',
-    games: ['Free Fire', 'BGMI', 'Valorant'],
-    activeTournaments: 3,
-    totalTournaments: 36,
-    verified: true,
-    rank: 1,
-    accentColor: '#FF3B3B',
-    socials: {
-      youtube: 'https://youtube.com/@rdkesports',
-      instagram: 'https://instagram.com/rdkesports',
-      discord: 'https://discord.gg/rdkesports',
-    },
-  },
-]
-const OFFICIAL_CREATORS = DEFAULT_CREATORS
-
-// ═══════════════════════════════════════════════════════════════
 // Animation variants
 // ═══════════════════════════════════════════════════════════════
 const fadeUp = {
@@ -141,10 +114,31 @@ function AnimatedSection({ children, className = '', id = '' }: {
   )
 }
 
+interface LandingCreator {
+  id: string
+  name: string
+  handle: string
+  title: string
+  photo: string
+  subscribers: string
+  bio?: string
+  games: string[]
+  activeTournaments: number
+  totalTournaments: number
+  verified: boolean
+  rank: number
+  accentColor: string
+  socials: {
+    youtube?: string
+    instagram?: string
+    discord?: string
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Creator Card
 // ═══════════════════════════════════════════════════════════════
-function CreatorCard({ creator, index }: { creator: typeof OFFICIAL_CREATORS[0]; index: number }) {
+function CreatorCard({ creator, index }: { creator: LandingCreator; index: number }) {
   const [hovered, setHovered] = useState(false)
   return (
     <motion.div
@@ -174,13 +168,16 @@ function CreatorCard({ creator, index }: { creator: typeof OFFICIAL_CREATORS[0];
       </div>
 
       {/* Photo — tall portrait */}
-      <div className="relative w-full overflow-hidden" style={{ aspectRatio: '3/4', maxHeight: '320px' }}>
+      <div className="relative w-full overflow-hidden bg-black/60" style={{ aspectRatio: '3/4', maxHeight: '320px' }}>
         <motion.img
-          src={creator.photo}
+          src={creator.photo || '/logo.png'}
           alt={creator.name}
           className="w-full h-full object-cover object-top"
           animate={{ scale: hovered ? 1.06 : 1 }}
           transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+          onError={(e) => {
+            ;(e.target as HTMLImageElement).src = '/logo.png'
+          }}
         />
         {/* Gradient overlay */}
         <div
@@ -431,7 +428,8 @@ export default function LandingPage() {
   const { openLogin, openRegister } = useAuthModal()
   const nav = useNavigate()
   const [tournaments, setTournaments] = useState<Tournament[]>([])
-  const [creators, setCreators] = useState<any[]>(DEFAULT_CREATORS)
+  const [creators, setCreators] = useState<LandingCreator[]>([])
+  const [isLoadingCreators, setIsLoadingCreators] = useState(true)
   const [stats, setStats] = useState<PlatformStats | null>(null)
   const [activeTab, setActiveTab] = useState<'all' | 'live' | 'upcoming' | 'completed'>('all')
   const [formatFilter, setFormatFilter] = useState<'all' | 'auction' | 'br_squad' | 'br_solo' | 'cs_norules' | 'cs_limited' | 'cs_onetap'>('all')
@@ -447,14 +445,14 @@ export default function LandingPage() {
     creatorService.list().then((dbList) => {
       const activeList = (dbList || []).filter((c: any) => (!c.status || c.status === 'active') && !c.isDeleted)
       if (activeList.length > 0) {
-        const mapped = activeList.map((c: any, i: number) => ({
+        const mapped: LandingCreator[] = activeList.map((c: any, i: number) => ({
           id: c.id,
           name: c.name,
           handle: c.handle,
-          title: 'Official Partner Creator',
-          photo: c.avatar || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
+          title: c.organizationName ? `${c.organizationName} Partner` : 'Official Partner Creator',
+          photo: c.avatar || '/logo.png',
           subscribers: c.subscribers || 'Official Partner',
-          bio: c.bio,
+          bio: c.bio || 'Official verified gaming partner on RDK Esports.',
           games: Array.isArray(c.games) ? c.games : ['Free Fire', 'BGMI'],
           activeTournaments: c.activeTournaments || 0,
           totalTournaments: c.totalTournaments || 0,
@@ -465,8 +463,12 @@ export default function LandingPage() {
         }))
         setCreators(mapped)
       } else {
-        setCreators(DEFAULT_CREATORS)
+        setCreators([])
       }
+      setIsLoadingCreators(false)
+    }).catch(() => {
+      setCreators([])
+      setIsLoadingCreators(false)
     })
 
     const onScroll = () => setNavScrolled(window.scrollY > 50)
@@ -673,30 +675,96 @@ export default function LandingPage() {
               className="hidden lg:flex justify-center"
             >
               <div className="relative">
-                {/* Main photo */}
+                {/* Tournament Hub Command Card */}
                 <div
-                  className="bracket relative rounded-2xl overflow-hidden"
+                  className="bracket relative rounded-3xl overflow-hidden p-6 flex flex-col justify-between"
                   style={{
-                    width: '340px',
-                    boxShadow: '0 0 60px rgba(245,26,26,0.2), 0 30px 80px rgba(0,0,0,0.6)',
-                    border: '1px solid rgba(245,26,26,0.25)',
+                    width: '360px',
+                    minHeight: '440px',
+                    background: 'linear-gradient(165deg, #141414 0%, #0A0A0A 100%)',
+                    boxShadow: '0 0 60px rgba(245,26,26,0.18), 0 30px 80px rgba(0,0,0,0.8)',
+                    border: '1px solid rgba(245,26,26,0.3)',
                   }}
                 >
-                  <img
-                    src="/creator-rdk.png"
-                    alt="RDK Esports Head"
-                    className="w-full object-cover"
-                    style={{ aspectRatio: '3/4' }}
+                  {/* Subtle top ambient glow */}
+                  <div
+                    className="absolute -top-24 left-1/2 -translate-x-1/2 w-64 h-48 rounded-full pointer-events-none"
+                    style={{
+                      background: 'radial-gradient(ellipse, rgba(229,57,53,0.25) 0%, transparent 70%)',
+                      filter: 'blur(30px)',
+                    }}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-transparent to-transparent" />
-                  {/* Info bar */}
-                  <div className="absolute bottom-0 left-0 right-0 p-5">
-                    <div className="section-eyebrow inline-flex mb-2 text-[9px]">
-                      <Crown className="size-3" />
-                      Platform Head
+
+                  {/* Header: Brand Crest & Live Engine Badge */}
+                  <div className="relative z-10 flex items-center justify-between pb-4 border-b border-white/10">
+                    <div className="flex items-center gap-3">
+                      <div className="size-11 rounded-2xl bg-black/60 border border-primary/40 flex items-center justify-center p-1.5 shadow-lg shadow-primary/20">
+                        <img src="/logo.png" alt="RDK Esports" className="w-full h-full object-contain logo-glow" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-display text-sm tracking-wider text-white font-bold">RDK ESPORTS</span>
+                          <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
+                        </div>
+                        <span className="text-[10px] text-white/40 font-mono tracking-widest uppercase">PRO LEAGUE OS</span>
+                      </div>
                     </div>
-                    <p className="font-heading text-2xl font-bold text-white">RDK Esports</p>
-                    <p className="text-xs text-white/45 font-mono mt-0.5">@rdkesports</p>
+                    <span className="text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-primary/15 text-primary border border-primary/30 flex items-center gap-1 font-body">
+                      <Zap className="size-2.5" />
+                      LIVE
+                    </span>
+                  </div>
+
+                  {/* Center: Featured Championship Showcase */}
+                  <div className="relative z-10 my-4 space-y-3.5">
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-md">
+                      <div className="flex items-center justify-between text-[10px] font-mono text-white/50 mb-2">
+                        <span className="flex items-center gap-1 text-primary font-bold">
+                          <Swords className="size-3" />
+                          GRAND FINALS
+                        </span>
+                        <span>BEST OF 5</span>
+                      </div>
+                      <h4 className="font-heading text-lg font-bold text-white tracking-wide">
+                        Free Fire Clash Invitational
+                      </h4>
+                      <div className="mt-3 flex items-center justify-between bg-black/40 rounded-xl p-2.5 border border-white/5 text-xs">
+                        <div className="flex items-center gap-2">
+                          <div className="size-6 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-bold text-[10px]">
+                            A
+                          </div>
+                          <span className="font-bold text-white text-[11px]">Team Alpha</span>
+                        </div>
+                        <span className="font-display font-black text-primary px-2">14 : 12</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white text-[11px]">Team Omega</span>
+                          <div className="size-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-[10px]">
+                            Ω
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick Stats Grid */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+                        <p className="text-[9px] text-white/40 uppercase tracking-wider font-mono">PRIZE POOL</p>
+                        <p className="font-display text-sm font-bold text-amber-400 mt-0.5">₹50,000</p>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+                        <p className="text-[9px] text-white/40 uppercase tracking-wider font-mono">ALLOTTED SLOTS</p>
+                        <p className="font-display text-sm font-bold text-emerald-400 mt-0.5">48 / 48 FILLED</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer / Specs */}
+                  <div className="relative z-10 pt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-white/50 font-body">
+                    <span className="flex items-center gap-1.5 text-white/70">
+                      <ShieldCheck className="size-3.5 text-primary" />
+                      UPI Direct Settlement
+                    </span>
+                    <span className="font-mono text-white/30">ID: RDK-PRO-2026</span>
                   </div>
                 </div>
 
@@ -969,14 +1037,41 @@ export default function LandingPage() {
             </p>
           </motion.div>
 
-          <motion.div
-            variants={{ show: { transition: { staggerChildren: 0.12 } } }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-          >
-            {creators.map((c, i) => (
-              <CreatorCard key={c.id} creator={c} index={i} />
-            ))}
-          </motion.div>
+          {creators.length > 0 ? (
+            <motion.div
+              variants={{ show: { transition: { staggerChildren: 0.12 } } }}
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            >
+              {creators.map((c, i) => (
+                <CreatorCard key={c.id} creator={c} index={i} />
+              ))}
+            </motion.div>
+          ) : !isLoadingCreators ? (
+            <motion.div
+              variants={fadeUp}
+              className="rounded-2xl border border-white/10 bg-card/60 backdrop-blur-md p-10 text-center max-w-xl mx-auto"
+            >
+              <div className="size-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4 text-primary">
+                <Users className="size-7" />
+              </div>
+              <h3 className="font-heading text-xl font-bold text-white">Partner Program Open</h3>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed font-body">
+                We are currently onboarding authorized tournament organizers, clans, and esports communities.
+              </p>
+              <button
+                type="button"
+                onClick={openLogin}
+                className="mt-6 btn-primary glow-red inline-flex items-center gap-2 cursor-pointer"
+              >
+                Apply for Official Partner
+                <ArrowRight className="size-4" />
+              </button>
+            </motion.div>
+          ) : (
+            <div className="py-12 text-center text-xs text-muted-foreground font-mono">
+              Loading official partner directory...
+            </div>
+          )}
 
           {/* Become a partner CTA */}
           <motion.div
