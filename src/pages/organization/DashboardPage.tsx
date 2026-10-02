@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Trophy, Plus, ExternalLink, Settings, Trash2 } from 'lucide-react'
+import {
+  Trophy, Plus, ExternalLink, Settings, Trash2,
+  BarChart3, Users, Coins, ShieldCheck, Gamepad2, TrendingUp,
+} from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
@@ -10,49 +13,44 @@ import { useTournaments } from '@/hooks/useTournaments'
 import { useAuth } from '@/stores/authStore'
 import type { Tournament } from '@/types'
 
-const initialStats = [
-  { label: 'Active tournaments', value: '0', hint: 'No active tournaments' },
-  { label: 'Registered teams', value: '0', hint: '0 registered' },
-  { label: 'Pending payments', value: '0', hint: '₹0 to verify' },
-  { label: 'Active ambassadors', value: '0', hint: '0 assigned' },
+const ACCENT_ICONS = [
+  { icon: Trophy, accent: 'red' as const },
+  { icon: Users, accent: 'white' as const },
+  { icon: Coins, accent: 'gold' as const },
+  { icon: ShieldCheck, accent: 'success' as const },
 ]
 
 export default function DashboardPage() {
   const { data, isLoading, isError, refetch } = useTournaments()
   const user = useAuth((s) => s.user)
-  const [stats, setStats] = useState(initialStats)
+  const [stats, setStats] = useState([
+    { label: 'Active Tournaments', value: '0', hint: 'Running now' },
+    { label: 'Registered Teams', value: '0', hint: '0 total entries' },
+    { label: 'Pending Payments', value: '0', hint: '₹0 to verify' },
+    { label: 'Active Ambassadors', value: '0', hint: '0 assigned' },
+  ])
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/tournaments/stats')
       .then((r) => r.json())
-      .then((d) => {
-        if (Array.isArray(d)) setStats(d)
-      })
+      .then((d) => { if (Array.isArray(d)) setStats(d) })
       .catch(() => {})
   }, [])
 
   const handleDeleteTournament = async (t: Tournament) => {
-    if (!window.confirm(`Are you sure you want to permanently delete "${t.name}"? This action cannot be undone.`)) {
-      return
-    }
+    if (!window.confirm(`Delete "${t.name}"? This cannot be undone.`)) return
     try {
       setDeletingId(t.id)
       const res = await fetch(`/api/tournaments/${t.id}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
       })
-      const respData = await res.json()
+      const resp = await res.json()
       if (res.ok) {
         refetch()
-        fetch('/api/tournaments/stats')
-          .then((r) => r.json())
-          .then((d) => {
-            if (Array.isArray(d)) setStats(d)
-          })
-          .catch(() => {})
+        fetch('/api/tournaments/stats').then(r => r.json()).then(d => { if (Array.isArray(d)) setStats(d) }).catch(() => {})
       } else {
-        alert(respData.error || 'Failed to delete tournament')
+        alert(resp.error || 'Failed to delete')
       }
     } catch (e: any) {
       alert(e.message || 'Error deleting tournament')
@@ -62,143 +60,165 @@ export default function DashboardPage() {
   }
 
   return (
-    <>
+    <div className="space-y-6 max-w-full">
       <PageHeader
         title="Creator & Tournament Overview"
-        description="Monitor championship schedules, room credentials distribution, and incoming UPI team payment proofs."
+        description="Monitor championships, credentials, UPI verifications and ambassador activity."
+        badge="Control Center"
         actions={
-          <Link
-            to="/creator/tournaments/create"
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-heading font-black text-background hover:bg-primary/90 transition shadow-[0_0_15px_rgba(255,46,0,0.3)]"
-          >
+          <Link to="/creator/tournaments/create" className="btn-primary">
             <Plus className="size-4" />
-            Create Tournament
+            New Tournament
           </Link>
         }
       />
 
+      {/* Stat Cards */}
       <motion.div
-        initial="h"
-        animate="s"
-        variants={{ s: { transition: { staggerChildren: 0.06 } } }}
-        className="grid grid-cols-2 gap-3 xl:grid-cols-4"
+        initial="h" animate="s"
+        variants={{ s: { transition: { staggerChildren: 0.07 } } }}
+        className="grid grid-cols-2 xl:grid-cols-4 gap-4"
       >
-        {stats.map((s) => (
-          <motion.div
-            key={s.label}
-            variants={{ h: { opacity: 0, y: 8 }, s: { opacity: 1, y: 0 } }}
-          >
-            <StatCard {...s} />
-          </motion.div>
-        ))}
+        {stats.map((s, i) => {
+          const { icon: Icon, accent } = ACCENT_ICONS[i] ?? ACCENT_ICONS[0]
+          return (
+            <motion.div key={s.label} variants={{ h: { opacity: 0, y: 12 }, s: { opacity: 1, y: 0 } }}>
+              <StatCard {...s} icon={<Icon className="size-4" />} accent={accent} />
+            </motion.div>
+          )
+        })}
       </motion.div>
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-heading font-bold text-base text-foreground uppercase tracking-wider">
-            All Hosted Tournaments
-          </h2>
-          <span className="text-xs text-muted-foreground">
-            {data?.length || 0} events in database
+      {/* Tournaments Table */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="size-5 rounded-md bg-primary/12 border border-primary/20 flex items-center justify-center">
+              <Gamepad2 className="size-3 text-primary" />
+            </div>
+            <h2 className="font-heading text-base font-bold text-foreground tracking-wide">
+              All Hosted Tournaments
+            </h2>
+          </div>
+          <span className="text-[11px] text-muted-foreground font-body font-semibold px-2.5 py-1 rounded-lg bg-surface border border-border">
+            {data?.length || 0} total events
           </span>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full min-w-[700px] text-xs">
-            <thead className="border-b border-border bg-muted/30 text-left text-muted-foreground font-semibold">
-              <tr>
-                {['Tournament', 'Game', 'Format', 'Teams', 'Status', 'Start Date', 'Actions'].map(
-                  (h) => (
-                    <th key={h} className="px-4 py-3">
+        <div className="rdk-card p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px] text-xs">
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  {['Tournament', 'Game', 'Format', 'Teams', 'Status', 'Start Date', 'Actions'].map(h => (
+                    <th key={h} className="px-4 py-3.5 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70 font-body">
                       {h}
                     </th>
-                  )
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {isLoading &&
-                Array.from({ length: 4 }).map((_, i) => (
-                  <tr key={i}>
-                    <td colSpan={7} className="p-3">
-                      <Skeleton className="h-6" />
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading && Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                    <td colSpan={7} className="px-4 py-3">
+                      <Skeleton className="h-5 rounded-lg" />
                     </td>
                   </tr>
                 ))}
-              {isError && (
-                <tr>
-                  <td colSpan={7} className="p-6 text-center text-xs">
-                    Couldn't load tournaments.{' '}
-                    <button onClick={() => refetch()} className="text-primary font-bold">
-                      Try again
-                    </button>
-                  </td>
-                </tr>
-              )}
-              {data?.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="p-8 text-center text-xs text-muted-foreground">
-                    No tournaments created yet. Launch your first tournament above!
-                  </td>
-                </tr>
-              )}
-              {data?.map((t) => (
-                <tr key={t.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3 font-bold text-foreground">
-                    <div className="flex items-center gap-2">
-                      <Trophy className="size-4 text-primary shrink-0" />
-                      <span>{t.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="bg-muted px-2 py-0.5 rounded font-medium text-foreground">
-                      {t.game}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{t.format}</td>
-                  <td className="px-4 py-3 tabular-nums font-semibold">
-                    {t.teams}/{t.maxTeams}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={t.status} />
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{t.startDate}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Link
-                        to={`/creator/tournaments/${t.id}/manage`}
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline bg-primary/10 px-2.5 py-1 rounded"
-                      >
-                        <Settings className="size-3" />
-                        Manage & Rooms
-                      </Link>
-                      <Link
-                        to={`/tournaments/${t.id}`}
-                        target="_blank"
-                        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground p-1 hover:bg-muted rounded"
-                        title="View Public Page"
-                      >
-                        <ExternalLink className="size-3" />
-                      </Link>
-                      {(user?.role === 'super_admin' || user?.id === t.creatorId || user?.organizationId === t.creatorId) && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteTournament(t)}
-                          disabled={deletingId === t.id}
-                          className="inline-flex items-center gap-1 text-[11px] text-destructive hover:text-destructive/80 p-1 hover:bg-destructive/10 rounded transition disabled:opacity-50"
-                          title="Delete Tournament"
-                        >
-                          <Trash2 className="size-3.5" />
+                {isError && (
+                  <tr>
+                    <td colSpan={7} className="py-14 text-center">
+                      <p className="text-xs text-muted-foreground font-body">
+                        Couldn't load tournaments.{' '}
+                        <button onClick={() => refetch()} className="text-primary font-bold hover:underline cursor-pointer">
+                          Try again
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      </p>
+                    </td>
+                  </tr>
+                )}
+                {data?.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-16 text-center">
+                      <div className="size-12 rounded-2xl bg-primary/08 border border-primary/15 flex items-center justify-center mx-auto mb-3">
+                        <Trophy className="size-5 text-primary/40" />
+                      </div>
+                      <p className="text-xs text-muted-foreground font-body">
+                        No tournaments yet. Create your first one above!
+                      </p>
+                    </td>
+                  </tr>
+                )}
+                {data?.map((t, idx) => (
+                  <motion.tr
+                    key={t.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: idx * 0.04 }}
+                    className="group transition-colors"
+                    style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="size-6 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                          <Trophy className="size-3 text-primary" />
+                        </div>
+                        <span className="font-heading font-bold text-foreground text-[13px] leading-tight">
+                          {t.name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-md text-[11px] font-bold font-body bg-surface border border-border text-foreground/80">
+                        {t.game}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground font-body text-[11px]">{t.format}</td>
+                    <td className="px-4 py-3">
+                      <span className="font-bold font-body text-foreground tabular-nums">{t.teams}</span>
+                      <span className="text-muted-foreground font-body">/{t.maxTeams}</span>
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
+                    <td className="px-4 py-3 text-muted-foreground font-body text-[11px]">{t.startDate}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <Link
+                          to={`/creator/tournaments/${t.id}/manage`}
+                          className="inline-flex items-center gap-1.5 text-[11px] font-bold font-body text-primary bg-primary/10 border border-primary/20 hover:bg-primary hover:text-white px-2.5 py-1.5 rounded-lg transition-all duration-200"
+                        >
+                          <Settings className="size-3" />
+                          Manage
+                        </Link>
+                        <Link
+                          to={`/tournaments/${t.id}`}
+                          target="_blank"
+                          className="size-7 flex items-center justify-center rounded-lg bg-surface border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-all duration-200"
+                          title="View Public Page"
+                        >
+                          <ExternalLink className="size-3" />
+                        </Link>
+                        {(user?.role === 'super_admin' || user?.id === t.creatorId || user?.organizationId === t.creatorId) && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTournament(t)}
+                            disabled={deletingId === t.id}
+                            className="size-7 flex items-center justify-center rounded-lg bg-danger/08 border border-danger/20 text-danger/60 hover:text-danger hover:bg-danger/15 hover:border-danger/35 transition-all duration-200 disabled:opacity-40 cursor-pointer"
+                            title="Delete Tournament"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </motion.tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
-    </>
+    </div>
   )
 }
