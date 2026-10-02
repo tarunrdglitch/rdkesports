@@ -28,12 +28,20 @@ export const tournamentService = {
     return []
   },
 
-  getMyTournaments: async (params?: { email?: string; ign?: string }): Promise<PlayerTournamentData> => {
+  getMyTournaments: async (params?: { email?: string; ign?: string; name?: string }): Promise<PlayerTournamentData> => {
     try {
       const qs = new URLSearchParams()
       if (params?.email) qs.set('email', params.email)
       if (params?.ign) qs.set('ign', params.ign)
-      const res = await fetch(`/api/player/my-tournaments?${qs.toString()}`)
+      if (params?.name) qs.set('name', params.name)
+      const token = localStorage.getItem('rdk_auth_token')
+      const headers: Record<string, string> = {}
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const res = await fetch(`/api/player/my-tournaments?${qs.toString()}`, {
+        headers,
+        credentials: 'include',
+      })
       if (res.ok) {
         return await res.json()
       }

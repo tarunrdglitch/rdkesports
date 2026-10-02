@@ -206,6 +206,17 @@ export default function TournamentDetailPage() {
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
   const [auctionPlayers, setAuctionPlayers] = useState<AuctionPlayer[]>([])
+  const [userRegistration, setUserRegistration] = useState<{
+    isRegistered: boolean
+    type?: 'squad' | 'candidate'
+    teamName?: string
+    teamId?: string
+    status?: string
+    role?: string
+    captainName?: string
+    captainIgn?: string
+    players?: any[]
+  } | null>(null)
   const [activeTab, setActiveTab] = useState<'live' | 'overview' | 'teams' | 'auction_pool' | 'roadmap' | 'room' | 'rules' | 'points'>('overview')
   const [roadmap, setRoadmap] = useState<TournamentRoadmap | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -365,6 +376,114 @@ export default function TournamentDetailPage() {
 
   const filteredFranchiseGroups = franchiseGroups
 
+  // User's own registered squad / draft candidate matching
+  const myRegisteredTeam = useMemo(() => {
+    if (userRegistration?.teamName) {
+      const match = teams.find(
+        (t) => t.id === userRegistration.teamId || t.name.toLowerCase() === userRegistration.teamName?.toLowerCase()
+      )
+      if (match) return match
+      return {
+        id: userRegistration.teamId || 'my_team',
+        name: userRegistration.teamName,
+        captainName: userRegistration.captainName || user?.name || '',
+        captainIgn: userRegistration.captainIgn || user?.ign || '',
+        captainEmail: user?.email || '',
+        captainPhone: '',
+        players: userRegistration.players || [],
+        status: (userRegistration.status || 'verified') as any,
+        registeredAt: new Date().toISOString(),
+      } as Team
+    }
+
+    if (!user || !teams || teams.length === 0) return null
+    const userEmail = user.email?.toLowerCase().trim()
+    const userIgn = user.ign?.toLowerCase().trim()
+    const userName = user.name?.toLowerCase().trim()
+    const userUid = (user as { gameUid?: string }).gameUid?.toLowerCase().trim()
+
+    return teams.find((t) => {
+      const cEmail = t.captainEmail?.toLowerCase().trim()
+      const cName = t.captainName?.toLowerCase().trim()
+      const cIgn = t.captainIgn?.toLowerCase().trim()
+
+      if (userEmail && cEmail && cEmail === userEmail) return true
+      if (userIgn && cIgn && cIgn === userIgn) return true
+      if (userName && cName && cName === userName) return true
+      if (userName && cIgn && cIgn === userName) return true
+      if (userIgn && cName && cName === userIgn) return true
+
+      if (Array.isArray(t.players)) {
+        return t.players.some((p) => {
+          const pIgn = p.ign?.toLowerCase().trim()
+          const pName = (p.name || '').toLowerCase().trim()
+          const pUid = (p.gameUid || '').toLowerCase().trim()
+
+          if (userIgn && pIgn && pIgn === userIgn) return true
+          if (userName && pIgn && pIgn === userName) return true
+          if (userName && pName && pName === userName) return true
+          if (userUid && pUid && pUid === userUid) return true
+          return false
+        })
+      }
+      return false
+    })
+  }, [userRegistration, user, teams])
+
+  const myAuctionCandidate = useMemo(() => {
+    if (!isAuction) return null
+    if (userRegistration?.type === 'candidate') {
+      return {
+        name: userRegistration.captainName || user?.name,
+        ign: userRegistration.captainIgn || user?.ign,
+        teamName: userRegistration.teamName,
+        role: userRegistration.role,
+        status: userRegistration.status,
+      }
+    }
+
+    if (!user || !auctionPlayers || auctionPlayers.length === 0) return null
+    const userEmail = user.email?.toLowerCase().trim()
+    const userIgn = user.ign?.toLowerCase().trim()
+    const userName = user.name?.toLowerCase().trim()
+    const userUid = (user as { gameUid?: string }).gameUid?.toLowerCase().trim()
+
+    return auctionPlayers.find((p) => {
+      const pEmail = p.email?.toLowerCase().trim()
+      const pIgn = p.ign?.toLowerCase().trim()
+      const pName = p.name?.toLowerCase().trim()
+      const pUid = p.gameUid?.toLowerCase().trim()
+
+      if (userEmail && pEmail && pEmail === userEmail) return true
+      if (userIgn && pIgn && pIgn === userIgn) return true
+      if (userName && pName && pName === userName) return true
+      if (userName && pIgn && pIgn === userName) return true
+      if (userIgn && pName && pName === userIgn) return true
+      if (userUid && pUid && pUid === userUid) return true
+      return false
+    })
+  }, [isAuction, userRegistration, user, auctionPlayers])
+
+  const isUserRegistered = Boolean(
+    userRegistration?.isRegistered ||
+    myRegisteredTeam ||
+    myAuctionCandidate
+  )
+
+  const effectiveRegistration = userRegistration || (myRegisteredTeam ? {
+    isRegistered: true,
+    type: 'squad' as const,
+    teamName: myRegisteredTeam.name,
+    teamId: myRegisteredTeam.id,
+    status: myRegisteredTeam.status,
+    role: 'Captain',
+  } : myAuctionCandidate ? {
+    isRegistered: true,
+    type: 'candidate' as const,
+    teamName: (myAuctionCandidate as any).teamName || (myAuctionCandidate as any).soldToTeam || 'Draft Candidate Pool',
+    role: myAuctionCandidate.role,
+    status: myAuctionCandidate.status,
+  } : null)
 
   // Payment Screenshot State (Primary verification)
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null)
@@ -379,7 +498,7 @@ export default function TournamentDetailPage() {
 
   useEffect(() => {
     loadTournament()
-  }, [id])
+  }, [id, user?.email, user?.name, user?.ign])
 
   // Keep auction player pool synchronized with teams data
   useEffect(() => {
@@ -392,11 +511,26 @@ export default function TournamentDetailPage() {
     setIsLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/tournaments/${id}`)
+      const qs = new URLSearchParams()
+      if (user?.email) qs.set('email', user.email)
+      if (user?.ign) qs.set('ign', user.ign)
+      if (user?.name) qs.set('name', user.name)
+
+      const token = localStorage.getItem('rdk_auth_token')
+      const headers: Record<string, string> = {}
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const res = await fetch(`/api/tournaments/${id}?${qs.toString()}`, {
+        headers,
+        credentials: 'include',
+      })
       if (!res.ok) throw new Error('Tournament not found')
       const data = await res.json()
       setTournament(data.tournament)
       setTeams(data.teams || [])
+      if (data.userRegistration) {
+        setUserRegistration(data.userRegistration)
+      }
 
       // If auction tournament, load auction players, dynamic ambassadors, and default to auction pool tab
       if (data.tournament.format === 'Auction Tournament') {
@@ -487,6 +621,54 @@ export default function TournamentDetailPage() {
   useEffect(() => {
     if (!tournament) return
 
+    // 0. If userRegistration from backend is already resolved
+    if (userRegistration?.isRegistered) {
+      setRegisteredAccess({
+        isAuthorized: true,
+        verifiedPlayer: {
+          name: userRegistration.captainName || user?.name || 'Registered Player',
+          ign: userRegistration.captainIgn || user?.ign || 'Player',
+          teamName: userRegistration.teamName || 'Your Squad',
+          role: userRegistration.role || 'Captain',
+        },
+        roomId: tournament.roomId,
+        roomPassword: tournament.roomPassword,
+      })
+      return
+    }
+
+    // 0.1 If matched locally via myRegisteredTeam
+    if (myRegisteredTeam) {
+      setRegisteredAccess({
+        isAuthorized: true,
+        verifiedPlayer: {
+          name: myRegisteredTeam.captainName || user?.name || 'Player',
+          ign: myRegisteredTeam.captainIgn || user?.ign || 'Player',
+          teamName: myRegisteredTeam.name,
+          role: 'Captain',
+        },
+        roomId: tournament.roomId,
+        roomPassword: tournament.roomPassword,
+      })
+      return
+    }
+
+    // 0.2 If matched locally via myAuctionCandidate
+    if (myAuctionCandidate) {
+      setRegisteredAccess({
+        isAuthorized: true,
+        verifiedPlayer: {
+          name: (myAuctionCandidate as any).name || user?.name || 'Player',
+          ign: (myAuctionCandidate as any).ign || user?.ign || 'Candidate',
+          teamName: (myAuctionCandidate as any).teamName || (myAuctionCandidate as any).soldToTeam || 'Draft Candidate Pool',
+          role: (myAuctionCandidate as any).role || 'Candidate',
+        },
+        roomId: tournament.roomId,
+        roomPassword: tournament.roomPassword,
+      })
+      return
+    }
+
     // 1. Check local session registration for this tournament
     const saved = localStorage.getItem(`rdk_registered_${tournament.id}`)
     if (saved) {
@@ -528,13 +710,32 @@ export default function TournamentDetailPage() {
     if (user) {
       const userEmail = user.email?.toLowerCase().trim()
       const userIgn = user.ign?.toLowerCase().trim()
+      const userName = user.name?.toLowerCase().trim()
       const userUid = (user as { gameUid?: string }).gameUid?.toLowerCase().trim()
 
       const matchedTeam = teams.find((t) => {
-        if (userEmail && t.captainEmail?.toLowerCase() === userEmail) return true
-        if (userIgn && t.captainIgn?.toLowerCase() === userIgn) return true
-        if (userIgn && t.players?.some((p) => p.ign?.toLowerCase() === userIgn)) return true
-        if (userUid && t.players?.some((p) => p.gameUid?.toLowerCase() === userUid)) return true
+        const cEmail = t.captainEmail?.toLowerCase().trim()
+        const cIgn = t.captainIgn?.toLowerCase().trim()
+        const cName = t.captainName?.toLowerCase().trim()
+
+        if (userEmail && cEmail && cEmail === userEmail) return true
+        if (userIgn && cIgn && cIgn === userIgn) return true
+        if (userName && cName && cName === userName) return true
+        if (userName && cIgn && cIgn === userName) return true
+        if (userIgn && cName && cName === userIgn) return true
+
+        if (Array.isArray(t.players)) {
+          return t.players.some((p) => {
+            const pIgn = p.ign?.toLowerCase().trim()
+            const pName = (p.name || '').toLowerCase().trim()
+            const pUid = (p.gameUid || '').toLowerCase().trim()
+            if (userIgn && pIgn && pIgn === userIgn) return true
+            if (userName && pIgn && pIgn === userName) return true
+            if (userName && pName && pName === userName) return true
+            if (userUid && pUid && pUid === userUid) return true
+            return false
+          })
+        }
         return false
       })
 
@@ -545,7 +746,7 @@ export default function TournamentDetailPage() {
             name: user.name,
             ign: user.ign || matchedTeam.captainIgn,
             teamName: matchedTeam.name,
-            role: matchedTeam.captainIgn.toLowerCase() === userIgn ? 'Captain' : 'Roster Player',
+            role: matchedTeam.captainIgn?.toLowerCase() === userIgn ? 'Captain' : 'Roster Player',
           },
           roomId: tournament.roomId,
           roomPassword: tournament.roomPassword,
@@ -555,9 +756,17 @@ export default function TournamentDetailPage() {
 
       // 4. Check if logged-in user matches any auction draft candidate
       const matchedCandidate = auctionPlayers.find((p) => {
-        if (userEmail && p.email?.toLowerCase() === userEmail) return true
-        if (userIgn && p.ign?.toLowerCase() === userIgn) return true
-        if (userUid && p.gameUid?.toLowerCase() === userUid) return true
+        const pEmail = p.email?.toLowerCase().trim()
+        const pIgn = p.ign?.toLowerCase().trim()
+        const pName = p.name?.toLowerCase().trim()
+        const pUid = p.gameUid?.toLowerCase().trim()
+
+        if (userEmail && pEmail && pEmail === userEmail) return true
+        if (userIgn && pIgn && pIgn === userIgn) return true
+        if (userName && pName && pName === userName) return true
+        if (userName && pIgn && pIgn === userName) return true
+        if (userIgn && pName && pName === userIgn) return true
+        if (userUid && pUid && pUid === userUid) return true
         return false
       })
 
@@ -581,7 +790,7 @@ export default function TournamentDetailPage() {
     setRegisteredAccess({
       isAuthorized: false,
     })
-  }, [tournament, teams, auctionPlayers, user])
+  }, [tournament, teams, auctionPlayers, user, userRegistration, myRegisteredTeam, myAuctionCandidate])
 
   const handleManualVerifyRoomAccess = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -985,7 +1194,53 @@ export default function TournamentDetailPage() {
 
               {/* Action Buttons */}
               <div className="space-y-2">
-                {isEnded ? (
+                {/* 1. If User is Registered: Display Confirmed Enrollment Card */}
+                {isUserRegistered ? (
+                  <div className="w-full rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3.5 space-y-2.5 shadow-lg shadow-emerald-500/10">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="size-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                          <CheckCircle2 className="size-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] uppercase font-black text-emerald-400 tracking-wider">
+                              YOU ARE REGISTERED
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-bold uppercase border border-emerald-500/30">
+                              {effectiveRegistration?.status === 'verified' || myRegisteredTeam?.status === 'verified' ? 'VERIFIED' : 'PENDING'}
+                            </span>
+                          </div>
+                          <h4 className="font-heading font-black text-sm text-foreground truncate max-w-[200px]">
+                            {myRegisteredTeam?.name || effectiveRegistration?.teamName || 'Enrolled Squad'}
+                          </h4>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      {isAuction
+                        ? 'You are officially registered in the draft candidate pool. Franchises will draft players during auction.'
+                        : 'Your squad is officially enrolled in this tournament. Match lobby credentials will be revealed below.'}
+                    </p>
+
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <button
+                        onClick={() => setActiveTab('room')}
+                        className="flex-1 py-2 rounded-lg font-bold text-xs bg-emerald-500 hover:bg-emerald-400 text-background transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
+                      >
+                        <KeyRound className="size-3.5" />
+                        <span>Match Room Credentials</span>
+                      </button>
+                      <button
+                        onClick={() => setActiveTab(isAuction ? 'auction_pool' : 'teams')}
+                        className="px-3 py-2 rounded-lg font-bold text-xs bg-card hover:bg-muted text-foreground transition border border-border cursor-pointer"
+                      >
+                        Roster
+                      </button>
+                    </div>
+                  </div>
+                ) : isEnded ? (
                   <button
                     disabled
                     className="w-full py-3 rounded-lg font-heading font-black tracking-wide text-xs bg-muted/60 text-muted-foreground border border-border/80 cursor-not-allowed flex items-center justify-center gap-2"
@@ -994,23 +1249,13 @@ export default function TournamentDetailPage() {
                     TOURNAMENT CONCLUDED — REGISTRATION CLOSED
                   </button>
                 ) : isLive ? (
-                  registeredAccess.isAuthorized ? (
-                    <button
-                      onClick={() => setActiveTab('room')}
-                      className="w-full py-3 rounded-lg font-heading font-black tracking-wide text-xs transition-all flex items-center justify-center gap-2 text-background bg-emerald-500 hover:bg-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)]"
-                    >
-                      <KeyRound className="size-4" />
-                      MATCH LIVE — VIEW ROOM ID
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setActiveTab('live')}
-                      className="w-full py-2.5 rounded-lg font-bold text-xs bg-red-600 hover:bg-red-500 text-white flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    >
-                      <Radio className="size-4 animate-pulse text-white" />
-                      MATCH LIVE — WATCH STREAM
-                    </button>
-                  )
+                  <button
+                    onClick={() => setActiveTab('live')}
+                    className="w-full py-2.5 rounded-lg font-bold text-xs bg-red-600 hover:bg-red-500 text-white flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    <Radio className="size-4 animate-pulse text-white" />
+                    MATCH LIVE — WATCH STREAM
+                  </button>
                 ) : isRegistrationOpen ? (
                   isSlotsFull ? (
                     <button
@@ -1026,7 +1271,7 @@ export default function TournamentDetailPage() {
                         setRegisterSuccess('')
                         setIsRegisterOpen(true)
                       }}
-                      className="w-full py-3 rounded-lg font-heading font-black tracking-wide text-xs text-background bg-primary hover:bg-primary/90 transition-all shadow-[0_0_20px_rgba(255,46,0,0.4)] flex items-center justify-center gap-2"
+                      className="w-full py-3 rounded-lg font-heading font-black tracking-wide text-xs text-background bg-primary hover:bg-primary/90 transition-all shadow-[0_0_20px_rgba(255,46,0,0.4)] flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Trophy className="size-4" />
                       {isAuction ? 'REGISTER AS AUCTION DRAFT CANDIDATE' : 'REGISTER SQUAD NOW'}

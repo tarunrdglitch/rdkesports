@@ -55,7 +55,7 @@ export default function PlayerDashboard() {
       try {
         const [tourneys, pData] = await Promise.all([
           tournamentService.list(),
-          tournamentService.getMyTournaments({ email: user?.email, ign: user?.ign }),
+          tournamentService.getMyTournaments({ email: user?.email, ign: user?.ign, name: user?.name }),
         ])
 
         if (!isMounted) return

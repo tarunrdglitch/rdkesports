@@ -1953,36 +1953,136 @@ app.get('/api/tournaments/:id', async (req: Request, res: Response) => {
   // Calculate live authoritative finances
   const finances = calculateTournamentFinances(tourney)
 
+  const token =
+    req.cookies?.session_token ||
+    (req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.split(' ')[1]
+      : null)
+
+  let reqUser: any = req.user || null
+  if (!reqUser && token) {
+    try {
+      reqUser = jwt.verify(token, JWT_SECRET) as any
+    } catch {}
+  }
+
   const isStaffOrAdmin =
-    req.user &&
-    (req.user.role === 'super_admin' ||
-      req.user.organizationId === tourney.creatorId ||
-      req.user.id === tourney.creatorId ||
-      req.user.tournamentId === tourney.id ||
-      req.user.auctionId === tourney.id)
+    reqUser &&
+    (reqUser.role === 'super_admin' ||
+      reqUser.organizationId === tourney.creatorId ||
+      reqUser.id === tourney.creatorId ||
+      reqUser.tournamentId === tourney.id ||
+      reqUser.auctionId === tourney.id)
 
   const rawTeams = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id)
 
-  // PRIVACY MASKING: Normal users/public viewers cannot see phone numbers, emails, or payment proofs
+  const qEmail = String(reqUser?.email || req.query.email || '').toLowerCase().trim()
+  const qIgn = String(reqUser?.ign || req.query.ign || '').toLowerCase().trim()
+  const qName = String(reqUser?.name || req.query.name || '').toLowerCase().trim()
+
+  // Match caller's registration to give them instant verified clearance
+  let userRegistration: {
+    isRegistered: boolean
+    type: 'squad' | 'candidate'
+    teamName: string
+    teamId: string
+    status: string
+    role: string
+    captainName?: string
+    captainIgn?: string
+    players?: any[]
+  } | null = null
+
+  if (qEmail || qIgn || qName) {
+    const foundTeam = rawTeams.find((t) => {
+      const cEmail = String(t.captainEmail || '').toLowerCase().trim()
+      const cIgn = String(t.captainIgn || '').toLowerCase().trim()
+      const cName = String(t.captainName || '').toLowerCase().trim()
+
+      if (qEmail && cEmail && cEmail === qEmail) return true
+      if (qIgn && cIgn && cIgn === qIgn) return true
+      if (qName && cName && cName === qName) return true
+      if (qName && cIgn && cIgn === qName) return true
+      if (qIgn && cName && cName === qIgn) return true
+
+      if (Array.isArray(t.players)) {
+        return t.players.some((p: any) => {
+          const pIgn = String(p.ign || '').toLowerCase().trim()
+          const pName = String(p.name || '').toLowerCase().trim()
+          return (qIgn && pIgn === qIgn) || (qName && pIgn === qName) || (qName && pName === qName)
+        })
+      }
+      return false
+    })
+
+    if (foundTeam) {
+      userRegistration = {
+        isRegistered: true,
+        type: 'squad',
+        teamName: foundTeam.name,
+        teamId: foundTeam.id,
+        status: foundTeam.status,
+        role:
+          String(foundTeam.captainName || '').toLowerCase().trim() === qName ||
+          String(foundTeam.captainIgn || '').toLowerCase().trim() === qIgn
+            ? 'Captain'
+            : 'Player',
+        captainName: foundTeam.captainName,
+        captainIgn: foundTeam.captainIgn,
+        players: foundTeam.players,
+      }
+    } else {
+      const foundCandidate = AUCTION_PLAYERS.find((p) => {
+        if (p.tournamentId !== tourney.id && p.auctionId !== tourney.id) return false
+        const pEmail = String(p.email || '').toLowerCase().trim()
+        const pIgn = String(p.ign || '').toLowerCase().trim()
+        const pName = String(p.name || '').toLowerCase().trim()
+
+        if (qEmail && pEmail && pEmail === qEmail) return true
+        if (qIgn && pIgn && pIgn === qIgn) return true
+        if (qName && pName && pName === qName) return true
+        return false
+      })
+
+      if (foundCandidate) {
+        userRegistration = {
+          isRegistered: true,
+          type: 'candidate',
+          teamName: foundCandidate.soldToTeam || 'Auction Candidate Pool',
+          teamId: foundCandidate.id,
+          status: foundCandidate.paymentStatus || 'verified',
+          role: foundCandidate.role || 'Draft Candidate',
+          captainName: foundCandidate.name,
+          captainIgn: foundCandidate.ign,
+        }
+      }
+    }
+  }
+
+  // PRIVACY MASKING: Normal users/public viewers cannot see phone numbers, emails, or payment proofs of other teams
   const sanitizedTeams = isStaffOrAdmin
     ? rawTeams
-    : rawTeams.map((t) => ({
-      id: t.id,
-      name: t.name,
-      captainName: t.captainName,
-      captainIgn: t.captainIgn,
-      players: t.players,
-      status: t.status,
-      group: t.group,
-      ambassadorId: t.ambassadorId,
-      ambassadorName: t.ambassadorName,
-      role: t.role,
-      experience: t.experience,
-      achievements: t.achievements,
-      clipUrl: t.clipUrl,
-      registeredAt: t.registeredAt,
-      // Captain phone, email, and paymentProof are omitted for privacy
-    }))
+    : rawTeams.map((t) => {
+        const isMyTeam = userRegistration?.teamId === t.id
+        return {
+          id: t.id,
+          name: t.name,
+          captainName: t.captainName,
+          captainIgn: t.captainIgn,
+          players: t.players,
+          status: t.status,
+          group: t.group,
+          ambassadorId: t.ambassadorId,
+          ambassadorName: t.ambassadorName,
+          role: t.role,
+          experience: t.experience,
+          achievements: t.achievements,
+          clipUrl: t.clipUrl,
+          registeredAt: t.registeredAt,
+          captainEmail: isMyTeam ? t.captainEmail : undefined,
+          captainPhone: isMyTeam ? t.captainPhone : undefined,
+        }
+      })
 
   const isAuction =
     tourney.format === 'Auction Tournament' ||
@@ -2008,11 +2108,12 @@ app.get('/api/tournaments/:id', async (req: Request, res: Response) => {
       rdkFee: finances.rdkFee,
       partnerNet: finances.partnerNet,
       settlementStatus: finances.settlementStatus,
-      // Mask room credentials if not published and caller is not staff
-      roomId: tourney.roomPublished || isStaffOrAdmin ? tourney.roomId : undefined,
-      roomPassword: tourney.roomPublished || isStaffOrAdmin ? tourney.roomPassword : undefined,
+      // Mask room credentials if not published and caller is not staff/registered
+      roomId: tourney.roomPublished || isStaffOrAdmin || (userRegistration && userRegistration.status === 'verified') ? tourney.roomId : undefined,
+      roomPassword: tourney.roomPublished || isStaffOrAdmin || (userRegistration && userRegistration.status === 'verified') ? tourney.roomPassword : undefined,
     },
     teams: sanitizedTeams,
+    userRegistration,
     finances: isStaffOrAdmin ? finances : undefined,
   })
 })
@@ -3533,6 +3634,7 @@ app.get('/api/player/my-tournaments', (req: Request, res: Response) => {
     let userId = ''
     let userEmail = ''
     let userIgn = ''
+    let userName = ''
 
     if (token) {
       try {
@@ -3540,6 +3642,7 @@ app.get('/api/player/my-tournaments', (req: Request, res: Response) => {
         userId = String(payload.id || '')
         userEmail = String(payload.email || '').toLowerCase().trim()
         userIgn = String(payload.ign || '').toLowerCase().trim()
+        userName = String(payload.name || '').toLowerCase().trim()
       } catch {}
     }
 
@@ -3549,9 +3652,12 @@ app.get('/api/player/my-tournaments', (req: Request, res: Response) => {
     if (!userIgn && req.query.ign) {
       userIgn = String(req.query.ign).toLowerCase().trim()
     }
+    if (!userName && req.query.name) {
+      userName = String(req.query.name).toLowerCase().trim()
+    }
 
     // If new user or no matching identity found, return 0 registrations
-    if (!userId && !userEmail && !userIgn) {
+    if (!userId && !userEmail && !userIgn && !userName) {
       return res.json({
         tournaments: [],
         count: 0,
@@ -3564,12 +3670,19 @@ app.get('/api/player/my-tournaments', (req: Request, res: Response) => {
     const userTeams = REGISTERED_TEAMS.filter((t) => {
       const cEmail = String(t.captainEmail || '').toLowerCase().trim()
       const cIgn = String(t.captainIgn || '').toLowerCase().trim()
+      const cName = String(t.captainName || '').toLowerCase().trim()
+
       if (userEmail && cEmail === userEmail) return true
       if (userIgn && cIgn === userIgn) return true
+      if (userName && cName === userName) return true
+      if (userName && cIgn === userName) return true
+      if (userIgn && cName === userIgn) return true
+
       if (Array.isArray(t.players)) {
         return t.players.some((p: any) => {
           const pIgn = String(p.ign || p.playerName || '').toLowerCase().trim()
-          return userIgn && pIgn === userIgn
+          const pName = String(p.name || '').toLowerCase().trim()
+          return (userIgn && pIgn === userIgn) || (userName && pIgn === userName) || (userName && pName === userName)
         })
       }
       return false
@@ -3579,8 +3692,10 @@ app.get('/api/player/my-tournaments', (req: Request, res: Response) => {
     const userAuctions = AUCTION_PLAYERS.filter((p) => {
       const pEmail = String(p.email || '').toLowerCase().trim()
       const pIgn = String(p.ign || '').toLowerCase().trim()
+      const pName = String(p.name || '').toLowerCase().trim()
       if (userEmail && pEmail === userEmail) return true
       if (userIgn && pIgn === userIgn) return true
+      if (userName && pName === userName) return true
       return false
     })
 
