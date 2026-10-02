@@ -847,11 +847,7 @@ export default function TournamentDetailPage() {
     stLower === 'ended' ||
     Boolean(tournament.isClosed) ||
     Boolean((tournament as any).closedAt) ||
-    (tournament.endDate
-      ? new Date(tournament.endDate).getTime() < Date.now()
-      : tournament.startDate
-      ? new Date(tournament.startDate).getTime() + 86400000 < Date.now()
-      : false) ||
+    (tournament.endDate ? new Date(tournament.endDate).getTime() < Date.now() : false) ||
     (tournament.registrationClosing ? new Date(tournament.registrationClosing).getTime() < Date.now() : false)
 
   const isLive = !isEnded && stLower === 'live'
@@ -913,7 +909,7 @@ export default function TournamentDetailPage() {
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-muted/80 text-muted-foreground border border-border">
                 Powered by RDK Technologies
               </span>
-              <StatusBadge status={isEnded ? 'completed' : isLive ? 'live' : isRegistrationOpen ? 'registration_open' : 'draft'} />
+              <StatusBadge status={isEnded ? 'completed' : isLive ? 'live' : isSlotsFull ? 'slots_full' : isRegistrationOpen ? 'registration_open' : 'draft'} />
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
                 {tournament.game}
               </span>

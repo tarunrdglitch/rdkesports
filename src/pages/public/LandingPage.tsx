@@ -295,6 +295,7 @@ function TournamentCard({ t, index }: { t: Tournament; index: number }) {
   const statusConfig: Record<string, { label: string; color: string; pulse: boolean }> = {
     live:              { label: 'LIVE', color: 'text-red-400 bg-red-500/14 border-red-500/35', pulse: true },
     registration_open: { label: 'OPEN', color: 'text-emerald-400 bg-emerald-500/14 border-emerald-500/35', pulse: false },
+    slots_full:        { label: 'FULL', color: 'text-amber-400 bg-amber-500/14 border-amber-500/35', pulse: false },
     draft:             { label: 'SOON', color: 'text-amber-400 bg-amber-500/14 border-amber-500/35', pulse: false },
     completed:         { label: 'ENDED', color: 'text-muted-foreground bg-muted/60 border-border', pulse: false },
   }
@@ -308,8 +309,18 @@ function TournamentCard({ t, index }: { t: Tournament; index: number }) {
     Boolean((t as any).closedAt) ||
     (t.endDate ? new Date(t.endDate).getTime() < Date.now() : false) ||
     (t.registrationClosing ? new Date(t.registrationClosing).getTime() < Date.now() : false)
-  const st = isEnded ? statusConfig.completed : (statusConfig[stLower] ?? statusConfig.completed)
-  const fill = Math.min(100, (t.teams / t.maxTeams) * 100)
+
+  const isAuction = t.format === 'Auction Tournament' || String(t.format || '').toLowerCase().includes('auction')
+  const actualTeams = Math.max(t.teams || 0, t.registeredTeamsCount || 0)
+  const isSlotsFull = t.maxTeams > 0 && actualTeams >= t.maxTeams
+
+  const st = isEnded
+    ? statusConfig.completed
+    : isSlotsFull
+    ? statusConfig.slots_full
+    : (statusConfig[stLower] ?? statusConfig.completed)
+
+  const fill = Math.min(100, t.maxTeams > 0 ? (actualTeams / t.maxTeams) * 100 : 0)
   const fb = getFormatBadge(t.format)
 
   return (
@@ -370,11 +381,13 @@ function TournamentCard({ t, index }: { t: Tournament; index: number }) {
           </span>
         </div>
 
-        {/* Teams fill bar */}
+        {/* Teams / Candidates fill bar */}
         <div className="mt-4">
           <div className="flex justify-between text-[11px] mb-2">
-            <span className="text-muted-foreground font-body">Teams Registered</span>
-            <span className="font-bold text-foreground font-body">{t.teams}/{t.maxTeams}</span>
+            <span className="text-muted-foreground font-body">
+              {isAuction ? 'Draft Candidates Pool' : 'Teams Registered'}
+            </span>
+            <span className="font-bold text-foreground font-body">{actualTeams}/{t.maxTeams}</span>
           </div>
           <div className="tournament-fill-bar">
             <motion.div
@@ -406,12 +419,20 @@ function TournamentCard({ t, index }: { t: Tournament; index: number }) {
             className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-bold transition-all duration-200 font-body ${
               isEnded
                 ? 'border-border bg-surface/60 text-muted-foreground hover:bg-surface hover:text-foreground'
+                : isSlotsFull
+                ? 'border-amber-500/40 bg-amber-500/12 text-amber-300 hover:bg-amber-500 hover:text-black'
                 : t.status === 'live'
                 ? 'border-red-500/40 bg-red-500/12 text-red-400 hover:bg-red-500 hover:text-white'
                 : 'border-primary/35 bg-primary/10 text-primary-light hover:bg-primary hover:text-white'
             }`}
           >
-            {t.status === 'live' ? 'Live Lobby' : isEnded ? 'View Results' : 'Register'}
+            {isEnded
+              ? 'View Results'
+              : isSlotsFull
+              ? 'Slots Full'
+              : t.status === 'live'
+              ? 'Live Lobby'
+              : 'Register'}
             <ChevronRight className="size-3.5" />
           </Link>
         </div>
@@ -440,7 +461,41 @@ export default function LandingPage() {
   }, [nav])
 
   useEffect(() => {
-    tournamentService.list().then(setTournaments)
+    tournamentService.list().then(async (list) => {
+      setTournaments(list)
+      try {
+        const needsCheck = list.some((t) => (t.teams || 0) === 0)
+        if (needsCheck) {
+          const enriched = await Promise.all(
+            list.map(async (t) => {
+              if ((t.teams || 0) === 0) {
+                try {
+                  const res = await fetch(`/api/tournaments/${t.id}`)
+                  if (res.ok) {
+                    const detail = await res.json()
+                    const count = Math.max(
+                      detail.tournament?.teams || 0,
+                      detail.tournament?.registeredTeamsCount || 0,
+                      Array.isArray(detail.teams) ? detail.teams.length : 0
+                    )
+                    if (count > 0) {
+                      return {
+                        ...t,
+                        teams: count,
+                        registeredTeamsCount: count,
+                        status: detail.tournament?.status || t.status,
+                      }
+                    }
+                  }
+                } catch {}
+              }
+              return t
+            })
+          )
+          setTournaments(enriched)
+        }
+      } catch {}
+    })
     creatorService.getPlatformStats().then(setStats)
     creatorService.list().then((dbList) => {
       const activeList = (dbList || []).filter((c: any) => (!c.status || c.status === 'active') && !c.isDeleted)

@@ -1470,7 +1470,41 @@ app.delete('/api/creators/ambassadors/:id', async (req: Request, res: Response) 
 // 8. Tournament Management & Public Endpoints
 app.get('/api/tournaments', (req: Request, res: Response) => {
   const { creatorId, game, status } = req.query
-  let list = [...TOURNAMENTS]
+  let list = TOURNAMENTS.map((t) => {
+    const isAuction =
+      t.format === 'Auction Tournament' ||
+      String(t.format || '').toLowerCase().includes('auction') ||
+      t.type === 'AUCTION TOURNAMENT'
+
+    const currentCandidates = AUCTION_PLAYERS.filter(
+      (p) => p.auctionId === t.id || p.tournamentId === t.id
+    ).length
+    const currentTeams = REGISTERED_TEAMS.filter((rt) => rt.tournamentId === t.id).length
+    const enrolled = isAuction
+      ? Math.max(currentCandidates, currentTeams, t.registeredTeamsCount || 0, t.teams || 0)
+      : Math.max(currentTeams, t.registeredTeamsCount || 0, t.teams || 0)
+
+    const statusNormalized = String(t.status || '').toLowerCase()
+    const isEnded =
+      statusNormalized === 'completed' ||
+      statusNormalized === 'finished' ||
+      statusNormalized === 'closed' ||
+      statusNormalized === 'ended' ||
+      Boolean(t.isClosed) ||
+      Boolean(t.closedAt) ||
+      (t.endDate ? new Date(t.endDate).getTime() < Date.now() : false) ||
+      (t.registrationClosing ? new Date(t.registrationClosing).getTime() < Date.now() : false)
+
+    const computedStatus = isEnded ? 'completed' : t.status
+
+    return {
+      ...t,
+      teams: enrolled,
+      registeredTeamsCount: enrolled,
+      status: computedStatus,
+    }
+  })
+
   if (creatorId) list = list.filter((t) => t.creatorId === creatorId)
   if (game) list = list.filter((t) => t.game.toLowerCase() === String(game).toLowerCase())
   if (status) {
@@ -1726,9 +1760,26 @@ app.get('/api/tournaments/:id', async (req: Request, res: Response) => {
       // Captain phone, email, and paymentProof are omitted for privacy
     }))
 
+  const isAuction =
+    tourney.format === 'Auction Tournament' ||
+    String(tourney.format || '').toLowerCase().includes('auction') ||
+    tourney.type === 'AUCTION TOURNAMENT'
+
+  const currentCandidates = AUCTION_PLAYERS.filter(
+    (p) => p.auctionId === tourney.id || p.tournamentId === tourney.id
+  ).length
+  const enrolled = isAuction
+    ? Math.max(currentCandidates, rawTeams.length, tourney.registeredTeamsCount || 0, tourney.teams || 0)
+    : Math.max(rawTeams.length, tourney.registeredTeamsCount || 0, tourney.teams || 0)
+
+  tourney.teams = enrolled
+  tourney.registeredTeamsCount = enrolled
+
   return res.json({
     tournament: {
       ...tourney,
+      teams: enrolled,
+      registeredTeamsCount: enrolled,
       grossRevenue: finances.grossRevenue,
       rdkFee: finances.rdkFee,
       partnerNet: finances.partnerNet,
@@ -2921,11 +2972,7 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
       statusNormalized === 'closed' ||
       Boolean(tourney.isClosed) ||
       Boolean(tourney.closedAt) ||
-      (tourney.endDate
-        ? new Date(tourney.endDate).getTime() < Date.now()
-        : tourney.startDate
-        ? new Date(tourney.startDate).getTime() + 86400000 < Date.now()
-        : false) ||
+      (tourney.endDate ? new Date(tourney.endDate).getTime() < Date.now() : false) ||
       (tourney.registrationClosing ? new Date(tourney.registrationClosing).getTime() < Date.now() : false)
 
     if (isEnded) {
@@ -4896,6 +4943,34 @@ async function initDatabase() {
       }))
       console.log(`[Database] Synced ${EPHEMERAL_BIDDERS.length} ephemeral auction bidders from PostgreSQL.`)
     }
+
+    // Sync enrolled teams/players counts for all tournaments
+    TOURNAMENTS.forEach((t) => {
+      const isAuction =
+        t.format === 'Auction Tournament' ||
+        String(t.format || '').toLowerCase().includes('auction') ||
+        t.type === 'AUCTION TOURNAMENT'
+
+      const currentCandidates = AUCTION_PLAYERS.filter(
+        (p) => p.auctionId === t.id || p.tournamentId === t.id
+      ).length
+      const currentTeams = REGISTERED_TEAMS.filter((rt) => rt.tournamentId === t.id).length
+      const enrolled = isAuction
+        ? Math.max(currentCandidates, currentTeams, t.registeredTeamsCount || 0, t.teams || 0)
+        : Math.max(currentTeams, t.registeredTeamsCount || 0, t.teams || 0)
+
+      t.teams = enrolled
+      t.registeredTeamsCount = enrolled
+
+      if (isDatabaseConfigured && enrolled > 0) {
+        prisma.tournament
+          .update({
+            where: { id: t.id },
+            data: { teams: enrolled, registeredTeamsCount: enrolled },
+          })
+          .catch(() => {})
+      }
+    })
     // Ensure Owner account exists in PostgreSQL
     try {
       await prisma.user.deleteMany({

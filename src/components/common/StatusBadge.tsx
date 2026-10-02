@@ -3,6 +3,7 @@ import { cn } from '@/utils/cn'
 const map: Record<string, string> = {
   live:              'badge-accent',
   registration_open: 'badge-success',
+  slots_full:        'badge-warning',
   draft:             'badge-primary',
   completed:         'text-muted-foreground bg-muted border border-border/30 text-[9px] font-display uppercase tracking-widest px-2 py-0.5 rounded-full inline-flex items-center gap-1',
   paused:            'badge-warning',
@@ -11,6 +12,7 @@ const map: Record<string, string> = {
 const labelMap: Record<string, string> = {
   live:              'Live',
   registration_open: 'Registration Open',
+  slots_full:        'Slots Full',
   draft:             'Draft',
   completed:         'Completed',
   paused:            'Paused',
