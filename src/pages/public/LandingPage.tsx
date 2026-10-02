@@ -1103,7 +1103,7 @@ export default function LandingPage() {
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mb-12">
             {/* Brand */}
             <div>
               <div className="flex items-center gap-3 mb-4">
@@ -1151,27 +1151,7 @@ export default function LandingPage() {
               </nav>
             </div>
 
-            {/* Platform access */}
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-foreground mb-4 font-body">Platform</p>
-              <div className="flex flex-col gap-3">
-                <button type="button" onClick={openLogin} className="btn-ghost text-sm w-fit cursor-pointer">
-                  <Shield className="size-3.5" />
-                  Portal Login
-                </button>
-                <button type="button" onClick={openRegister} className="btn-primary text-sm w-fit cursor-pointer">
-                  <Users className="size-3.5" />
-                  Register as Gamer
-                </button>
-              </div>
-              <div className="mt-5 p-3 rounded-xl border border-border bg-surface/40">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-[10px] text-emerald-400 font-bold font-body">All Systems Operational</span>
-                </div>
-                <p className="text-[10px] text-muted-foreground font-body">Platform uptime 99.9%</p>
-              </div>
-            </div>
+
           </div>
 
           {/* Bottom bar */}
