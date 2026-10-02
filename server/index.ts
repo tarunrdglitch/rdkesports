@@ -5011,7 +5011,7 @@ app.patch('/api/tournaments/:id/payments/:payId/verify', handleVerifyPayment)
 app.patch('/api/tournaments/:id/payments/:payId', handleVerifyPayment)
 
 // 9. Audience / Player Self-Registration (Only creates player / team_captain, NEVER ambassador)
-app.post('/api/auth/register', (req: Request, res: Response) => {
+app.post('/api/auth/register', async (req: Request, res: Response) => {
   try {
     const { name, email, password, ign, role = 'player' } = req.body
 
@@ -5032,6 +5032,20 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     const existing = USERS.find((u) => u.email.toLowerCase() === normalizedEmail)
     if (existing) {
       return res.status(409).json({ error: 'An account with this email already exists. Please sign in.' })
+    }
+
+    // Check DB as well if database is configured
+    if (isDatabaseConfigured) {
+      try {
+        const existingDbUser = await prisma.user.findFirst({
+          where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+        })
+        if (existingDbUser) {
+          return res.status(409).json({ error: 'An account with this email already exists. Please sign in.' })
+        }
+      } catch (dbCheckErr) {
+        console.error('[Database] Notice checking existing user during registration:', dbCheckErr)
+      }
     }
 
     // Check if this registered email or name matches any official creator
@@ -5061,6 +5075,38 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     }
 
     USERS.push(newUser)
+
+    // Persist user to PostgreSQL database
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.user.upsert({
+          where: { email: normalizedEmail },
+          update: {
+            name: newUser.name,
+            password: newUser.password || password,
+            ign: newUser.ign || null,
+            role: newUser.role,
+            organizationId: newUser.organizationId || null,
+            organizationName: newUser.organizationName || null,
+            status: 'active',
+          },
+          create: {
+            id: newUser.id,
+            name: newUser.name,
+            email: newUser.email,
+            password: newUser.password || password,
+            ign: newUser.ign || null,
+            role: newUser.role,
+            organizationId: newUser.organizationId || null,
+            organizationName: newUser.organizationName || null,
+            status: 'active',
+          },
+        })
+        console.log(`[Database] Persisted new user '${newUser.email}' (${newUser.role}) to PostgreSQL.`)
+      } catch (dbSaveErr) {
+        console.error('[Database] Notice saving new user to PostgreSQL:', dbSaveErr)
+      }
+    }
 
     const token = jwt.sign(
       {
@@ -5503,6 +5549,37 @@ async function initDatabase() {
         createdAt: b.createdAt.toISOString(),
       }))
       console.log(`[Database] Synced ${EPHEMERAL_BIDDERS.length} ephemeral auction bidders from PostgreSQL.`)
+    }
+
+    // Sync all user accounts from PostgreSQL into in-memory USERS cache
+    try {
+      const dbUsers = await prisma.user.findMany({
+        where: { isDeleted: false },
+      })
+      if (dbUsers.length > 0) {
+        dbUsers.forEach((du) => {
+          const idx = USERS.findIndex((u) => u.email.toLowerCase() === du.email.toLowerCase())
+          const userObj: UserRecord = {
+            id: du.id,
+            name: du.name,
+            email: du.email,
+            role: du.role as Role,
+            ign: du.ign || undefined,
+            password: du.password,
+            organizationId: du.organizationId || undefined,
+            organizationName: du.organizationName || undefined,
+            createdAt: du.createdAt.toISOString(),
+          }
+          if (idx >= 0) {
+            USERS[idx] = { ...USERS[idx], ...userObj }
+          } else {
+            USERS.push(userObj)
+          }
+        })
+        console.log(`[Database] Synced ${dbUsers.length} users from PostgreSQL into USERS cache.`)
+      }
+    } catch (usersSyncErr) {
+      console.error('[Database] Notice syncing users from PostgreSQL:', usersSyncErr)
     }
 
     // Sync enrolled teams/players counts for all tournaments
