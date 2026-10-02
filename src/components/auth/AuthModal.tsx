@@ -478,10 +478,10 @@ export function AuthModal() {
           />
 
           {/* Modal */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
             <motion.div
               key="modal"
-              className="relative w-full max-w-[440px] overflow-hidden rounded-2xl"
+              className="relative w-full max-w-[440px] max-h-[92dvh] flex flex-col rounded-2xl my-auto overflow-hidden"
               style={{
                 background: 'linear-gradient(160deg, #0E0C10 0%, #0A080D 100%)',
                 border: '1px solid rgba(255,255,255,0.07)',
@@ -508,7 +508,7 @@ export function AuthModal() {
               <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-80 h-60 pointer-events-none"
                 style={{ background: 'radial-gradient(ellipse, rgba(245,26,26,0.09) 0%, transparent 70%)' }} />
 
-              <div className="relative z-10 p-7">
+              <div className="relative z-10 p-5 sm:p-7 overflow-y-auto max-h-[calc(92dvh-2px)]">
 
                 {/* ── Header ── */}
                 <div className="flex items-center justify-between mb-7">

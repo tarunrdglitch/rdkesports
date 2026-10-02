@@ -59,11 +59,22 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+  color-scheme: dark;
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
 }
 
 html {
+  color-scheme: dark;
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -78,6 +89,69 @@ body {
     radial-gradient(ellipse 80% 40% at 50% 0%, rgba(245, 26, 26, 0.06) 0%, transparent 70%),
     radial-gradient(ellipse 60% 50% at 100% 100%, rgba(255, 170, 0, 0.03) 0%, transparent 60%);
   background-attachment: fixed;
+}
+
+/* ─── Mobile Safari & Android Fixes ──────────────────────── */
+@media (max-width: 1024px), (pointer: coarse) {
+  body {
+    background-attachment: scroll !important;
+  }
+}
+
+/* Prevent iOS Safari auto-zoom on input focus when font-size < 16px */
+@media screen and (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Modern Dynamic Viewport Height (iOS 15.4+ / Android Chrome) */
+@supports (min-height: 100dvh) {
+  .min-h-screen {
+    min-height: 100dvh !important;
+  }
+  .h-screen {
+    height: 100dvh !important;
+  }
+}
+
+/* WebKit momentum scrolling on mobile containers */
+.overflow-y-auto,
+.overflow-x-auto,
+nav,
+main,
+aside {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* WebKit backdrop-filter fallback */
+.backdrop-blur,
+.backdrop-blur-sm,
+.backdrop-blur-md,
+.backdrop-blur-lg,
+.backdrop-blur-xl,
+.backdrop-blur-2xl {
+  -webkit-backdrop-filter: var(--tw-backdrop-blur);
+  backdrop-filter: var(--tw-backdrop-blur);
+}
+
+/* Safe area padding utilities for iPhone notch / home indicator */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 h1, h2, h3, h4, h5, h6 {

@@ -25,6 +25,8 @@ import {
   Globe,
   Shield,
   Swords,
+  Menu,
+  X,
 } from 'lucide-react'
 import { tournamentService } from '@/services/api/tournamentService'
 import { creatorService } from '@/services/api/creatorService'
@@ -455,6 +457,7 @@ export default function LandingPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'live' | 'upcoming' | 'completed'>('all')
   const [formatFilter, setFormatFilter] = useState<'all' | 'auction' | 'br_squad' | 'br_solo' | 'cs_norules' | 'cs_limited' | 'cs_onetap'>('all')
   const [navScrolled, setNavScrolled] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     setAuthModalNavigate(nav)
@@ -575,24 +578,24 @@ export default function LandingPage() {
           NAV
       ══════════════════════════════════ */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 transition-all duration-400"
+        className="fixed top-0 left-0 right-0 z-50 transition-all duration-400 pt-safe"
         style={{
-          background: navScrolled ? 'rgba(8,7,10,0.92)' : 'transparent',
-          backdropFilter: navScrolled ? 'blur(28px) saturate(1.8)' : 'none',
-          borderBottom: navScrolled ? '1px solid rgba(255,255,255,0.05)' : 'none',
+          background: navScrolled || mobileMenuOpen ? 'rgba(8,7,10,0.95)' : 'transparent',
+          backdropFilter: navScrolled || mobileMenuOpen ? 'blur(28px) saturate(1.8)' : 'none',
+          borderBottom: navScrolled || mobileMenuOpen ? '1px solid rgba(255,255,255,0.08)' : 'none',
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3 group shrink-0">
             <img
               src="/logo.png"
               alt="RDK Esports Logo"
-              className="h-9 w-auto logo-glow group-hover:scale-105 transition-transform duration-300"
+              className="h-8 sm:h-9 w-auto logo-glow group-hover:scale-105 transition-transform duration-300"
             />
             <div className="flex flex-col leading-none">
-              <span className="font-display text-base tracking-[0.18em] text-foreground">RDK ESPORTS</span>
-              <span className="text-[9px] tracking-[0.12em] text-muted-foreground font-body uppercase">Powered by RDK Technologies</span>
+              <span className="font-display text-sm sm:text-base tracking-[0.18em] text-foreground">RDK ESPORTS</span>
+              <span className="text-[8px] sm:text-[9px] tracking-[0.12em] text-muted-foreground font-body uppercase">Powered by RDK Technologies</span>
             </div>
           </Link>
 
@@ -610,15 +613,15 @@ export default function LandingPage() {
             ))}
           </nav>
 
-          {/* Auth buttons */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Desktop Auth buttons */}
+          <div className="hidden md:flex items-center gap-3 shrink-0">
             {user ? (
               <Link to={homeFor(user.role)} className="btn-primary">
                 Dashboard
               </Link>
             ) : (
               <>
-                <button type="button" onClick={openLogin} className="btn-ghost text-sm cursor-pointer hidden sm:inline-flex">
+                <button type="button" onClick={openLogin} className="btn-ghost text-sm cursor-pointer">
                   Sign In
                 </button>
                 <button type="button" onClick={openRegister} className="btn-primary cursor-pointer">
@@ -627,7 +630,94 @@ export default function LandingPage() {
               </>
             )}
           </div>
+
+          {/* Mobile Right Controls: Quick Auth / Menu Toggle */}
+          <div className="flex md:hidden items-center gap-2">
+            {!user && (
+              <button
+                type="button"
+                onClick={openLogin}
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg text-foreground hover:bg-white/5 transition border border-white/10"
+              >
+                Sign In
+              </button>
+            )}
+            {user && (
+              <Link
+                to={homeFor(user.role)}
+                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-primary text-background"
+              >
+                Dashboard
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-label={mobileMenuOpen ? 'Close mobile menu' : 'Open mobile menu'}
+              className="p-2 rounded-lg border border-white/10 bg-white/5 text-foreground hover:bg-white/10 transition cursor-pointer"
+            >
+              {mobileMenuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile Dropdown Menu Drawer */}
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="md:hidden border-t border-white/10 bg-[#0A090D]/95 backdrop-blur-2xl px-5 py-5 space-y-4 overflow-hidden"
+            >
+              <div className="grid grid-cols-2 gap-2 text-xs font-medium">
+                {[
+                  ['What We Do', '#what-we-do'],
+                  ['Tournaments', '#tournaments'],
+                  ['Creators', '#creators'],
+                  ['Features', '#features'],
+                ].map(([label, href]) => (
+                  <a
+                    key={label}
+                    href={href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="p-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white transition flex items-center justify-between"
+                  >
+                    <span>{label}</span>
+                    <ChevronRight className="size-3.5 text-primary opacity-60" />
+                  </a>
+                ))}
+              </div>
+
+              {!user && (
+                <div className="pt-2 flex flex-col gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false)
+                      openRegister()
+                    }}
+                    className="w-full py-3 rounded-xl bg-primary text-background font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-primary/25 cursor-pointer"
+                  >
+                    <span>Create Player Account</span>
+                    <ArrowRight className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false)
+                      openLogin()
+                    }}
+                    className="w-full py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>Sign In to Existing Account</span>
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
       {/* ══════════════════════════════════

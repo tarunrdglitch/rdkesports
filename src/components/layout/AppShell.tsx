@@ -226,7 +226,7 @@ export const AppShell = () => {
               initial="hidden"
               animate="show"
               exit="exit"
-              className="fixed inset-y-0 left-0 z-50 w-64 flex flex-col lg:hidden overflow-hidden"
+              className="fixed inset-y-0 left-0 z-50 w-64 flex flex-col lg:hidden overflow-hidden pt-safe pb-safe"
               style={{
                 backgroundColor: 'hsl(240 6% 6%)',
                 borderRight: '1px solid rgba(255,255,255,0.05)',
@@ -259,7 +259,7 @@ export const AppShell = () => {
 
         {/* Top Header */}
         <header
-          className="flex h-14 items-center justify-between px-4 lg:px-6 sticky top-0 z-30"
+          className="flex min-h-14 items-center justify-between px-4 lg:px-6 sticky top-0 z-30 pt-safe"
           style={{
             backgroundColor: 'rgba(8,7,10,0.92)',
             backdropFilter: 'blur(24px) saturate(1.6)',
