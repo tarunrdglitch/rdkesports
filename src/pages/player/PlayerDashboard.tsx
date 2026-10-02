@@ -142,7 +142,11 @@ export default function PlayerDashboard() {
         st === 'ended' ||
         Boolean((t as any).isClosed) ||
         Boolean((t as any).closedAt) ||
-        (t.endDate ? new Date(t.endDate).getTime() < Date.now() : false) ||
+        (t.endDate
+          ? new Date(t.endDate).getTime() < Date.now()
+          : t.startDate
+          ? new Date(t.startDate).getTime() + 86400000 < Date.now()
+          : false) ||
         (t.registrationClosing ? new Date(t.registrationClosing).getTime() < Date.now() : false)
 
       return !isEnded && (st === 'registration_open' || st === 'live' || st === 'upcoming')

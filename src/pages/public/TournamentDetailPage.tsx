@@ -847,7 +847,11 @@ export default function TournamentDetailPage() {
     stLower === 'ended' ||
     Boolean(tournament.isClosed) ||
     Boolean((tournament as any).closedAt) ||
-    (tournament.endDate ? new Date(tournament.endDate).getTime() < Date.now() : false) ||
+    (tournament.endDate
+      ? new Date(tournament.endDate).getTime() < Date.now()
+      : tournament.startDate
+      ? new Date(tournament.startDate).getTime() + 86400000 < Date.now()
+      : false) ||
     (tournament.registrationClosing ? new Date(tournament.registrationClosing).getTime() < Date.now() : false)
 
   const isLive = !isEnded && stLower === 'live'

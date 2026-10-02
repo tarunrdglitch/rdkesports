@@ -2921,7 +2921,11 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
       statusNormalized === 'closed' ||
       Boolean(tourney.isClosed) ||
       Boolean(tourney.closedAt) ||
-      (tourney.endDate ? new Date(tourney.endDate).getTime() < Date.now() : false) ||
+      (tourney.endDate
+        ? new Date(tourney.endDate).getTime() < Date.now()
+        : tourney.startDate
+        ? new Date(tourney.startDate).getTime() + 86400000 < Date.now()
+        : false) ||
       (tourney.registrationClosing ? new Date(tourney.registrationClosing).getTime() < Date.now() : false)
 
     if (isEnded) {
