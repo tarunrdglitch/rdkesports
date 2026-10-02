@@ -413,6 +413,7 @@ export interface TournamentRecord {
   roomPassword?: string
   roomPublished?: boolean
   roadmap?: TournamentRoadmap
+  pointsTable?: string
   streamUrl?: string
   streamTitle?: string
   streamStatus?: 'offline' | 'starting_soon' | 'live'
@@ -1446,6 +1447,36 @@ app.post('/api/creators/ambassadors', async (req: Request, res: Response) => {
     }
     USERS.push(ambUser)
 
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.user.upsert({
+          where: { email: normalizedEmail },
+          update: {
+            name: ambUser.name,
+            role: 'ambassador',
+            organizationId: ambUser.organizationId || null,
+            organizationName: newAmbassador.assignedTeamRange,
+            password: ambUser.password || 'password123',
+            phone: newAmbassador.phone || null,
+            status: 'active',
+          },
+          create: {
+            id: ambUser.id,
+            name: ambUser.name,
+            email: normalizedEmail,
+            role: 'ambassador',
+            organizationId: ambUser.organizationId || null,
+            organizationName: newAmbassador.assignedTeamRange,
+            password: ambUser.password || 'password123',
+            phone: newAmbassador.phone || null,
+            status: 'active',
+          },
+        })
+      } catch (userErr) {
+        console.warn('[Database] Notice saving ambassador user to DB:', userErr)
+      }
+    }
+
     return res.status(201).json({ success: true, ambassador: newAmbassador })
   } catch (error) {
     console.error('Error provisioning ambassador:', error)
@@ -1610,6 +1641,24 @@ async function updateAmbassadorHandler(req: Request, res: Response) {
             ...(password && String(password).trim() ? { password: String(password).trim() } : {}),
           },
         }).catch(() => {})
+
+        if (bidder) {
+          await prisma.ephemeralAuctionBidder.updateMany({
+            where: {
+              OR: [
+                { id: bidder.id },
+                { loginCode: { equals: bidder.loginCode, mode: 'insensitive' as const } },
+                ...(oldEmail ? [{ loginCode: { equals: oldEmail, mode: 'insensitive' as const } }] : []),
+              ],
+            },
+            data: {
+              teamName: bidder.teamName,
+              loginCode: bidder.loginCode,
+              passkey: bidder.passkey,
+              allocatedPurse: bidder.allocatedPurse,
+            },
+          }).catch(() => {})
+        }
       } catch (dbErr) {
         console.warn('[Database] Notice updating ambassador in DB:', dbErr)
       }
@@ -1633,7 +1682,9 @@ app.delete('/api/creators/ambassadors/:id', async (req: Request, res: Response) 
 
   if (isDatabaseConfigured) {
     try {
-      await prisma.ambassador.delete({ where: { id } }).catch(() => { })
+      await prisma.ambassador.deleteMany({ where: { OR: [{ id }, ...(oldEmail ? [{ email: oldEmail }] : [])] } }).catch(() => { })
+      await prisma.ephemeralAuctionBidder.deleteMany({ where: { OR: [{ id }, ...(oldEmail ? [{ loginCode: oldEmail }] : [])] } }).catch(() => { })
+      await prisma.user.deleteMany({ where: { OR: [{ id }, ...(oldEmail ? [{ email: oldEmail }] : [])] } }).catch(() => { })
     } catch { }
   }
 
@@ -2669,6 +2720,15 @@ app.put('/api/tournaments/:id/points-table', (req: Request, res: Response) => {
   current.updatedAt = new Date().toISOString()
 
   TOURNAMENT_POINTS_TABLES[targetId] = current
+  tourney.pointsTable = JSON.stringify(current)
+  if (isDatabaseConfigured) {
+    (prisma.tournament as any)
+      .updateMany({
+        where: { id: targetId },
+        data: { pointsTable: JSON.stringify(current) },
+      })
+      .catch((err: any) => console.error('[Database] Notice saving points table to DB:', err))
+  }
   const standings = computeStandings(current)
 
   return res.json({
@@ -2751,6 +2811,16 @@ app.post('/api/tournaments/:id/points-table/match', (req: Request, res: Response
   current.matches.sort((a, b) => a.matchNumber - b.matchNumber)
   current.updatedAt = new Date().toISOString()
   TOURNAMENT_POINTS_TABLES[targetId] = current
+  tourney.pointsTable = JSON.stringify(current)
+
+  if (isDatabaseConfigured) {
+    (prisma.tournament as any)
+      .updateMany({
+        where: { id: targetId },
+        data: { pointsTable: JSON.stringify(current) },
+      })
+      .catch((err: any) => console.error('[Database] Notice saving match to DB:', err))
+  }
 
   const standings = computeStandings(current)
 
@@ -2780,6 +2850,16 @@ app.delete('/api/tournaments/:id/points-table/match/:matchId', (req: Request, re
   current.matches = current.matches.filter((m) => m.id !== matchId)
   current.updatedAt = new Date().toISOString()
   TOURNAMENT_POINTS_TABLES[targetId] = current
+  tourney.pointsTable = JSON.stringify(current)
+
+  if (isDatabaseConfigured) {
+    (prisma.tournament as any)
+      .updateMany({
+        where: { id: targetId },
+        data: { pointsTable: JSON.stringify(current) },
+      })
+      .catch((err: any) => console.error('[Database] Notice deleting match from DB:', err))
+  }
 
   const standings = computeStandings(current)
 
@@ -3219,7 +3299,7 @@ app.post('/api/tournaments/:id/import-sheet', requirePartnerOrAdmin, async (req:
 
 
 // Add Team Manually (Partner / Admin)
-app.post('/api/tournaments/:id/teams', requirePartnerOrAdmin, (req: Request, res: Response) => {
+app.post('/api/tournaments/:id/teams', requirePartnerOrAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params
     const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
@@ -3262,6 +3342,46 @@ app.post('/api/tournaments/:id/teams', requirePartnerOrAdmin, (req: Request, res
     REGISTERED_TEAMS.push(newTeam)
     tourney.registeredTeamsCount = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id).length
 
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.registeredTeam.upsert({
+          where: { id: newTeam.id },
+          update: {
+            name: newTeam.name,
+            captainName: newTeam.captainName,
+            captainEmail: newTeam.captainEmail,
+            captainPhone: newTeam.captainPhone,
+            captainIgn: newTeam.captainIgn,
+            players: JSON.stringify(newTeam.players),
+            status: newTeam.status,
+            ambassadorId: newTeam.ambassadorId || null,
+            ambassadorName: newTeam.ambassadorName || null,
+            role: newTeam.role || null,
+          },
+          create: {
+            id: newTeam.id,
+            tournamentId: newTeam.tournamentId,
+            name: newTeam.name,
+            captainName: newTeam.captainName,
+            captainEmail: newTeam.captainEmail,
+            captainPhone: newTeam.captainPhone,
+            captainIgn: newTeam.captainIgn,
+            players: JSON.stringify(newTeam.players),
+            status: newTeam.status,
+            ambassadorId: newTeam.ambassadorId || null,
+            ambassadorName: newTeam.ambassadorName || null,
+            role: newTeam.role || null,
+          },
+        })
+        await prisma.tournament.updateMany({
+          where: { id: tourney.id },
+          data: { registeredTeamsCount: tourney.registeredTeamsCount, teams: tourney.registeredTeamsCount },
+        })
+      } catch (dbErr) {
+        console.error('[Database] Notice saving manual team to DB:', dbErr)
+      }
+    }
+
     return res.status(201).json({ success: true, team: newTeam })
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to add team' })
@@ -3269,7 +3389,7 @@ app.post('/api/tournaments/:id/teams', requirePartnerOrAdmin, (req: Request, res
 })
 
 // Update Team / Allot Ambassador (Partner / Admin)
-app.patch('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, (req: Request, res: Response) => {
+app.patch('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, async (req: Request, res: Response) => {
   try {
     const { id, teamId } = req.params
     const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
@@ -3301,6 +3421,28 @@ app.patch('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, (req: Req
     if (ambassadorId !== undefined) team.ambassadorId = ambassadorId || undefined
     if (ambassadorName !== undefined) team.ambassadorName = ambassadorName || undefined
     if (role !== undefined) team.role = role
+
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.registeredTeam.update({
+          where: { id: team.id },
+          data: {
+            name: team.name,
+            captainName: team.captainName,
+            captainIgn: team.captainIgn,
+            captainPhone: team.captainPhone || '',
+            captainEmail: team.captainEmail,
+            players: JSON.stringify(team.players),
+            status: team.status,
+            ambassadorId: team.ambassadorId || null,
+            ambassadorName: team.ambassadorName || null,
+            role: team.role || null,
+          },
+        })
+      } catch (dbErr) {
+        console.error('[Database] Notice updating team in DB:', dbErr)
+      }
+    }
 
     return res.json({ success: true, team })
   } catch (err: any) {
@@ -3514,7 +3656,7 @@ app.get('/api/player/my-tournaments', (req: Request, res: Response) => {
 })
 
 // Audience / Team Captain / Auction Candidate Registration for Tournament
-app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
+app.post('/api/tournaments/:id/register', async (req: Request, res: Response) => {
   try {
     const { id } = req.params
     const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
@@ -3653,10 +3795,12 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
 
       AUCTION_PLAYERS.push(newAuctionPlayer)
 
+      let newPayment: PaymentSubmission | undefined
+
       // Log payment if fee applies or screenshot provided
       if (screenshotUrl || utr || isPaid) {
         const payId = `pay_${Date.now()}`
-        const newPayment: PaymentSubmission = {
+        newPayment = {
           id: payId,
           tournamentId: tourney.id,
           tournamentName: tourney.name,
@@ -3673,6 +3817,81 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
       }
 
       tourney.registeredTeamsCount += 1
+
+      // Persist auction candidate & payment to PostgreSQL
+      if (isDatabaseConfigured) {
+        try {
+          await prisma.auctionPlayer.upsert({
+            where: { id: newAuctionPlayer.id },
+            update: {
+              name: newAuctionPlayer.name,
+              ign: newAuctionPlayer.ign,
+              gameUid: newAuctionPlayer.gameUid,
+              role: newAuctionPlayer.role,
+              basePrice: newAuctionPlayer.basePrice,
+              tier: newAuctionPlayer.tier,
+              phone: newAuctionPlayer.phone,
+              email: newAuctionPlayer.email,
+              clipUrl: newAuctionPlayer.clipUrl || null,
+              photoUrl: newAuctionPlayer.photoUrl || null,
+              stats: newAuctionPlayer.stats ? JSON.stringify(newAuctionPlayer.stats) : null,
+              status: newAuctionPlayer.status,
+              paymentProofUrl: newAuctionPlayer.paymentProofUrl || null,
+              paymentStatus: newAuctionPlayer.paymentStatus,
+            },
+            create: {
+              id: newAuctionPlayer.id,
+              auctionId: newAuctionPlayer.auctionId,
+              tournamentId: newAuctionPlayer.tournamentId,
+              name: newAuctionPlayer.name,
+              ign: newAuctionPlayer.ign,
+              gameUid: newAuctionPlayer.gameUid,
+              role: newAuctionPlayer.role,
+              basePrice: newAuctionPlayer.basePrice,
+              tier: newAuctionPlayer.tier,
+              phone: newAuctionPlayer.phone,
+              email: newAuctionPlayer.email,
+              clipUrl: newAuctionPlayer.clipUrl || null,
+              photoUrl: newAuctionPlayer.photoUrl || null,
+              stats: newAuctionPlayer.stats ? JSON.stringify(newAuctionPlayer.stats) : null,
+              status: newAuctionPlayer.status,
+              paymentProofUrl: newAuctionPlayer.paymentProofUrl || null,
+              paymentStatus: newAuctionPlayer.paymentStatus,
+            },
+          })
+
+          if (newPayment) {
+            await prisma.paymentSubmission.upsert({
+              where: { id: newPayment.id },
+              update: {
+                status: newPayment.status,
+                utr: newPayment.utr,
+                screenshotUrl: newPayment.screenshotUrl || null,
+              },
+              create: {
+                id: newPayment.id,
+                tournamentId: newPayment.tournamentId,
+                tournamentName: newPayment.tournamentName,
+                teamId: newPayment.teamId,
+                teamName: newPayment.teamName,
+                captainName: newPayment.captainName,
+                amount: newPayment.amount,
+                utr: newPayment.utr,
+                screenshotUrl: newPayment.screenshotUrl || null,
+                status: newPayment.status,
+              },
+            })
+          }
+
+          await prisma.tournament.updateMany({
+            where: { id: tourney.id },
+            data: { registeredTeamsCount: tourney.registeredTeamsCount, teams: tourney.registeredTeamsCount },
+          })
+          console.log(`[Database] Persisted auction player '${newAuctionPlayer.ign}' to PostgreSQL.`)
+        } catch (dbErr) {
+          console.error('[Database] Notice saving auction candidate to DB:', dbErr)
+        }
+      }
 
       return res.status(201).json({
         success: true,
@@ -3752,10 +3971,12 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
 
     REGISTERED_TEAMS.push(newTeam)
 
+    let newPayment: PaymentSubmission | undefined
+
     // If payment required or screenshot/UTR provided, log payment submission
     if (screenshotUrl || utr || isPaid) {
       const payId = `pay_${Date.now()}`
-      const newPayment: PaymentSubmission = {
+      newPayment = {
         id: payId,
         tournamentId: tourney.id,
         tournamentName: tourney.name,
@@ -3774,6 +3995,74 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
     if (isInstantVerified) {
       tourney.registeredTeamsCount += 1
       tourney.teams += 1
+    }
+
+    // Persist registered team & payment to PostgreSQL
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.registeredTeam.upsert({
+          where: { id: newTeam.id },
+          update: {
+            name: newTeam.name,
+            captainName: newTeam.captainName,
+            captainEmail: newTeam.captainEmail,
+            captainPhone: newTeam.captainPhone,
+            captainIgn: newTeam.captainIgn,
+            players: JSON.stringify(newTeam.players),
+            status: newTeam.status,
+            utr: newTeam.utr || null,
+            paymentProofUrl: newTeam.paymentProofUrl || null,
+            experience: newTeam.experience || null,
+            achievements: newTeam.achievements || null,
+          },
+          create: {
+            id: newTeam.id,
+            tournamentId: newTeam.tournamentId,
+            name: newTeam.name,
+            captainName: newTeam.captainName,
+            captainEmail: newTeam.captainEmail,
+            captainPhone: newTeam.captainPhone,
+            captainIgn: newTeam.captainIgn,
+            players: JSON.stringify(newTeam.players),
+            status: newTeam.status,
+            utr: newTeam.utr || null,
+            paymentProofUrl: newTeam.paymentProofUrl || null,
+            experience: newTeam.experience || null,
+            achievements: newTeam.achievements || null,
+          },
+        })
+
+        if (newPayment) {
+          await prisma.paymentSubmission.upsert({
+            where: { id: newPayment.id },
+            update: {
+              status: newPayment.status,
+              utr: newPayment.utr,
+              screenshotUrl: newPayment.screenshotUrl || null,
+            },
+            create: {
+              id: newPayment.id,
+              tournamentId: newPayment.tournamentId,
+              tournamentName: newPayment.tournamentName,
+              teamId: newPayment.teamId,
+              teamName: newPayment.teamName,
+              captainName: newPayment.captainName,
+              amount: newPayment.amount,
+              utr: newPayment.utr,
+              screenshotUrl: newPayment.screenshotUrl || null,
+              status: newPayment.status,
+            },
+          })
+        }
+
+        await prisma.tournament.updateMany({
+          where: { id: tourney.id },
+          data: { registeredTeamsCount: tourney.registeredTeamsCount, teams: tourney.registeredTeamsCount },
+        })
+        console.log(`[Database] Persisted team '${newTeam.name}' to PostgreSQL.`)
+      } catch (dbErr) {
+        console.error('[Database] Notice saving team to DB:', dbErr)
+      }
     }
 
     return res.status(201).json({
@@ -4148,6 +4437,48 @@ const handleGenerateBidderCredentials = (req: Request, res: Response) => {
         USERS.push(userRec)
       }
 
+      if (isDatabaseConfigured) {
+        prisma.ephemeralAuctionBidder.upsert({
+          where: { id: bidder.id },
+          update: {
+            teamName: bidder.teamName,
+            loginCode: bidder.loginCode,
+            passkey: bidder.passkey,
+            allocatedPurse: bidder.allocatedPurse,
+            status: 'active',
+          },
+          create: {
+            id: bidder.id,
+            auctionId: bidder.auctionId,
+            teamName: bidder.teamName,
+            loginCode: bidder.loginCode,
+            passkey: bidder.passkey,
+            allocatedPurse: bidder.allocatedPurse,
+            spentAmount: 0,
+            status: 'active',
+          },
+        }).catch(() => {})
+
+        prisma.user.upsert({
+          where: { email: loginCode },
+          update: {
+            name: `${teamName} (Franchise Bidder)`,
+            role: 'ambassador',
+            password: passkey,
+            organizationName: teamName,
+          },
+          create: {
+            id: bidder.id,
+            name: `${teamName} (Franchise Bidder)`,
+            email: loginCode,
+            role: 'ambassador',
+            password: passkey,
+            organizationName: teamName,
+            status: 'active',
+          },
+        }).catch(() => {})
+      }
+
       generated.push(bidder)
     }
 
@@ -4176,6 +4507,11 @@ app.post('/api/auctions/:id/finalize', (req: Request, res: Response) => {
 
     // Permanently purge from USERS
     USERS = USERS.filter((u) => !(u.isEphemeralAuctionBidder && u.auctionId === id))
+
+    if (isDatabaseConfigured) {
+      prisma.ephemeralAuctionBidder.deleteMany({ where: { auctionId: id } }).catch(() => {})
+      prisma.user.deleteMany({ where: { email: { endsWith: '@auction.rdk', mode: 'insensitive' } } }).catch(() => {})
+    }
 
     return res.json({
       success: true,
@@ -4344,8 +4680,7 @@ const handlePlaceBid = (req: Request, res: Response) => {
 app.post('/api/auctions/:id/bid', requireAuctionBiddingAccess, handlePlaceBid)
 app.post('/api/auctions/:id/bids', requireAuctionBiddingAccess, handlePlaceBid)
 
-// Auction Player Status & Bid Updates (Sold / Unsold / On Hammer)
-app.patch('/api/auctions/:id/players/:playerId', (req: Request, res: Response) => {
+app.patch('/api/auctions/:id/players/:playerId', async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id)
     const playerId = String(req.params.playerId)
@@ -4361,6 +4696,8 @@ app.patch('/api/auctions/:id/players/:playerId', (req: Request, res: Response) =
     if (status) player.status = status
     if (soldPrice !== undefined) player.soldPrice = Number(soldPrice)
     if (soldToTeam !== undefined) player.soldToTeam = soldToTeam
+
+    let matchedTeam: RegisteredTeam | undefined
 
     // If sold, deduct from bidder purse and update live auction state
     if (status === 'sold' && soldToTeam && soldPrice) {
@@ -4378,7 +4715,7 @@ app.patch('/api/auctions/:id/players/:playerId', (req: Request, res: Response) =
       }
 
       // Sync into REGISTERED_TEAMS squad roster
-      let matchedTeam = REGISTERED_TEAMS.find(
+      matchedTeam = REGISTERED_TEAMS.find(
         (t) => (t.tournamentId === id || t.tournamentId === player.tournamentId) && t.name.toLowerCase().trim() === soldToTeam.toLowerCase().trim()
       )
       if (!matchedTeam) {
@@ -4417,6 +4754,53 @@ app.patch('/api/auctions/:id/players/:playerId', (req: Request, res: Response) =
         actorRole: req.user?.role,
         details: `Player "${player.ign}" sold to franchise "${soldToTeam}" for ₹${Number(soldPrice).toLocaleString()}.`,
       })
+    }
+
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.auctionPlayer.update({
+          where: { id: player.id },
+          data: {
+            status: player.status,
+            soldPrice: player.soldPrice || null,
+            soldToTeam: player.soldToTeam || null,
+          },
+        }).catch(() => {})
+
+        if (status === 'sold' && soldToTeam && soldPrice) {
+          const bidder = EPHEMERAL_BIDDERS.find(
+            (b) => b.auctionId === id && b.teamName.toLowerCase() === soldToTeam.toLowerCase()
+          )
+          if (bidder) {
+            await prisma.ephemeralAuctionBidder.updateMany({
+              where: {
+                auctionId: id,
+                teamName: { equals: soldToTeam, mode: 'insensitive' as const },
+              },
+              data: { allocatedPurse: bidder.allocatedPurse },
+            }).catch(() => {})
+          }
+          if (matchedTeam) {
+            await prisma.registeredTeam.upsert({
+              where: { id: matchedTeam.id },
+              update: { players: JSON.stringify(matchedTeam.players) },
+              create: {
+                id: matchedTeam.id,
+                tournamentId: matchedTeam.tournamentId,
+                name: matchedTeam.name,
+                captainName: matchedTeam.captainName,
+                captainEmail: matchedTeam.captainEmail,
+                captainPhone: matchedTeam.captainPhone,
+                captainIgn: matchedTeam.captainIgn,
+                players: JSON.stringify(matchedTeam.players),
+                status: 'verified',
+              },
+            }).catch(() => {})
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[Database] Notice updating auction player in DB:', dbErr)
+      }
     }
 
     return res.json({
@@ -4524,6 +4908,32 @@ const handleReverseSold = (req: Request, res: Response) => {
           },
         })
         .catch((err) => console.error('[Database] Failed to persist auction reversal:', err))
+
+      prisma.auctionPlayer.update({
+        where: { id: player.id },
+        data: {
+          status: 'available',
+          soldPrice: null,
+          soldToTeam: null,
+        },
+      }).catch((err) => console.error('[Database] Failed to update player status in DB:', err))
+
+      if (bidder) {
+        prisma.ephemeralAuctionBidder.updateMany({
+          where: {
+            auctionId: id,
+            teamName: { equals: previousTeam, mode: 'insensitive' as const },
+          },
+          data: { allocatedPurse: bidder.allocatedPurse },
+        }).catch((err) => console.error('[Database] Failed to restore bidder purse in DB:', err))
+      }
+
+      if (prevTeam) {
+        prisma.registeredTeam.update({
+          where: { id: prevTeam.id },
+          data: { players: JSON.stringify(prevTeam.players) },
+        }).catch((err) => console.error('[Database] Failed to update team roster in DB:', err))
+      }
     }
 
     return res.json({
@@ -4956,6 +5366,33 @@ app.post('/api/tournaments/:id/payment', (req: Request, res: Response) => {
       if (utr) team.utr = utr
     }
 
+    if (isDatabaseConfigured) {
+      prisma.paymentSubmission.create({
+        data: {
+          id: newPayment.id,
+          tournamentId: newPayment.tournamentId,
+          tournamentName: newPayment.tournamentName,
+          teamId: newPayment.teamId,
+          teamName: newPayment.teamName,
+          captainName: newPayment.captainName,
+          amount: newPayment.amount,
+          utr: newPayment.utr,
+          screenshotUrl: newPayment.screenshotUrl || null,
+          status: newPayment.status,
+        },
+      }).catch((err) => console.error('[Database] Notice saving payment proof in DB:', err))
+
+      if (team) {
+        prisma.registeredTeam.update({
+          where: { id: team.id },
+          data: {
+            paymentProofUrl: team.paymentProofUrl || null,
+            utr: team.utr || null,
+          },
+        }).catch((err) => console.error('[Database] Notice updating team payment proof in DB:', err))
+      }
+    }
+
     return res.status(201).json({ success: true, payment: newPayment })
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to submit payment proof' })
@@ -4992,6 +5429,31 @@ const handleVerifyPayment = (req: Request, res: Response) => {
     if (tourney && status === 'approved') {
       tourney.registeredTeamsCount = REGISTERED_TEAMS.filter((t) => t.tournamentId === tourney.id && t.status === 'verified').length
       tourney.teams = tourney.registeredTeamsCount
+    }
+
+    if (isDatabaseConfigured) {
+      prisma.paymentSubmission.update({
+        where: { id: pay.id },
+        data: {
+          status: pay.status,
+          verifiedAt: new Date(),
+          rejectionReason: pay.rejectionReason || null,
+        },
+      }).catch((err) => console.error('[Database] Notice updating payment in DB:', err))
+
+      if (team) {
+        prisma.registeredTeam.update({
+          where: { id: team.id },
+          data: { status: team.status },
+        }).catch((err) => console.error('[Database] Notice updating team status in DB:', err))
+      }
+
+      if (tourney && status === 'approved') {
+        prisma.tournament.updateMany({
+          where: { id: tourney.id },
+          data: { registeredTeamsCount: tourney.registeredTeamsCount, teams: tourney.teams },
+        }).catch((err) => console.error('[Database] Notice updating tournament teams in DB:', err))
+      }
     }
 
     return res.json({
@@ -5451,32 +5913,40 @@ async function initDatabase() {
 
     const dbTourneys = await prisma.tournament.findMany()
     if (dbTourneys.length > 0) {
-      TOURNAMENTS = dbTourneys.map((t) => ({
-        ...t,
-        creatorId: t.creatorId || undefined,
-        creatorAvatar: t.creatorAvatar || undefined,
-        upiId: t.upiId || undefined,
-        upiName: t.upiName || undefined,
-        upiQrUrl: t.upiQrUrl || undefined,
-        rules: t.rules || undefined,
-        roomId: t.roomId || undefined,
-        roomPassword: t.roomPassword || undefined,
-        streamUrl: t.streamUrl || undefined,
-        streamTitle: t.streamTitle || undefined,
-        scheduledMatchInfo: t.scheduledMatchInfo || undefined,
-        roadmap: (() => {
-          if (!t.roadmap) return undefined
+      TOURNAMENTS = dbTourneys.map((t) => {
+        if ((t as any).pointsTable) {
           try {
-            return typeof t.roadmap === 'string' ? JSON.parse(t.roadmap) : t.roadmap
-          } catch {
-            return undefined
-          }
-        })(),
-        status: t.status as any,
-        streamStatus: t.streamStatus as any,
-        streamPlatform: t.streamPlatform as any,
-      }))
-      console.log(`[Database] Synced ${TOURNAMENTS.length} tournaments from PostgreSQL.`)
+            TOURNAMENT_POINTS_TABLES[t.id] = JSON.parse((t as any).pointsTable)
+          } catch {}
+        }
+        return {
+          ...t,
+          creatorId: t.creatorId || undefined,
+          creatorAvatar: t.creatorAvatar || undefined,
+          upiId: t.upiId || undefined,
+          upiName: t.upiName || undefined,
+          upiQrUrl: t.upiQrUrl || undefined,
+          rules: t.rules || undefined,
+          roomId: t.roomId || undefined,
+          roomPassword: t.roomPassword || undefined,
+          streamUrl: t.streamUrl || undefined,
+          streamTitle: t.streamTitle || undefined,
+          scheduledMatchInfo: t.scheduledMatchInfo || undefined,
+          roadmap: (() => {
+            if (!t.roadmap) return undefined
+            try {
+              return typeof t.roadmap === 'string' ? JSON.parse(t.roadmap) : t.roadmap
+            } catch {
+              return undefined
+            }
+          })(),
+          pointsTable: (t as any).pointsTable || undefined,
+          status: t.status as any,
+          streamStatus: t.streamStatus as any,
+          streamPlatform: t.streamPlatform as any,
+        }
+      })
+      console.log(`[Database] Synced ${TOURNAMENTS.length} tournaments and points tables from PostgreSQL.`)
     }
 
     const dbTeams = await prisma.registeredTeam.findMany()
@@ -5549,6 +6019,52 @@ async function initDatabase() {
         createdAt: b.createdAt.toISOString(),
       }))
       console.log(`[Database] Synced ${EPHEMERAL_BIDDERS.length} ephemeral auction bidders from PostgreSQL.`)
+    }
+
+    const dbPayments = await prisma.paymentSubmission.findMany()
+    if (dbPayments.length > 0) {
+      PAYMENT_SUBMISSIONS = dbPayments.map((p) => ({
+        id: p.id,
+        tournamentId: p.tournamentId,
+        tournamentName: p.tournamentName,
+        teamId: p.teamId,
+        teamName: p.teamName,
+        captainName: p.captainName,
+        amount: p.amount,
+        utr: p.utr,
+        screenshotUrl: p.screenshotUrl || undefined,
+        status: p.status as any,
+        submittedAt: p.submittedAt.toISOString(),
+        verifiedAt: p.verifiedAt ? p.verifiedAt.toISOString() : undefined,
+        rejectionReason: p.rejectionReason || undefined,
+      }))
+      console.log(`[Database] Synced ${PAYMENT_SUBMISSIONS.length} payment submissions from PostgreSQL.`)
+    }
+
+    const dbSettlements = await prisma.platformSettlement.findMany()
+    if (dbSettlements.length > 0) {
+      PLATFORM_SETTLEMENTS = dbSettlements.map((s) => ({
+        id: s.id,
+        tournamentId: s.tournamentId,
+        tournamentName: s.tournamentName,
+        partnerId: s.partnerId,
+        partnerName: s.partnerName,
+        entryFee: s.entryFee,
+        approvedEntries: s.approvedEntries,
+        grossRevenue: s.grossRevenue,
+        rdkFee: s.rdkFee,
+        partnerNet: s.partnerNet,
+        status: s.status as any,
+        utr: s.utr || undefined,
+        screenshotUrl: s.screenshotUrl || undefined,
+        paymentDate: s.paymentDate || undefined,
+        notes: s.notes || undefined,
+        submittedAt: s.submittedAt ? s.submittedAt.toISOString() : undefined,
+        verifiedAt: s.verifiedAt ? s.verifiedAt.toISOString() : undefined,
+        rejectionReason: s.rejectionReason || undefined,
+        createdAt: s.createdAt.toISOString(),
+      }))
+      console.log(`[Database] Synced ${PLATFORM_SETTLEMENTS.length} platform settlements from PostgreSQL.`)
     }
 
     // Sync all user accounts from PostgreSQL into in-memory USERS cache

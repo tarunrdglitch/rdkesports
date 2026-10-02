@@ -75,6 +75,7 @@ model Tournament {
   roomPassword         String?
   roomPublished        Boolean  @default(false)
   roadmap              String?
+  pointsTable          String?
   streamUrl            String?
   streamTitle          String?
   streamStatus         String   @default("offline")
