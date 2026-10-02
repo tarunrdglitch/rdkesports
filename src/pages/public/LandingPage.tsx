@@ -301,14 +301,19 @@ function TournamentCard({ t, index }: { t: Tournament; index: number }) {
     draft:             { label: 'SOON', color: 'text-amber-400 bg-amber-500/14 border-amber-500/35', pulse: false },
     completed:         { label: 'ENDED', color: 'text-muted-foreground bg-muted/60 border-border', pulse: false },
   }
-  const st = statusConfig[t.status] ?? statusConfig.completed
-  const fill = Math.min(100, (t.teams / t.maxTeams) * 100)
-  const fb = getFormatBadge(t.format)
-
   const stLower = String(t.status || '').toLowerCase()
   const isEnded =
-    stLower === 'completed' || stLower === 'finished' || stLower === 'ended' || stLower === 'closed' ||
-    Boolean((t as any).isClosed)
+    stLower === 'completed' ||
+    stLower === 'finished' ||
+    stLower === 'ended' ||
+    stLower === 'closed' ||
+    Boolean((t as any).isClosed) ||
+    Boolean((t as any).closedAt) ||
+    (t.endDate ? new Date(t.endDate).getTime() < Date.now() : false) ||
+    (t.registrationClosing ? new Date(t.registrationClosing).getTime() < Date.now() : false)
+  const st = isEnded ? statusConfig.completed : (statusConfig[stLower] ?? statusConfig.completed)
+  const fill = Math.min(100, (t.teams / t.maxTeams) * 100)
+  const fb = getFormatBadge(t.format)
 
   return (
     <motion.div
@@ -478,13 +483,24 @@ export default function LandingPage() {
   const filteredTournaments = tournaments.filter((t) => {
     const stLower = String(t.status || '').toLowerCase()
     const isEnded =
-      stLower === 'completed' || stLower === 'finished' || stLower === 'ended' || stLower === 'closed' ||
-      Boolean((t as any).isClosed)
+      stLower === 'completed' ||
+      stLower === 'finished' ||
+      stLower === 'ended' ||
+      stLower === 'closed' ||
+      Boolean((t as any).isClosed) ||
+      Boolean((t as any).closedAt) ||
+      (t.endDate ? new Date(t.endDate).getTime() < Date.now() : false) ||
+      (t.registrationClosing ? new Date(t.registrationClosing).getTime() < Date.now() : false)
 
-    if (activeTab === 'live')      { if (t.status !== 'live') return false }
-    else if (activeTab === 'upcoming') { if (isEnded || !(t.status === 'registration_open' || t.status === 'draft')) return false }
-    else if (activeTab === 'completed') { if (!isEnded) return false }
-    else if (activeTab === 'all')  { if (isEnded) return false }
+    if (activeTab === 'live') {
+      if (stLower !== 'live' || isEnded) return false
+    } else if (activeTab === 'upcoming') {
+      if (isEnded || !(stLower === 'registration_open' || stLower === 'draft' || stLower === 'upcoming')) return false
+    } else if (activeTab === 'completed') {
+      if (!isEnded) return false
+    } else if (activeTab === 'all') {
+      if (isEnded) return false
+    }
 
     if (formatFilter === 'auction')   return t.format === 'Auction Tournament' || t.format.toLowerCase().includes('auction')
     if (formatFilter === 'br_squad')  return t.format === 'BR Squad' || t.format === 'Battle Royale'

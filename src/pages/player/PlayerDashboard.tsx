@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Gamepad2,
   Users,
   Trophy,
-  QrCode,
   ArrowRight,
   ShieldCheck,
   CheckCircle2,
@@ -16,12 +15,14 @@ import {
   Star,
   ChevronRight,
   Copy,
+  Clock,
+  Sparkles,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { useAuth } from '@/stores/authStore'
-import { tournamentService } from '@/services/api/tournamentService'
+import { tournamentService, type PlayerTournamentData } from '@/services/api/tournamentService'
 import type { Tournament } from '@/types'
 
 const fadeUp = (delay = 0) => ({
@@ -36,24 +37,134 @@ const cardHover = {
 
 export default function PlayerDashboard() {
   const { user } = useAuth()
-  const [tournaments, setTournaments] = useState<Tournament[]>([])
+  const [allTournaments, setAllTournaments] = useState<Tournament[]>([])
+  const [playerData, setPlayerData] = useState<PlayerTournamentData>({
+    tournaments: [],
+    count: 0,
+    paymentStatus: 'None',
+    activeMatch: null,
+  })
   const [copied, setCopied] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    tournamentService.list().then(setTournaments)
-  }, [])
+    let isMounted = true
+
+    const loadData = async () => {
+      setIsLoading(true)
+      try {
+        const [tourneys, pData] = await Promise.all([
+          tournamentService.list(),
+          tournamentService.getMyTournaments({ email: user?.email, ign: user?.ign }),
+        ])
+
+        if (!isMounted) return
+        setAllTournaments(tourneys)
+
+        // Check local storage for any client-side registered tournaments
+        const localRegisteredIds = new Set<string>()
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i)
+            if (key && key.startsWith('rdk_registered_')) {
+              localRegisteredIds.add(key.replace('rdk_registered_', ''))
+            }
+          }
+        } catch {}
+
+        if (user?.tournamentId) {
+          localRegisteredIds.add(user.tournamentId)
+        }
+
+        // Merge server and local registrations
+        const combinedTourneys = [...pData.tournaments]
+        localRegisteredIds.forEach((id) => {
+          if (!combinedTourneys.some((t) => t.id === id)) {
+            const match = tourneys.find((t) => t.id === id)
+            if (match) combinedTourneys.push(match)
+          }
+        })
+
+        // Determine active match with published room info
+        let activeMatch = pData.activeMatch
+        if (!activeMatch) {
+          const liveOrRoomTourney = combinedTourneys.find(
+            (t) => (t.status === 'live' || t.roomPublished) && (t.roomId || t.scheduledMatchInfo)
+          )
+          if (liveOrRoomTourney) {
+            activeMatch = {
+              tournamentId: liveOrRoomTourney.id,
+              tournamentName: liveOrRoomTourney.name,
+              game: liveOrRoomTourney.game,
+              roomId: liveOrRoomTourney.roomPublished ? liveOrRoomTourney.roomId : undefined,
+              roomPassword: liveOrRoomTourney.roomPublished ? liveOrRoomTourney.roomPassword : undefined,
+              status: liveOrRoomTourney.status,
+              scheduledMatchInfo: liveOrRoomTourney.scheduledMatchInfo || 'Match in progress',
+            }
+          }
+        }
+
+        const totalCount = combinedTourneys.length
+        let paymentStatus = pData.paymentStatus
+        if (totalCount === 0) {
+          paymentStatus = 'None'
+        } else if (paymentStatus === 'None' && totalCount > 0) {
+          paymentStatus = 'Verified'
+        }
+
+        setPlayerData({
+          tournaments: combinedTourneys,
+          count: totalCount,
+          paymentStatus,
+          activeMatch,
+        })
+      } catch (err) {
+        console.error('Failed to load player dashboard data:', err)
+      } finally {
+        if (isMounted) setIsLoading(false)
+      }
+    }
+
+    loadData()
+    return () => {
+      isMounted = false
+    }
+  }, [user?.email, user?.ign, user?.tournamentId])
+
+  // Filter only strictly ACTIVE (non-finished, non-closed) tournaments for the featured section
+  const activeFeaturedTournaments = useMemo(() => {
+    return allTournaments.filter((t) => {
+      const st = String(t.status || '').toLowerCase()
+      const isEnded =
+        st === 'completed' ||
+        st === 'finished' ||
+        st === 'closed' ||
+        st === 'ended' ||
+        Boolean((t as any).isClosed) ||
+        Boolean((t as any).closedAt) ||
+        (t.endDate ? new Date(t.endDate).getTime() < Date.now() : false) ||
+        (t.registrationClosing ? new Date(t.registrationClosing).getTime() < Date.now() : false)
+
+      return !isEnded && (st === 'registration_open' || st === 'live' || st === 'upcoming')
+    })
+  }, [allTournaments])
 
   const handleCopyRoom = () => {
-    navigator.clipboard.writeText('Room ID: 8492011 | Pass: rdk2026 | Map: Bermuda').catch(() => {})
+    if (!playerData.activeMatch) return
+    const text = `Room ID: ${playerData.activeMatch.roomId || 'TBA'} | Pass: ${playerData.activeMatch.roomPassword || 'TBA'} | ${playerData.activeMatch.tournamentName}`
+    navigator.clipboard.writeText(text).catch(() => {})
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const registeredCount = playerData.count
+  const isNewUser = registeredCount === 0
 
   return (
     <div className="space-y-7 page-enter max-w-6xl">
       <PageHeader
         title={`Welcome back, ${user?.name?.split(' ')[0] || 'Gamer'}!`}
-        description={`IGN: ${user?.ign || 'Active Competitor'} · Competitive Player`}
+        description={`IGN: ${user?.ign || 'Active Competitor'} · Competitive Player Account`}
         badge="Player Dashboard"
         actions={
           <Link to="/#tournaments" className="btn-primary cursor-pointer">
@@ -63,84 +174,128 @@ export default function PlayerDashboard() {
         }
       />
 
-      {/* ── Stat Cards ── */}
+      {/* ── Stat Cards (Live Dynamic Data) ── */}
       <motion.div {...fadeUp(0)} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           label="My Active Squad"
-          value="Free Agent"
-          hint="Ready for tournament entry"
+          value={user?.teamName || 'Free Agent'}
+          hint={user?.teamName ? 'Registered Clan / Squad' : 'Ready for tournament entry'}
           icon={<Users className="size-4" />}
           accent="white"
         />
         <StatCard
           label="My Tournaments"
-          value="2"
-          hint="1 match scheduled today"
+          value={String(registeredCount)}
+          hint={
+            registeredCount === 0
+              ? 'No active tournament entries'
+              : `${registeredCount} championship${registeredCount > 1 ? 's' : ''} enrolled`
+          }
           icon={<Gamepad2 className="size-4" />}
-          accent="gold"
+          accent={registeredCount > 0 ? 'gold' : 'white'}
         />
         <StatCard
           label="Payment Status"
-          value="Verified"
-          hint="Clashers Championship 2026"
+          value={isNewUser ? 'None' : playerData.paymentStatus}
+          hint={
+            isNewUser
+              ? 'No entry fees submitted'
+              : playerData.tournaments[0]?.name || 'Active tournament verification'
+          }
           icon={<CheckCircle2 className="size-4" />}
-          accent="success"
+          accent={isNewUser ? 'white' : playerData.paymentStatus === 'Verified' ? 'success' : 'gold'}
         />
       </motion.div>
 
-      {/* ── Live Match Room Alert ── */}
+      {/* ── Live Match Room Alert OR Get Started Callout ── */}
       <motion.div {...fadeUp(0.1)}>
-        <div
-          className="rdk-card animate-border-glow"
-          style={{ background: 'linear-gradient(135deg, rgba(245,26,26,0.05) 0%, rgba(245,26,26,0.02) 100%)' }}
-        >
-          {/* Top accent line */}
-          <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-primary/60 to-transparent rounded-t-xl" />
+        {playerData.activeMatch && playerData.activeMatch.roomId ? (
+          <div
+            className="rdk-card animate-border-glow"
+            style={{ background: 'linear-gradient(135deg, rgba(245,26,26,0.06) 0%, rgba(245,26,26,0.02) 100%)' }}
+          >
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-primary/70 to-transparent rounded-t-xl" />
 
-          <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="size-12 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary shrink-0">
+                  <ShieldCheck className="size-6 text-primary" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="font-heading text-base font-bold text-foreground">
+                      Live Match: {playerData.activeMatch.tournamentName}
+                    </span>
+                    <StatusBadge status={playerData.activeMatch.status as any || 'live'} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-xs font-body mt-1">
+                    <span className="text-muted-foreground">Room ID:</span>
+                    <code className="font-mono text-foreground font-bold bg-surface px-2.5 py-0.5 rounded-md text-[12px] border border-border">
+                      {playerData.activeMatch.roomId}
+                    </code>
+                    <span className="text-muted-foreground">Pass:</span>
+                    <code className="font-mono text-foreground font-bold bg-surface px-2.5 py-0.5 rounded-md text-[12px] border border-border">
+                      {playerData.activeMatch.roomPassword || 'None'}
+                    </code>
+                    <span className="text-muted-foreground">
+                      Status: <span className="text-emerald-400 font-semibold">{playerData.activeMatch.scheduledMatchInfo}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={handleCopyRoom}
+                className={`btn-primary shrink-0 cursor-pointer transition-all ${
+                  copied ? '!bg-emerald-600 !border-emerald-500' : ''
+                }`}
+              >
+                {copied ? (
+                  <>
+                    <CheckCircle2 className="size-4" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="size-4" />
+                    Copy Room Info
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="rdk-card border border-border/70 p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5"
+            style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.02) 0%, rgba(245,26,26,0.03) 100%)' }}
+          >
             <div className="flex items-start sm:items-center gap-4">
-              {/* Icon */}
-              <div className="size-12 rounded-2xl bg-primary/12 border border-primary/25 flex items-center justify-center text-primary shrink-0">
-                <ShieldCheck className="size-6" />
+              <div className="size-12 rounded-2xl bg-surface border border-border flex items-center justify-center text-primary shrink-0 shadow-sm">
+                <Swords className="size-6 text-primary" />
               </div>
               <div>
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="font-heading text-base font-bold text-foreground">
-                    Next Match: Clashers Championship — Round 2
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-heading text-base font-bold text-foreground">
+                    {registeredCount > 0
+                      ? 'No Live Match Lobbies Right Now'
+                      : 'Welcome to RDK Esports Arena'}
+                  </h3>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                    {registeredCount > 0 ? 'Standby' : 'Ready to Join'}
                   </span>
-                  <StatusBadge status="live" />
                 </div>
-                <div className="flex flex-wrap items-center gap-3 text-xs font-body mt-1">
-                  <span className="text-muted-foreground">Room ID:</span>
-                  <code className="font-mono text-foreground font-bold bg-surface px-2 py-0.5 rounded-md text-[11px] border border-border">
-                    8492011
-                  </code>
-                  <span className="text-muted-foreground">Pass:</span>
-                  <code className="font-mono text-foreground font-bold bg-surface px-2 py-0.5 rounded-md text-[11px] border border-border">
-                    rdk2026
-                  </code>
-                  <span className="text-muted-foreground">Map: <span className="text-foreground font-semibold">Bermuda</span></span>
-                </div>
+                <p className="text-xs text-muted-foreground font-body max-w-xl leading-relaxed">
+                  {registeredCount > 0
+                    ? 'Your registrations are active. Match room credentials will appear here 15 minutes before match start.'
+                    : 'You are not enrolled in any tournaments yet. Join open championships to secure your squad slot and receive custom room credentials.'}
+                </p>
               </div>
             </div>
-            <button
-              onClick={handleCopyRoom}
-              className={`btn-primary shrink-0 cursor-pointer transition-all ${copied ? '!bg-emerald-600 !border-emerald-500' : ''}`}
-            >
-              {copied ? (
-                <>
-                  <CheckCircle2 className="size-4" />
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="size-4" />
-                  Copy Room Info
-                </>
-              )}
-            </button>
+            <Link to="/#tournaments" className="btn-primary shrink-0 whitespace-nowrap cursor-pointer">
+              <Trophy className="size-4" />
+              Explore Open Tournaments
+            </Link>
           </div>
-        </div>
+        )}
       </motion.div>
 
       {/* ── Quick Actions ── */}
@@ -174,7 +329,7 @@ export default function PlayerDashboard() {
               bg: 'bg-purple-500/08',
               border: 'border-purple-500/18',
             },
-          ].map((action, i) => (
+          ].map((action) => (
             <motion.div key={action.title} {...cardHover}>
               <Link
                 to={action.href}
@@ -194,7 +349,7 @@ export default function PlayerDashboard() {
         </div>
       </motion.div>
 
-      {/* ── Featured Tournaments ── */}
+      {/* ── Featured Active Tournaments ── */}
       <motion.div {...fadeUp(0.25)}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -202,7 +357,7 @@ export default function PlayerDashboard() {
               <Swords className="size-3 text-primary" />
             </div>
             <h2 className="font-heading text-base font-bold tracking-wide text-foreground">
-              Featured Tournaments
+              Featured Active Tournaments
             </h2>
           </div>
           <Link
@@ -213,24 +368,27 @@ export default function PlayerDashboard() {
           </Link>
         </div>
 
-        {tournaments.length === 0 ? (
+        {activeFeaturedTournaments.length === 0 ? (
           <div className="rdk-card-flat p-10 text-center">
             <div className="size-14 rounded-2xl bg-primary/08 border border-primary/15 flex items-center justify-center mx-auto mb-4">
               <Zap className="size-6 text-primary/40" />
             </div>
-            <p className="font-heading text-base font-bold text-foreground">No tournaments available yet</p>
-            <p className="text-xs text-muted-foreground mt-1 font-body">Check back soon for new championships!</p>
+            <p className="font-heading text-base font-bold text-foreground">No active tournaments open for entry right now</p>
+            <p className="text-xs text-muted-foreground mt-1 font-body">Finished tournaments are archived. Check back soon for new open championships!</p>
+            <Link to="/#tournaments" className="btn-ghost text-xs gap-1.5 mt-4 inline-flex">
+              View All Tournaments & Results <ChevronRight className="size-3" />
+            </Link>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {tournaments.slice(0, 2).map((t, idx) => (
+            {activeFeaturedTournaments.slice(0, 2).map((t, idx) => (
               <motion.div
                 key={t.id}
                 className="tournament-card p-5 flex flex-col justify-between gap-4 cursor-default"
                 {...fadeUp(0.08 * idx)}
                 whileHover={{ y: -3 }}
               >
-                {/* Top: game badge + date */}
+                {/* Top: game badge + status */}
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-3">
                     <span className="badge-red">{t.game}</span>
@@ -265,9 +423,9 @@ export default function PlayerDashboard() {
                   </div>
                   <Link
                     to={`/tournaments/${t.id}`}
-                    className="btn-ghost text-xs gap-1.5 cursor-pointer"
+                    className="btn-primary text-xs gap-1.5 cursor-pointer py-1.5 px-3.5"
                   >
-                    View Details <ChevronRight className="size-3" />
+                    View & Register <ChevronRight className="size-3" />
                   </Link>
                 </div>
               </motion.div>

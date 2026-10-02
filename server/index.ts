@@ -1473,7 +1473,10 @@ app.get('/api/tournaments', (req: Request, res: Response) => {
   let list = [...TOURNAMENTS]
   if (creatorId) list = list.filter((t) => t.creatorId === creatorId)
   if (game) list = list.filter((t) => t.game.toLowerCase() === String(game).toLowerCase())
-  if (status) list = list.filter((t) => t.status === status)
+  if (status) {
+    const sLower = String(status).toLowerCase()
+    list = list.filter((t) => String(t.status || '').toLowerCase() === sLower)
+  }
   res.json(list)
 })
 
@@ -1554,7 +1557,7 @@ app.post('/api/tournaments', requirePartnerOrAdmin, (req: Request, res: Response
       banner: bannerUrl,
       teams: 0,
       maxTeams: Number(maxTeams) || 32,
-      status: 'REGISTRATION_OPEN',
+      status: 'registration_open',
       settlementStatus: 'PENDING',
       isClosed: false,
       startDate: startDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
@@ -2782,6 +2785,122 @@ app.delete('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, async (r
   }
 })
 
+// ─────────────────────────────────────────────────────────────────
+// Get Authenticated Player's Registered Tournaments
+// ─────────────────────────────────────────────────────────────────
+app.get('/api/player/my-tournaments', (req: Request, res: Response) => {
+  try {
+    const token =
+      req.cookies?.session_token ||
+      (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.split(' ')[1]
+        : null)
+
+    let userId = ''
+    let userEmail = ''
+    let userIgn = ''
+
+    if (token) {
+      try {
+        const payload = jwt.verify(token, JWT_SECRET) as any
+        userId = String(payload.id || '')
+        userEmail = String(payload.email || '').toLowerCase().trim()
+        userIgn = String(payload.ign || '').toLowerCase().trim()
+      } catch {}
+    }
+
+    if (!userEmail && req.query.email) {
+      userEmail = String(req.query.email).toLowerCase().trim()
+    }
+    if (!userIgn && req.query.ign) {
+      userIgn = String(req.query.ign).toLowerCase().trim()
+    }
+
+    // If new user or no matching identity found, return 0 registrations
+    if (!userId && !userEmail && !userIgn) {
+      return res.json({
+        tournaments: [],
+        count: 0,
+        paymentStatus: 'None',
+        activeMatch: null,
+      })
+    }
+
+    // Find registered teams matching this player
+    const userTeams = REGISTERED_TEAMS.filter((t) => {
+      const cEmail = String(t.captainEmail || '').toLowerCase().trim()
+      const cIgn = String(t.captainIgn || '').toLowerCase().trim()
+      if (userEmail && cEmail === userEmail) return true
+      if (userIgn && cIgn === userIgn) return true
+      if (Array.isArray(t.players)) {
+        return t.players.some((p: any) => {
+          const pIgn = String(p.ign || p.playerName || '').toLowerCase().trim()
+          return userIgn && pIgn === userIgn
+        })
+      }
+      return false
+    })
+
+    // Find auction registrations matching this player
+    const userAuctions = AUCTION_PLAYERS.filter((p) => {
+      const pEmail = String(p.email || '').toLowerCase().trim()
+      const pIgn = String(p.ign || '').toLowerCase().trim()
+      if (userEmail && pEmail === userEmail) return true
+      if (userIgn && pIgn === userIgn) return true
+      return false
+    })
+
+    const registeredTournamentIds = new Set([
+      ...userTeams.map((t) => t.tournamentId),
+      ...userAuctions.map((p) => p.auctionId || p.tournamentId).filter(Boolean),
+    ])
+
+    const myTourneys = TOURNAMENTS.filter((t) => registeredTournamentIds.has(t.id))
+
+    // Determine overall payment status across registrations
+    let overallPaymentStatus = 'None'
+    if (userTeams.length > 0 || userAuctions.length > 0) {
+      const hasVerified =
+        userTeams.some((t) => t.status === 'verified') ||
+        userAuctions.some((p) => p.paymentStatus === 'verified')
+      const hasPending =
+        userTeams.some((t) => t.status === 'pending') ||
+        userAuctions.some((p) => p.paymentStatus === 'pending')
+
+      if (hasVerified) overallPaymentStatus = 'Verified'
+      else if (hasPending) overallPaymentStatus = 'Pending Verification'
+      else overallPaymentStatus = 'Not Paid'
+    }
+
+    // Check if there is an active/live match with published credentials
+    let activeMatch: any = null
+    const liveOrUpcomingWithRoom = myTourneys.find(
+      (t) => (t.status === 'live' || t.roomPublished) && (t.roomId || t.scheduledMatchInfo)
+    )
+
+    if (liveOrUpcomingWithRoom) {
+      activeMatch = {
+        tournamentId: liveOrUpcomingWithRoom.id,
+        tournamentName: liveOrUpcomingWithRoom.name,
+        game: liveOrUpcomingWithRoom.game,
+        roomId: liveOrUpcomingWithRoom.roomPublished ? liveOrUpcomingWithRoom.roomId : undefined,
+        roomPassword: liveOrUpcomingWithRoom.roomPublished ? liveOrUpcomingWithRoom.roomPassword : undefined,
+        status: liveOrUpcomingWithRoom.status,
+        scheduledMatchInfo: liveOrUpcomingWithRoom.scheduledMatchInfo || 'Match in progress',
+      }
+    }
+
+    return res.json({
+      tournaments: myTourneys,
+      count: myTourneys.length,
+      paymentStatus: overallPaymentStatus,
+      activeMatch,
+    })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to fetch player tournaments' })
+  }
+})
+
 // Audience / Team Captain / Auction Candidate Registration for Tournament
 app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
   try {
@@ -2794,17 +2913,30 @@ app.post('/api/tournaments/:id/register', (req: Request, res: Response) => {
     const isAuction = tourney.format === 'Auction Tournament' || req.body.isAuctionRegistration
     const isPaid = tourney.entryFee && !tourney.entryFee.toLowerCase().includes('free')
 
-    // Gatekeeper: Reject registration if tournament is not open or slots are full
+    // Gatekeeper: Reject registration if tournament is closed, ended, or not open
     const statusNormalized = String(tourney.status || '').toLowerCase()
-    const isOpen = statusNormalized === 'registration_open' || statusNormalized === 'upcoming'
+    const isEnded =
+      statusNormalized === 'completed' ||
+      statusNormalized === 'finished' ||
+      statusNormalized === 'closed' ||
+      Boolean(tourney.isClosed) ||
+      Boolean(tourney.closedAt) ||
+      (tourney.endDate ? new Date(tourney.endDate).getTime() < Date.now() : false) ||
+      (tourney.registrationClosing ? new Date(tourney.registrationClosing).getTime() < Date.now() : false)
+
+    if (isEnded) {
+      return res.status(400).json({
+        error: 'Tournament has concluded or registration is closed for this event.',
+      })
+    }
+
+    const isOpen = !isEnded && (statusNormalized === 'registration_open' || statusNormalized === 'upcoming')
     if (!isOpen) {
       return res.status(400).json({
         error:
           statusNormalized === 'live'
             ? 'Tournament is currently live. Registration is closed.'
-            : statusNormalized === 'completed' || statusNormalized === 'closed'
-              ? 'Tournament has concluded. Registration is closed.'
-              : 'Registration is currently closed for this tournament.',
+            : 'Registration is currently closed for this tournament.',
       })
     }
 

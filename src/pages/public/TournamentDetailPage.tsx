@@ -100,6 +100,11 @@ interface Tournament {
   streamTitle?: string
   streamStatus?: 'offline' | 'starting_soon' | 'live'
   scheduledMatchInfo?: string
+  endDate?: string
+  registrationOpening?: string
+  registrationClosing?: string
+  isClosed?: boolean
+  closedAt?: string
 }
 
 interface Team {
@@ -834,11 +839,24 @@ export default function TournamentDetailPage() {
     )
   }
 
+  const stLower = String(tournament.status || '').toLowerCase()
+  const isEnded =
+    stLower === 'completed' ||
+    stLower === 'finished' ||
+    stLower === 'closed' ||
+    stLower === 'ended' ||
+    Boolean(tournament.isClosed) ||
+    Boolean((tournament as any).closedAt) ||
+    (tournament.endDate ? new Date(tournament.endDate).getTime() < Date.now() : false) ||
+    (tournament.registrationClosing ? new Date(tournament.registrationClosing).getTime() < Date.now() : false)
+
+  const isLive = !isEnded && stLower === 'live'
+  const isRegistrationOpen = !isEnded && (stLower === 'registration_open' || stLower === 'upcoming')
   const isSolo = tournament.format === 'BR Solo' || (tournament as any).teamSize === 'Solo' || (tournament as any).playersPerTeam === 1
   const totalEnrolled = isAuction ? Math.max(auctionPlayers.length, tournament.registeredTeamsCount) : tournament.registeredTeamsCount
   const spotsLeft = Math.max(0, tournament.maxTeams - totalEnrolled)
   const isSlotsFull = totalEnrolled >= tournament.maxTeams
-  const canRegister = tournament.status === 'registration_open' && !isSlotsFull
+  const canRegister = isRegistrationOpen && !isSlotsFull
   const isPaid = tournament.entryFee && !tournament.entryFee.toLowerCase().includes('free')
 
   const formatBadge = (() => {
@@ -891,7 +909,7 @@ export default function TournamentDetailPage() {
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-muted/80 text-muted-foreground border border-border">
                 Powered by RDK Technologies
               </span>
-              <StatusBadge status={tournament.status} />
+              <StatusBadge status={isEnded ? 'completed' : isLive ? 'live' : isRegistrationOpen ? 'registration_open' : 'draft'} />
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
                 {tournament.game}
               </span>
@@ -966,7 +984,33 @@ export default function TournamentDetailPage() {
 
               {/* Action Buttons */}
               <div className="space-y-2">
-                {tournament.status === 'registration_open' ? (
+                {isEnded ? (
+                  <button
+                    disabled
+                    className="w-full py-3 rounded-lg font-heading font-black tracking-wide text-xs bg-muted/60 text-muted-foreground border border-border/80 cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="size-4 text-muted-foreground" />
+                    TOURNAMENT CONCLUDED — REGISTRATION CLOSED
+                  </button>
+                ) : isLive ? (
+                  registeredAccess.isAuthorized ? (
+                    <button
+                      onClick={() => setActiveTab('room')}
+                      className="w-full py-3 rounded-lg font-heading font-black tracking-wide text-xs transition-all flex items-center justify-center gap-2 text-background bg-emerald-500 hover:bg-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+                    >
+                      <KeyRound className="size-4" />
+                      MATCH LIVE — VIEW ROOM ID
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setActiveTab('live')}
+                      className="w-full py-2.5 rounded-lg font-bold text-xs bg-red-600 hover:bg-red-500 text-white flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <Radio className="size-4 animate-pulse text-white" />
+                      MATCH LIVE — WATCH STREAM
+                    </button>
+                  )
+                ) : isRegistrationOpen ? (
                   isSlotsFull ? (
                     <button
                       disabled
@@ -985,24 +1029,6 @@ export default function TournamentDetailPage() {
                     >
                       <Trophy className="size-4" />
                       {isAuction ? 'REGISTER AS AUCTION DRAFT CANDIDATE' : 'REGISTER SQUAD NOW'}
-                    </button>
-                  )
-                ) : tournament.status === 'live' ? (
-                  registeredAccess.isAuthorized ? (
-                    <button
-                      onClick={() => setActiveTab('room')}
-                      className="w-full py-3 rounded-lg font-heading font-black tracking-wide text-xs transition-all flex items-center justify-center gap-2 text-background bg-emerald-500 hover:bg-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)]"
-                    >
-                      <KeyRound className="size-4" />
-                      MATCH LIVE — VIEW ROOM ID
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setActiveTab('live')}
-                      className="w-full py-2.5 rounded-lg font-bold text-xs bg-red-600 hover:bg-red-500 text-white flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    >
-                      <Radio className="size-4 animate-pulse text-white" />
-                      MATCH LIVE — WATCH STREAM
                     </button>
                   )
                 ) : (
@@ -2063,11 +2089,13 @@ export default function TournamentDetailPage() {
                       <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-xs flex items-center gap-2">
                         <AlertCircle className="size-4 shrink-0" />
                         <span>
-                          {tournament.status === 'live'
+                          {isEnded
+                            ? 'Tournament has concluded. Registrations are closed.'
+                            : isLive
                             ? 'Tournament is currently live. Registrations are closed.'
-                            : tournament.status === 'completed'
-                            ? 'Tournament has ended. Registrations are closed.'
-                            : `All slots are currently filled (${totalEnrolled}/${tournament.maxTeams}). Registration is closed.`}
+                            : isSlotsFull
+                            ? `All slots are currently filled (${totalEnrolled}/${tournament.maxTeams}). Registration is closed.`
+                            : 'Registration is currently closed for this tournament.'}
                         </span>
                       </div>
                     )}
@@ -2645,7 +2673,9 @@ export default function TournamentDetailPage() {
                           {isSubmitting
                             ? 'Submitting...'
                             : !canRegister
-                            ? tournament.status === 'live'
+                            ? isEnded
+                              ? 'REGISTRATION CLOSED (EVENT CONCLUDED)'
+                              : isLive
                               ? 'REGISTRATION CLOSED (TOURNAMENT LIVE)'
                               : isSlotsFull
                               ? 'REGISTRATION CLOSED (SLOTS FULL)'
