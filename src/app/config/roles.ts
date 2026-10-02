@@ -27,8 +27,6 @@ export const partnerNav: NavItem[] = [
   { label: 'Partner Dashboard', to: '/creator/dashboard', roles: ['super_admin', 'official_partner', 'creator', 'org_owner'] },
   { label: 'My Tournaments', to: '/creator/tournaments', roles: ['super_admin', 'official_partner', 'creator', 'org_owner'] },
   { label: 'Create Tournament', to: '/creator/tournaments/create', roles: ['super_admin', 'official_partner', 'creator', 'org_owner'] },
-  { label: 'Ambassadors & Staff', to: '/creator/ambassadors', roles: ['super_admin', 'official_partner', 'creator', 'org_owner'] },
-  { label: 'Live Bidding & Auctions', to: '/creator/auctions', roles: ['super_admin', 'official_partner', 'creator', 'org_owner'] },
   { label: 'Settlement & Payments', to: '/creator/payments', roles: ['super_admin', 'official_partner', 'creator', 'org_owner'] },
   { label: 'Partner Profile', to: '/creator/profile', roles: ['super_admin', 'official_partner', 'creator', 'org_owner'] },
 ]

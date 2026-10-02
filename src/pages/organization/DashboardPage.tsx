@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Trophy, Plus, ExternalLink, Settings, Trash2,
-  BarChart3, Users, Coins, ShieldCheck, Gamepad2, TrendingUp,
+  BarChart3, Users, Coins, ShieldCheck, Gamepad2, TrendingUp, Gavel,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
@@ -27,7 +27,7 @@ export default function DashboardPage() {
     { label: 'Active Tournaments', value: '0', hint: 'Running now' },
     { label: 'Registered Teams', value: '0', hint: '0 total entries' },
     { label: 'Pending Payments', value: '0', hint: '₹0 to verify' },
-    { label: 'Active Ambassadors', value: '0', hint: '0 assigned' },
+    { label: 'Total Players', value: '0', hint: 'Registered gamers' },
   ])
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -63,7 +63,7 @@ export default function DashboardPage() {
     <div className="space-y-6 max-w-full">
       <PageHeader
         title="Creator & Tournament Overview"
-        description="Monitor championships, credentials, UPI verifications and ambassador activity."
+        description="Monitor championships, match schedules, credentials, and tournament registrations."
         badge="Control Center"
         actions={
           <Link to="/creator/tournaments/create" className="btn-primary">
@@ -175,7 +175,17 @@ export default function DashboardPage() {
                         {t.game}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground font-body text-[11px]">{t.format}</td>
+                    <td className="px-4 py-3 text-muted-foreground font-body text-[11px]">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span>{t.format}</span>
+                        {(t.format === 'Auction Tournament' || t.format?.toLowerCase().includes('auction')) && (
+                          <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-400">
+                            <Gavel className="size-2.5" />
+                            AUCTION
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <span className="font-bold font-body text-foreground tabular-nums">{t.teams}</span>
                       <span className="text-muted-foreground font-body">/{t.maxTeams}</span>
@@ -191,6 +201,16 @@ export default function DashboardPage() {
                           <Settings className="size-3" />
                           Manage
                         </Link>
+                        {(t.format === 'Auction Tournament' || t.format?.toLowerCase().includes('auction')) && (
+                          <Link
+                            to={`/creator/tournaments/${t.id}/manage?tab=auction`}
+                            className="inline-flex items-center gap-1.5 text-[11px] font-bold font-body text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500 hover:text-black px-2.5 py-1.5 rounded-lg transition-all duration-200"
+                            title="Live Auction Stage"
+                          >
+                            <Gavel className="size-3" />
+                            Auction Stage
+                          </Link>
+                        )}
                         <Link
                           to={`/tournaments/${t.id}`}
                           target="_blank"

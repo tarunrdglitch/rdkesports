@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Trophy,
@@ -202,9 +202,11 @@ export default function TournamentManagePage() {
   type TabType = 'teams' | 'room' | 'live' | 'roadmap' | 'payments' | 'auction' | 'ambassadors' | 'settlement' | 'points'
 
   const [tournament, setTournament] = useState<Tournament | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabFromUrl = searchParams.get('tab') as TabType | null
   const [teams, setTeams] = useState<Team[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
-  const [activeTab, setActiveTab] = useState<TabType>('teams')
+  const [activeTab, setActiveTab] = useState<TabType>(tabFromUrl || 'teams')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -536,8 +538,10 @@ export default function TournamentManagePage() {
       const isAuctionTournament = t.format === 'Auction Tournament' || t.format?.toLowerCase().includes('auction')
       const isPaidTournament = parseFee(t.entryFee) > 0 && !String(t.entryFee || '').toLowerCase().includes('free')
 
-      // Only show applicable tab as default
-      if (isAuctionTournament) {
+      // Only show applicable tab as default if not already set from URL
+      if (tabFromUrl) {
+        setActiveTab(tabFromUrl)
+      } else if (isAuctionTournament) {
         setActiveTab('auction')
       } else if (isPaidTournament) {
         setActiveTab('payments')

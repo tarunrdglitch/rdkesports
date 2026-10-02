@@ -1743,11 +1743,12 @@ app.get('/api/tournaments/stats', (_req: Request, res: Response) => {
   const activeCount = TOURNAMENTS.filter((t) => t.status === 'live' || t.status === 'registration_open').length
   const totalTeams = REGISTERED_TEAMS.length
   const pendingPays = PAYMENT_SUBMISSIONS.filter((p) => p.status === 'pending').length
+  const totalPlayers = REGISTERED_TEAMS.reduce((acc, t) => acc + (t.players ? t.players.length : 4), 0)
   const dynamicStats = [
     { label: 'Active tournaments', value: String(activeCount), hint: `${TOURNAMENTS.filter(t => t.status === 'live').length} live now` },
     { label: 'Registered teams', value: String(totalTeams), hint: `across all events` },
     { label: 'Pending payments', value: String(pendingPays), hint: `${pendingPays} to verify`, warn: pendingPays > 0 },
-    { label: 'Active ambassadors', value: String(AMBASSADORS.length), hint: 'created by creators' },
+    { label: 'Total Players', value: String(totalPlayers), hint: 'registered gamers' },
   ]
   res.json(dynamicStats)
 })
