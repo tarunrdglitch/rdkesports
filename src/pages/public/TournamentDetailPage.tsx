@@ -1589,7 +1589,7 @@ export default function TournamentDetailPage() {
                     onClick={() => setIsRegisterOpen(true)}
                     className="px-3 py-1.5 text-xs font-bold rounded bg-primary text-background hover:bg-primary/90 transition-colors shadow-sm"
                   >
-                    {isAuction ? 'Register Draft Candidate' : 'Register Squad'}
+                    {isAuction ? 'Register Draft Candidate' : 'Register'}
                   </button>
                 ) : isSlotsFull ? (
                   <span className="px-2.5 py-1 text-[11px] font-bold rounded bg-muted text-muted-foreground border border-border">

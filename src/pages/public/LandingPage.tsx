@@ -300,6 +300,29 @@ function getFormatBadge(fmt: string) {
   return { label: fmt, color: 'bg-primary/10 text-primary border-primary/20' }
 }
 
+function formatOverallPrizePool(prizePool: string | undefined): string {
+  if (!prizePool) return '₹0'
+  const trimmed = prizePool.trim()
+  if (!trimmed.includes(':') && !trimmed.includes('|')) {
+    const rawNum = parseInt(trimmed.replace(/[^0-9]/g, ''), 10)
+    if (!isNaN(rawNum)) return `₹${rawNum.toLocaleString('en-IN')}`
+    return trimmed.startsWith('₹') ? trimmed : `₹${trimmed}`
+  }
+  const matches = trimmed.match(/(?:₹|INR|Rs\.?)\s*([0-9,]+)/gi)
+  if (matches && matches.length > 0) {
+    let total = 0
+    for (const m of matches) {
+      const numStr = m.replace(/[^0-9]/g, '')
+      const val = parseInt(numStr, 10)
+      if (!isNaN(val)) total += val
+    }
+    if (total > 0) {
+      return `₹${total.toLocaleString('en-IN')}`
+    }
+  }
+  return trimmed
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Tournament Card
 // ═══════════════════════════════════════════════════════════════
@@ -377,13 +400,13 @@ function TournamentCard({ t, user, index }: { t: Tournament; user: any; index: n
         <div className="mt-auto pt-4 border-t border-border flex items-center justify-between">
           <div>
             <p className="text-[10px] uppercase font-bold text-muted-foreground">Prize Pool</p>
-            <p className="font-display text-lg font-bold text-primary">{t.prizePool}</p>
+            <p className="font-display text-lg font-bold text-primary">{formatOverallPrizePool(t.prizePool)}</p>
           </div>
           <Link
             to={`/tournaments/${t.id}`}
             className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-bold text-primary hover:bg-primary hover:text-background transition-all duration-200"
           >
-            {t.status === 'live' ? 'Live Lobby' : 'Register Squad'}
+            {t.status === 'live' ? 'Live Lobby' : 'Register'}
             <ChevronRight className="size-3.5" />
           </Link>
         </div>

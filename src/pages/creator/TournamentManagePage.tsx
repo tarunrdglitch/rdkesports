@@ -613,7 +613,7 @@ export default function TournamentManagePage() {
         format: settingsForm.format.trim(),
         maxTeams: Number(settingsForm.maxTeams) || 32,
         entryFee: Number(settingsForm.entryFee) > 0 ? `₹${settingsForm.entryFee}` : 'Free',
-        prizePool: settingsForm.prizeBreakdown || `₹${settingsForm.prizePool}`,
+        prizePool: Number(settingsForm.prizePool) > 0 ? `₹${Number(settingsForm.prizePool).toLocaleString('en-IN')}` : (settingsForm.prizeBreakdown || '₹0'),
         prizeBreakdown: settingsForm.prizeBreakdown,
         startDate: settingsForm.startDate,
         rules: settingsForm.rules,
