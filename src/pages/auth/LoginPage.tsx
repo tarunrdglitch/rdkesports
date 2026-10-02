@@ -411,10 +411,8 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                 <motion.button
                   type="button"
                   onClick={() => setShowPw((s) => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer transition-colors"
-                  style={{ color: '#555' }}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 cursor-pointer transition-colors text-white/40 hover:text-white z-10 p-1 flex items-center justify-center"
                   whileTap={{ scale: 0.9 }}
-                  whileHover={{ color: '#ffffff' }}
                   aria-label="Toggle password"
                 >
                   {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -698,8 +696,9 @@ function InlineRegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void }
             />
             <button
               type="button"
+              aria-label={showPw ? 'Hide password' : 'Show password'}
               onClick={() => setShowPw(!showPw)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-white/40 hover:text-white"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 cursor-pointer transition-colors text-white/40 hover:text-white z-10 p-1 flex items-center justify-center"
             >
               {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
@@ -904,30 +903,17 @@ export default function LoginPage() {
               />
             </motion.div>
 
-            <motion.div variants={itemVariants} className="space-y-3.5">
-              {features.map(({ icon: Icon, label, color }) => (
-                <motion.div
+            <motion.div variants={itemVariants} className="space-y-2.5 max-w-sm">
+              {features.map(({ icon: Icon, label }) => (
+                <div
                   key={label}
-                  className="flex items-center gap-3.5"
-                  whileHover={{ x: 4 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                  className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl border border-white/5 bg-white/[0.02] backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-white/[0.04]"
                 >
-                  <div
-                    className="size-9 rounded-lg flex items-center justify-center shrink-0"
-                    style={{
-                      background: color === '#E53935'
-                        ? 'rgba(229,57,53,0.1)'
-                        : 'rgba(255,255,255,0.05)',
-                      border: `1px solid ${color === '#E53935'
-                        ? 'rgba(229,57,53,0.25)'
-                        : 'rgba(255,255,255,0.1)'}`,
-                    }}
-                  >
-                    <Icon className="size-4" style={{ color }} />
+                  <div className="size-7 rounded-lg flex items-center justify-center shrink-0 bg-primary/10 border border-primary/20 text-primary">
+                    <Icon className="size-3.5" />
                   </div>
-                  <span className="text-sm font-body" style={{ color: '#999' }}>{label}</span>
-                  <ChevronRight className="size-3 ml-auto" style={{ color: '#333' }} />
-                </motion.div>
+                  <span className="text-xs font-semibold font-body text-white/80">{label}</span>
+                </div>
               ))}
             </motion.div>
           </motion.div>
@@ -983,21 +969,19 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setAuthTab('login')}
-                  className={`relative z-10 flex-1 py-2.5 text-xs font-bold font-body transition-colors cursor-pointer flex items-center justify-center gap-2 ${
+                  className={`relative z-10 flex-1 py-2.5 text-xs font-bold font-body transition-colors cursor-pointer flex items-center justify-center ${
                     authTab === 'login' ? 'text-white' : 'text-white/50 hover:text-white'
                   }`}
                 >
-                  <ShieldCheck className="size-3.5" />
                   <span>Sign In</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setAuthTab('register')}
-                  className={`relative z-10 flex-1 py-2.5 text-xs font-bold font-body transition-colors cursor-pointer flex items-center justify-center gap-2 ${
+                  className={`relative z-10 flex-1 py-2.5 text-xs font-bold font-body transition-colors cursor-pointer flex items-center justify-center ${
                     authTab === 'register' ? 'text-white' : 'text-white/50 hover:text-white'
                   }`}
                 >
-                  <Zap className="size-3.5" />
                   <span>Create Account</span>
                 </button>
               </div>
@@ -1087,7 +1071,7 @@ export default function LoginPage() {
                           type="button"
                           aria-label={showPass ? 'Hide password' : 'Show password'}
                           onClick={() => setShowPass((s) => !s)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer transition-colors text-white/40 hover:text-white"
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 cursor-pointer transition-colors text-white/40 hover:text-white z-10 p-1 flex items-center justify-center"
                         >
                           {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                         </button>

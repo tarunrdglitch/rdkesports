@@ -529,6 +529,32 @@ h1, h2, h3, h4, h5, h6 {
   text-transform: uppercase;
 }
 
+.input-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-icon-wrap .input-icon {
+  position: absolute;
+  left: 0.875rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  z-index: 2;
+  transition: color 0.2s;
+}
+
+.input-icon-wrap:focus-within .input-icon {
+  color: hsl(var(--primary));
+}
+
+.input-icon-wrap .rdk-input {
+  padding-left: 2.6rem;
+}
+
 /* ═══════════════════════════════════════════════════════════
    BADGES
 ═══════════════════════════════════════════════════════════ */
