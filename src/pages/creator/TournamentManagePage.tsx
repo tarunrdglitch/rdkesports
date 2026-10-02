@@ -295,7 +295,7 @@ export default function TournamentManagePage() {
     maxTeams: 48 as number | string,
     entryFee: '60',
     prizePool: '12000',
-    prizeBreakdown: '🥇 1st: ₹6,000 | 🥈 2nd: ₹3,500 | 🥉 3rd: ₹2,500',
+    prizeBreakdown: '1st: ₹6,000 | 2nd: ₹3,500 | 3rd: ₹2,500',
     startDate: '',
     rules: '',
     upiId: '',
@@ -593,7 +593,7 @@ export default function TournamentManagePage() {
         (tournament as any).prizeBreakdown ||
         (tournament.prizePool?.includes(':')
           ? tournament.prizePool
-          : '🥇 1st: ₹6,000 | 🥈 2nd: ₹3,500 | 🥉 3rd: ₹2,500'),
+          : '1st: ₹6,000 | 2nd: ₹3,500 | 3rd: ₹2,500'),
       startDate: tournament.startDate || '',
       rules: tournament.rules || '',
       upiId: tournament.upiId || '',
@@ -2090,7 +2090,7 @@ export default function TournamentManagePage() {
                         ) : (
                           <Sparkles className="size-3.5" />
                         )}
-                        ⚡ Confirm & Mark All {teams.length} Teams as Paid (Sets RDK Fee to ₹{totalRdkFeeDue.toLocaleString('en-IN')})
+                        Confirm & Mark All {teams.length} Teams as Paid (Sets RDK Fee to ₹{totalRdkFeeDue.toLocaleString('en-IN')})
                       </button>
                     </div>
                   </div>
@@ -2384,7 +2384,7 @@ export default function TournamentManagePage() {
                     Entry fee is <strong>₹{entryFeeNumber} per entry</strong>. RDK 10% platform fee is calculated dynamically on <strong>actual money collected from approved teams</strong> ({settlementInfo?.finances?.approvedEntries ?? approvedPayments.length}/{teams.length || tournament.maxTeams} approved = ₹0 collected).
                   </p>
                   <p className="text-xs text-amber-300/90 mt-1.5 leading-relaxed">
-                    💡 <strong>Why is it currently ₹0?</strong> Participant registrations are currently in pending verification status. If your participants have paid entry fees (or were imported by you from Google Sheets), click below to verify all entries in 1-click and immediately calculate the ₹{Math.round((teams.length || 216) * entryFeeNumber * 0.10).toLocaleString('en-IN')} platform fee!
+                    <strong>Why is it currently ₹0?</strong> Participant registrations are currently in pending verification status. If your participants have paid entry fees (or were imported by you from Google Sheets), click below to verify all entries in 1-click and immediately calculate the ₹{Math.round((teams.length || 216) * entryFeeNumber * 0.10).toLocaleString('en-IN')} platform fee!
                   </p>
                 </div>
               </div>
@@ -2398,7 +2398,7 @@ export default function TournamentManagePage() {
                   <CheckCircle2 className="size-4" />
                   {isApprovingAll
                     ? 'Verifying All Entries…'
-                    : `⚡ Verify & Approve All ${teams.length || tournament.registeredTeamsCount || 216} Entries (Recalculate Fee)`}
+                    : `Verify & Approve All ${teams.length || tournament.registeredTeamsCount || 216} Entries (Recalculate Fee)`}
                 </button>
               </div>
             </div>
@@ -2628,7 +2628,7 @@ export default function TournamentManagePage() {
                     <Upload className="size-4" />
                     {isSubmittingSettlement
                       ? 'Submitting Proof to Super Admin…'
-                      : '📤 Submit Payment Screenshot to Super Admin'}
+                      : 'Submit Payment Screenshot to Super Admin'}
                   </button>
                   <p className="text-[10px] text-center text-muted-foreground">
                     Super Admin will review this screenshot in their desk to verify and unlock tournament closure.
@@ -2677,7 +2677,7 @@ export default function TournamentManagePage() {
                   </div>
                   {!canClose && (
                     <span className="text-[11px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-lg">
-                      ⚠️ 10% Platform Fee Verification Pending
+                      10% Platform Fee Verification Pending
                     </span>
                   )}
                 </div>
@@ -2693,7 +2693,7 @@ export default function TournamentManagePage() {
                     ? 'Closing Tournament…'
                     : canClose
                     ? 'Officially Conclude & Archive Tournament'
-                    : `🔒 Locked (Upload Screenshot of ₹${totalRdkFeeDue.toLocaleString('en-IN')})`}
+                    : `Locked (Upload Screenshot of ₹${totalRdkFeeDue.toLocaleString('en-IN')})`}
                 </button>
               )}
             </div>

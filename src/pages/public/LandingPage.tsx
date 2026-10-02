@@ -559,7 +559,6 @@ export default function LandingPage() {
           <div className="flex items-center gap-3 shrink-0">
             {user ? (
               <Link to={homeFor(user.role)} className="btn-primary">
-                <Crown className="size-3.5" />
                 Dashboard
               </Link>
             ) : (
@@ -609,7 +608,6 @@ export default function LandingPage() {
               {/* Eyebrow label */}
               <motion.div variants={stagger(0)} className="mb-6">
                 <span className="section-eyebrow">
-                  <Swords className="size-3" />
                   South India's #1 Esports Platform
                 </span>
               </motion.div>
@@ -637,11 +635,9 @@ export default function LandingPage() {
               {/* CTA buttons */}
               <motion.div variants={stagger(0.28)} className="mt-8 flex flex-wrap gap-4">
                 <a href="#tournaments" className="btn-primary">
-                  <Trophy className="size-4" />
                   Explore Tournaments
                 </a>
                 <button type="button" onClick={openRegister} className="btn-outline-white cursor-pointer">
-                  <Users className="size-4" />
                   Join as Gamer
                 </button>
               </motion.div>
@@ -889,10 +885,7 @@ export default function LandingPage() {
                 {/* Accent top border */}
                 <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r ${card.accentBar} opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-t-2xl`} />
 
-                <div className={`size-12 rounded-2xl border flex items-center justify-center mb-5 ${card.iconColor} transition-transform duration-300 group-hover:scale-110`}>
-                  <card.icon className="size-5" />
-                </div>
-                <h3 className="font-heading text-lg font-bold text-foreground mb-2">{card.title}</h3>
+                <h3 className="font-heading text-lg font-bold text-foreground mb-2 mt-1">{card.title}</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed flex-1 font-body">{card.desc}</p>
                 <ul className="mt-5 space-y-2">
                   {card.features.map((f) => (
@@ -962,12 +955,12 @@ export default function LandingPage() {
             <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mr-1 font-body">Mode:</span>
             {[
               { id: 'all', label: 'All Formats' },
-              { id: 'auction', label: '🏆 Auction' },
-              { id: 'br_squad', label: '🎯 BR Squad' },
-              { id: 'br_solo', label: '👤 BR Solo' },
-              { id: 'cs_norules', label: '⚡ CS No Rules' },
-              { id: 'cs_limited', label: '🔒 CS Limited' },
-              { id: 'cs_onetap', label: '💀 CS One Tap' },
+              { id: 'auction', label: 'Auction' },
+              { id: 'br_squad', label: 'BR Squad' },
+              { id: 'br_solo', label: 'BR Solo' },
+              { id: 'cs_norules', label: 'CS No Rules' },
+              { id: 'cs_limited', label: 'CS Limited' },
+              { id: 'cs_onetap', label: 'CS One Tap' },
             ].map((f) => (
               <button
                 key={f.id}
@@ -1169,9 +1162,6 @@ export default function LandingPage() {
                 className={`feature-card group cursor-default bg-gradient-to-br ${card.gradient} border ${card.border}`}
                 whileHover={{ y: -5 }}
               >
-                <div className={`size-14 rounded-2xl bg-surface/80 border border-border flex items-center justify-center mb-6 ${card.iconColor} group-hover:scale-110 transition-transform duration-300`}>
-                  <card.icon className="size-6" />
-                </div>
                 <h3 className="font-heading text-xl font-bold text-foreground mb-3">{card.title}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed font-body">{card.desc}</p>
 
@@ -1187,17 +1177,16 @@ export default function LandingPage() {
             className="mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4"
           >
             {[
-              { icon: Trophy, value: stats?.totalTournamentsHosted ?? '36+', label: 'Tournaments Hosted', color: 'text-primary' },
-              { icon: Users,  value: stats?.registeredGamers ?? '12K+',      label: 'Registered Gamers', color: 'gradient-text' },
-              { icon: Award,  value: stats?.totalPrizeDistributed ?? '₹8.75L+', label: 'Prize Distributed', color: 'gradient-text-gold' },
-              { icon: Zap,    value: `${creators.length}`,                    label: 'Official Partners', color: 'text-purple-400' },
+              { value: stats?.totalTournamentsHosted ?? '36+', label: 'Tournaments Hosted', color: 'text-primary' },
+              { value: stats?.registeredGamers ?? '12K+',      label: 'Registered Gamers', color: 'gradient-text' },
+              { value: stats?.totalPrizeDistributed ?? '₹8.75L+', label: 'Prize Distributed', color: 'gradient-text-gold' },
+              { value: `${creators.length}`,                    label: 'Official Partners', color: 'text-purple-400' },
             ].map((s, i) => (
               <motion.div
                 key={s.label}
                 variants={stagger(i * 0.08)}
                 className="stat-card text-center group cursor-default"
               >
-                <s.icon className={`size-5 mx-auto mb-3 ${s.color === 'gradient-text' || s.color === 'gradient-text-gold' ? 'text-primary' : s.color}`} />
                 <p className={`stat-number text-3xl font-bold ${s.color}`}>{s.value}</p>
                 <p className="text-[11px] text-muted-foreground mt-1 font-body uppercase tracking-wide">{s.label}</p>
               </motion.div>

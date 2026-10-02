@@ -52,7 +52,7 @@ interface TournamentRoadmapTreeProps {
   onDeleteMatch?: (matchId: string) => void
 }
 
-export const TNBBL_SAMPLE_SCHEDULE_PROMPT = `*TNBBL MATCHES SCHEDULE ✅*
+export const TNBBL_SAMPLE_SCHEDULE_PROMPT = `*TNBBL MATCHES SCHEDULE*
 
 \`36TEAMS(3GROUPS)\`
 
@@ -60,45 +60,45 @@ export const TNBBL_SAMPLE_SCHEDULE_PROMPT = `*TNBBL MATCHES SCHEDULE ✅*
 Totally 3 Groups
 GROUP - A,B,C :- OCT 1
 \`TOP 8 QUALIFY IN EACH GROUP(3GROUPS)\`
-*BACK TO BACK 3 MATCHES PER GROUP👍🏻*
+*BACK TO BACK 3 MATCHES PER GROUP*
 
-24 TEAMS WILL BE QUALIFIED TO ROUND 2 👇🏻 
+24 TEAMS WILL BE QUALIFIED TO ROUND 2 
 
 *ROUND 2 - Quarter Final*
 24 TEAMS(2 GROUPS)
 GROUP A - OCT 3(SAT)
 GROUP B - OCT 4(SUN)
 \`TOP 9 QUALIFY IN EACH GROUP(2GROUPS)\`
-*BACK TO BACK 6 MATCHES PER GROUP👍🏻*
+*BACK TO BACK 6 MATCHES PER GROUP*
 
-IN 24 TEAMS TOP 18 WILL BE QUALIFIED TO ROUND 3 👇🏻 
+IN 24 TEAMS TOP 18 WILL BE QUALIFIED TO ROUND 3 
 
 *ROUND 3 - Semi Final*
-Top 18 Teams Separated as 3 GRP(A,B,C)In Per Grp 6 Teams will be there💯
+Top 18 Teams Separated as 3 GRP(A,B,C)In Per Grp 6 Teams will be there
 GRP - AxB 12 TEAMS(OCT 7)
 GRP - BxC 12 TEAMS(OCT 8)
 GRP - CxA 12 TEAMS(OCT 8)
 \`FROM 18 TEAMS TOP 12 WILL BE QUALIFIED\`
-*BACK TO BACK 6 MATCHES PER GROUP👍🏻*
+*BACK TO BACK 6 MATCHES PER GROUP*
 
-IN 18 TEAMS TOP 12 WILL BE QUALIFED TO ROUND 4👇🏻💥
+IN 18 TEAMS TOP 12 WILL BE QUALIFED TO ROUND 4
 
-*ROUND 4 - Grand Finals🏆*
-12 Teams CHAMPION RUSH FORMAT - 110 POINTS TO ACTIVATE✅
+*ROUND 4 - Grand Finals*
+12 Teams CHAMPION RUSH FORMAT - 110 POINTS TO ACTIVATE
 OCT 10 - DAY 1 (8MATCHES)
 OCT 11 - DAY 2
 (8MATCHES)
-\`TOTALLY 16 MATCHES EACH DAY 8 MATCHES WILL BE THERE💯\`
+\`TOTALLY 16 MATCHES EACH DAY 8 MATCHES WILL BE THERE\`
 *IN THIS TOP 3 TEAMS WILL BE :-*
 
-•CHAMPIONS 🥇🏆 
-•RUNNER UP 🥈
-•2ND RUNNER UP🥉
-*PP DISTRIBUTION🎖️🎉*
-🥇6000rs
-🥈3500rs
-🥉2500rs
-\`AMBASSADORS SHOULD BE EQUALLY DIVIDE ➗ THE PP TO TEAM PLAYERS\``
+•CHAMPIONS (1st Place) 
+•RUNNER UP (2nd Place)
+•2ND RUNNER UP (3rd Place)
+*PRIZE DISTRIBUTION*
+#1: 6000rs
+#2: 3500rs
+#3: 2500rs
+\`AMBASSADORS SHOULD EQUALLY DIVIDE THE PRIZE POOL TO TEAM PLAYERS\``
 
 export function parseSchedulePromptToRoadmap(
   rawText: string,
@@ -242,7 +242,7 @@ export function parseSchedulePromptToRoadmap(
           stageId,
           matchNumber: seq++,
           team1: { name: 'Champion Rush Decider (110 Pts)', score: '', isWinner: false },
-          team2: { name: 'Podium: 🥇₹6,000 | 🥈₹3,500 | 🥉₹2,500', score: '', isWinner: true },
+          team2: { name: 'Podium: #1 ₹6,000 | #2 ₹3,500 | #3 ₹2,500', score: '', isWinner: true },
           scheduleTime: 'OCT 11 - Grand Finale',
           status: 'upcoming',
         })
@@ -1240,7 +1240,7 @@ export const TournamentRoadmapTree: React.FC<TournamentRoadmapTreeProps> = ({
                   onClick={() => setPromptText(TNBBL_SAMPLE_SCHEDULE_PROMPT)}
                   className="px-2.5 py-1 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 text-[11px] font-bold transition flex items-center gap-1"
                 >
-                  ⚡ Load TNBBL Example Schedule
+                  Load TNBBL Example Schedule
                 </button>
                 {promptText && (
                   <button
@@ -1263,7 +1263,7 @@ export const TournamentRoadmapTree: React.FC<TournamentRoadmapTreeProps> = ({
                   if (promptErrorMsg) setPromptErrorMsg('')
                 }}
                 rows={12}
-                placeholder={`*TNBBL MATCHES SCHEDULE ✅*\n\n36TEAMS(3GROUPS)\n\n*ROUND 1 - Qualifiers Stage*\nTotally 3 Groups\nGROUP - A,B,C :- OCT 1\nTOP 8 QUALIFY IN EACH GROUP(3GROUPS)\nBACK TO BACK 3 MATCHES PER GROUP...\n\n*ROUND 2 - Quarter Final*\n24 TEAMS(2 GROUPS)\nGROUP A - OCT 3(SAT)\nGROUP B - OCT 4(SUN)\n...`}
+                placeholder={`*TNBBL MATCHES SCHEDULE*\n\n36TEAMS(3GROUPS)\n\n*ROUND 1 - Qualifiers Stage*\nTotally 3 Groups\nGROUP - A,B,C :- OCT 1\nTOP 8 QUALIFY IN EACH GROUP(3GROUPS)\nBACK TO BACK 3 MATCHES PER GROUP...\n\n*ROUND 2 - Quarter Final*\n24 TEAMS(2 GROUPS)\nGROUP A - OCT 3(SAT)\nGROUP B - OCT 4(SUN)\n...`}
                 className="w-full h-full min-h-[220px] max-h-[360px] bg-[#070b19] border border-blue-900/80 focus:border-amber-500/70 rounded-xl p-3.5 text-xs font-mono text-blue-100 placeholder:text-blue-500/40 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition resize-y"
               />
             </div>

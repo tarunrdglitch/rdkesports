@@ -15,9 +15,9 @@ interface PrizePoolDividerProps {
 }
 
 const DEFAULT_RANKS: PrizeRankItem[] = [
-  { rank: 1, label: 'Champions (1st Place)', badgeIcon: '🥇', amount: 6000 },
-  { rank: 2, label: 'Runner Up (2nd Place)', badgeIcon: '🥈', amount: 3500 },
-  { rank: 3, label: '2nd Runner Up (3rd Place)', badgeIcon: '🥉', amount: 2500 },
+  { rank: 1, label: 'Champions (1st Place)', badgeIcon: '#1', amount: 6000 },
+  { rank: 2, label: 'Runner Up (2nd Place)', badgeIcon: '#2', amount: 3500 },
+  { rank: 3, label: '2nd Runner Up (3rd Place)', badgeIcon: '#3', amount: 2500 },
 ]
 
 export const PrizePoolDivider: React.FC<PrizePoolDividerProps> = ({
@@ -49,7 +49,7 @@ export const PrizePoolDivider: React.FC<PrizePoolDividerProps> = ({
           parsed.push({
             rank: r,
             label: r === 1 ? 'Champions (1st Place)' : r === 2 ? 'Runner Up (2nd Place)' : r === 3 ? '2nd Runner Up (3rd Place)' : `Rank ${r}`,
-            badgeIcon: r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : '🎖️',
+            badgeIcon: `#${r}`,
             amount: amt || 0,
           })
           r++
@@ -86,34 +86,34 @@ export const PrizePoolDivider: React.FC<PrizePoolDividerProps> = ({
     if (presetType === 'tnbbl') {
       setTotal(12000)
       setRanks([
-        { rank: 1, label: 'Champions (1st Place)', badgeIcon: '🥇', amount: 6000 },
-        { rank: 2, label: 'Runner Up (2nd Place)', badgeIcon: '🥈', amount: 3500 },
-        { rank: 3, label: '2nd Runner Up (3rd Place)', badgeIcon: '🥉', amount: 2500 },
+        { rank: 1, label: 'Champions (1st Place)', badgeIcon: '#1', amount: 6000 },
+        { rank: 2, label: 'Runner Up (2nd Place)', badgeIcon: '#2', amount: 3500 },
+        { rank: 3, label: '2nd Runner Up (3rd Place)', badgeIcon: '#3', amount: 2500 },
       ])
       return
     }
 
     if (presetType === 'winner_takes_all') {
       setRanks([
-        { rank: 1, label: 'Grand Champion (100%)', badgeIcon: '🥇', amount: total },
+        { rank: 1, label: 'Grand Champion (100%)', badgeIcon: '#1', amount: total },
       ])
       return
     }
 
     if (presetType === '50_30_20') {
       setRanks([
-        { rank: 1, label: '1st Place (50%)', badgeIcon: '🥇', amount: Math.round(total * 0.5) },
-        { rank: 2, label: '2nd Place (30%)', badgeIcon: '🥈', amount: Math.round(total * 0.3) },
-        { rank: 3, label: '3rd Place (20%)', badgeIcon: '🥉', amount: Math.round(total * 0.2) },
+        { rank: 1, label: '1st Place (50%)', badgeIcon: '#1', amount: Math.round(total * 0.5) },
+        { rank: 2, label: '2nd Place (30%)', badgeIcon: '#2', amount: Math.round(total * 0.3) },
+        { rank: 3, label: '3rd Place (20%)', badgeIcon: '#3', amount: Math.round(total * 0.2) },
       ])
       return
     }
 
     if (presetType === '60_25_15') {
       setRanks([
-        { rank: 1, label: '1st Place (60%)', badgeIcon: '🥇', amount: Math.round(total * 0.6) },
-        { rank: 2, label: '2nd Place (25%)', badgeIcon: '🥈', amount: Math.round(total * 0.25) },
-        { rank: 3, label: '3rd Place (15%)', badgeIcon: '🥉', amount: Math.round(total * 0.15) },
+        { rank: 1, label: '1st Place (60%)', badgeIcon: '#1', amount: Math.round(total * 0.6) },
+        { rank: 2, label: '2nd Place (25%)', badgeIcon: '#2', amount: Math.round(total * 0.25) },
+        { rank: 3, label: '3rd Place (15%)', badgeIcon: '#3', amount: Math.round(total * 0.15) },
       ])
       return
     }
@@ -142,7 +142,7 @@ export const PrizePoolDivider: React.FC<PrizePoolDividerProps> = ({
   // Set number of prize places
   const setTierCount = (count: number) => {
     const targetCount = Math.max(1, Math.min(10, count))
-    const badges = ['🥇', '🥈', '🥉', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️']
+    const badges = ['#1', '#2', '#3', '#4', '#5', '#6', '#7', '#8', '#9', '#10']
     const labels = [
       'Champions (1st Place)',
       'Runner Up (2nd Place)',
@@ -164,7 +164,7 @@ export const PrizePoolDivider: React.FC<PrizePoolDividerProps> = ({
       newRanks.push({
         rank: i + 1,
         label: labels[i] || `Rank ${i + 1}`,
-        badgeIcon: badges[i] || '🎖️',
+        badgeIcon: badges[i] || `#${i + 1}`,
         amount: existing ? existing.amount : i === targetCount - 1 ? total - each * (targetCount - 1) : each,
       })
     }
@@ -180,7 +180,7 @@ export const PrizePoolDivider: React.FC<PrizePoolDividerProps> = ({
       {
         rank: nextRank,
         label: nextRank === 2 ? 'Runner Up (2nd Place)' : nextRank === 3 ? '2nd Runner Up (3rd Place)' : `Rank ${nextRank}`,
-        badgeIcon: nextRank === 2 ? '🥈' : nextRank === 3 ? '🥉' : '🎖️',
+        badgeIcon: `#${nextRank}`,
         amount: remaining > 0 ? remaining : 0,
       },
     ])
@@ -192,7 +192,7 @@ export const PrizePoolDivider: React.FC<PrizePoolDividerProps> = ({
     const updated = ranks.filter((_, i) => i !== idx).map((r, i) => ({
       ...r,
       rank: i + 1,
-      badgeIcon: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🎖️',
+      badgeIcon: `#${i + 1}`,
     }))
     setRanks(updated)
   }
@@ -247,7 +247,7 @@ export const PrizePoolDivider: React.FC<PrizePoolDividerProps> = ({
             onClick={() => applyPreset('tnbbl')}
             className="px-2.5 py-1 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 text-[11px] font-bold transition flex items-center gap-1"
           >
-            ⚡ TNBBL (₹6K / ₹3.5K / ₹2.5K)
+            TNBBL (₹6K / ₹3.5K / ₹2.5K)
           </button>
           <button
             type="button"
@@ -322,7 +322,9 @@ export const PrizePoolDivider: React.FC<PrizePoolDividerProps> = ({
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-xl">{item.badgeIcon}</span>
+                  <span className="size-7 rounded-lg bg-white/10 font-mono font-black text-xs flex items-center justify-center text-white border border-white/10 shrink-0">
+                    {item.badgeIcon}
+                  </span>
                   <div>
                     <span className="text-xs font-black uppercase text-white tracking-wide block">
                       {item.label}
