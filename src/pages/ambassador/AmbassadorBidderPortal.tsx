@@ -30,6 +30,28 @@ import {
 import { useAuth } from '@/stores/authStore'
 import { parseStreamEmbed } from '@/utils/stream'
 
+const getEmbedVideoUrl = (url?: string) => {
+  if (!url) return null
+  if (url.includes('drive.google.com')) {
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/)
+    if (match && match[1]) {
+      return `https://drive.google.com/file/d/${match[1]}/preview`
+    }
+  }
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    if (url.includes('embed')) return url
+    if (url.includes('youtu.be/')) {
+      const id = url.split('youtu.be/')[1]?.split('?')[0]
+      return `https://www.youtube.com/embed/${id}`
+    }
+    try {
+      const v = new URL(url).searchParams.get('v')
+      if (v) return `https://www.youtube.com/embed/${v}`
+    } catch {}
+  }
+  return null
+}
+
 interface AuctionPlayer {
   id: string
   auctionId: string
@@ -104,6 +126,9 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
   const [customBidAmount, setCustomBidAmount] = useState<string>('')
   const [feedbackMsg, setFeedbackMsg] = useState<string>('')
   const [errorMsg, setErrorMsg] = useState<string>('')
+  const [bidIncrement, setBidIncrement] = useState<number>(500)
+  const [timerSeconds, setTimerSeconds] = useState<number>(5)
+  const [timerStatus, setTimerStatus] = useState<'idle' | 'running' | 'paused' | 'ended'>('idle')
 
   // Filters for pool
   const [searchFilter, setSearchFilter] = useState('')
@@ -128,8 +153,8 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
   // Load tournament info & auction pool
   useEffect(() => {
     loadAllData()
-    // Poll every 5s for live auction sync
-    const interval = setInterval(loadAuctionState, 5000)
+    // Poll every 1s for instant real-time live auction sync
+    const interval = setInterval(loadAuctionState, 1000)
     return () => clearInterval(interval)
   }, [tournamentId])
 
@@ -176,9 +201,23 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
       if (res.ok) {
         const state = await res.json()
         if (state.activePlayerId) setActivePlayerId(state.activePlayerId)
-        if (state.currentBid) setCurrentBid(state.currentBid)
+        if (state.currentBid !== undefined) setCurrentBid(state.currentBid)
         if (state.highestBidderTeam !== undefined) setHighestBidderTeam(state.highestBidderTeam)
         if (state.bidHistory) setBidHistory(state.bidHistory)
+        if (state.bidIncrement) setBidIncrement(state.bidIncrement)
+        if (state.timerSeconds !== undefined) setTimerSeconds(state.timerSeconds)
+        if (state.timerStatus) setTimerStatus(state.timerStatus)
+        if (state.activePlayer) {
+          setPlayers((prev) => {
+            const idx = prev.findIndex((p) => p.id === state.activePlayer.id)
+            if (idx >= 0) {
+              const copy = [...prev]
+              copy[idx] = { ...copy[idx], ...state.activePlayer }
+              return copy
+            }
+            return [state.activePlayer, ...prev]
+          })
+        }
       }
     } catch {
       // Silently ignore polling network glitch
@@ -254,6 +293,7 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
           teamName: myTeamName,
           amount,
           playerId: activePlayer?.id,
+          increment: bidIncrement,
         }),
       })
 
@@ -262,12 +302,11 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
 
       setCurrentBid(amount)
       setHighestBidderTeam(myTeamName)
-      setBidHistory((prev) => [
-        { team: myTeamName, amount, time: new Date().toLocaleTimeString() },
-        ...prev,
-      ])
+      if (data.timerSeconds !== undefined) setTimerSeconds(data.timerSeconds)
+      if (data.timerStatus) setTimerStatus(data.timerStatus)
       setFeedbackMsg(`Bid of ₹${amount.toLocaleString()} placed successfully for ${activePlayer?.ign}!`)
       setCustomBidAmount('')
+      loadAuctionState()
     } catch (e: unknown) {
       if (e instanceof Error) setErrorMsg(e.message)
       else setErrorMsg('Error placing bid')
@@ -464,462 +503,423 @@ export default function AmbassadorBidderPortal({ initialTab = 'auction' }: Ambas
         </div>
       )}
 
-      {/* 2. TAB 1: LIVE AUCTION BIDDING STAGE */}
+      {/* 2. TAB 1: LIVE AUCTION BIDDING STAGE (ONLY Current Bid Player Shown) */}
       {activeTab === 'auction' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* LEFT: CANDIDATE ON HAMMER & BIDDING CONSOLE (7 cols) */}
-          <div className="lg:col-span-7 space-y-6">
-            {activePlayer ? (
-              <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 shadow-xl relative overflow-hidden">
-                {/* Status Bar */}
-                <div className="flex items-center justify-between border-b border-border pb-4 mb-5">
-                  <div className="flex items-center gap-2">
-                    <span className="relative flex h-3 w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
-                    </span>
-                    <span className="text-xs font-black uppercase tracking-wider text-red-400">
-                      ON THE HAMMER NOW
-                    </span>
+        <div className="space-y-6">
+          {/* 5-SECOND COUNTDOWN URGENCY BANNER */}
+          {timerStatus === 'running' && (
+            <div className="rounded-2xl border-2 border-red-500 bg-gradient-to-r from-red-950 via-red-900 to-red-950 p-4 sm:p-5 text-white shadow-2xl animate-pulse">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-14 rounded-2xl bg-red-600 flex items-center justify-center font-black font-mono text-3xl text-white shadow-xl shrink-0 border-2 border-red-400">
+                    {timerSeconds}s
                   </div>
-
-                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                    UID: {activePlayer.gameUid}
-                  </span>
-                </div>
-
-                {/* Candidate Spotlight Card */}
-                <div className="flex flex-col sm:flex-row gap-5 items-start sm:items-center">
-                  <div className="relative shrink-0 mx-auto sm:mx-0">
-                    <img
-                      src={
-                        activePlayer.photoUrl && !activePlayer.photoUrl.includes('photo-1566492031773-4f4e44671857')
-                          ? activePlayer.photoUrl
-                          : '/gg.png'
-                      }
-                      alt={activePlayer.ign}
-                      className="size-28 sm:size-32 rounded-2xl object-cover border-2 border-primary/40 shadow-xl"
-                    />
-                    <span className="absolute -bottom-2 -right-2 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-primary text-background shadow">
-                      {activePlayer.role}
-                    </span>
-                  </div>
-
-                  <div className="flex-1 space-y-2 text-center sm:text-left">
-                    <div className="inline-block text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                      {activePlayer.tier || 'Marquee Draft'}
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-wider text-red-300 flex items-center gap-1.5">
+                      <Clock className="size-4 text-yellow-300 animate-spin" />
+                      <span>5-Second Hammer Countdown Active!</span>
                     </div>
-
-                    <h2 className="text-2xl font-black font-heading text-foreground">
-                      {activePlayer.ign}
-                    </h2>
-                    <p className="text-xs text-muted-foreground font-medium">
-                      Real Name: <strong className="text-foreground">{activePlayer.name}</strong>
+                    <p className="text-sm sm:text-base font-bold text-slate-100 mt-0.5">
+                      {highestBidderTeam
+                        ? `Hammer dropping! Selling to ${highestBidderTeam} for ₹${currentBid.toLocaleString()} unless outbid!`
+                        : '5 seconds to place opening bid or candidate goes unsold!'}
                     </p>
-
-                    {/* Stats pills */}
-                    {activePlayer.stats && (
-                      <div className="flex flex-wrap gap-2 pt-1 justify-center sm:justify-start">
-                        {activePlayer.stats.kd && (
-                          <span className="text-[11px] px-2 py-0.5 rounded bg-muted text-foreground border border-border">
-                            K/D: <strong>{activePlayer.stats.kd}</strong>
-                          </span>
-                        )}
-                        {activePlayer.stats.headshotRate && (
-                          <span className="text-[11px] px-2 py-0.5 rounded bg-muted text-foreground border border-border">
-                            HS Rate: <strong>{activePlayer.stats.headshotRate}</strong>
-                          </span>
-                        )}
-                        {activePlayer.stats.matchesPlayed && (
-                          <span className="text-[11px] px-2 py-0.5 rounded bg-muted text-foreground border border-border">
-                            Matches: <strong>{activePlayer.stats.matchesPlayed}</strong>
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {activePlayer.clipUrl && (
-                      <div className="pt-1">
-                        <button
-                          type="button"
-                          onClick={() => setPreviewClipUrl(activePlayer.clipUrl || null)}
-                          className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-semibold"
-                        >
-                          <Play className="size-3.5 fill-current" />
-                          <span>Watch Gameplay Montage Clip</span>
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </div>
 
-                {/* CURRENT BID & HAMMER PRICE DISPLAY */}
-                <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 sm:p-5">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
-                        Base Reserve Price
-                      </span>
-                      <span className="text-sm sm:text-base font-bold text-muted-foreground font-mono">
-                        ₹{activePlayer.basePrice.toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-primary block">
-                        Current Hammer Bid
-                      </span>
-                      <span className="text-2xl sm:text-3xl font-black font-heading text-primary font-mono">
-                        ₹{currentBid.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* HIGHEST BIDDER NOTIFICATION */}
-                  <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Leading Bidder:</span>
-                    {highestBidderTeam ? (
-                      <span
-                        className={`text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1.5 ${
-                          isWinningCurrentBid
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                        }`}
-                      >
-                        {isWinningCurrentBid ? (
-                          <>
-                            <Check className="size-3.5" />
-                            <span>Your Team ({highestBidderTeam}) is Leading!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Flame className="size-3.5" />
-                            <span>{highestBidderTeam}</span>
-                          </>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground italic">No bids placed yet</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* AMBASSADOR BIDDING CONTROLS */}
-                <div className="mt-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">
-                      Place Official Bid as {myTeamName}
-                    </span>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-muted text-foreground border border-border">
-                      Squad: {squadCount} / {maxSquadSize}
-                    </span>
-                  </div>
-
-                  {isSquadFull ? (
-                    <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 flex items-center gap-3">
-                      <CheckCircle2 className="size-6 text-emerald-400 shrink-0" />
-                      <div>
-                        <h5 className="font-bold text-emerald-400 text-xs uppercase tracking-wide">
-                          Squad Complete ({squadCount}/{maxSquadSize} Players Acquired)
-                        </h5>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-                          Your franchise team has successfully drafted all {maxSquadSize} players! Bidding is concluded for your squad. You can review your squad lineup in the Roster tab.
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Purse Reserve Gatekeeper Notice */}
-                      <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] flex items-start gap-2.5">
-                        <Shield className="size-4 text-amber-400 shrink-0 mt-0.5" />
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-amber-400 uppercase tracking-wide text-[10px]">
-                              Purse Gatekeeper Constraint
-                            </span>
-                            <span className="text-[10px] font-mono text-muted-foreground">
-                              {remainingSlotsAfter} slots remaining
-                            </span>
-                          </div>
-                          <p className="text-muted-foreground leading-relaxed text-[11px]">
-                            You must reserve at least <strong className="text-foreground">₹{requiredReserve.toLocaleString()}</strong> (₹{basePrice.toLocaleString()} base bid × {remainingSlotsAfter} slots) for remaining squad athletes. Maximum permitted bid on this hammer: <strong className="text-amber-400 font-bold font-mono">₹{maxAllowedBid.toLocaleString()}</strong>.
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Quick Bid Increment Buttons */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {[1000, 2500, 5000, 10000].map((inc) => {
-                          const targetBid = currentBid + inc
-                          const canAfford = targetBid <= maxAllowedBid && !isSquadFull
-                          return (
-                            <button
-                              key={inc}
-                              type="button"
-                              disabled={!canAfford || isSubmittingBid}
-                              onClick={() => handlePlaceBid(targetBid)}
-                              className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-border bg-card hover:border-primary hover:bg-primary/5 transition disabled:opacity-40 disabled:pointer-events-none"
-                            >
-                              <span className="text-xs font-black text-foreground">+₹{inc.toLocaleString()}</span>
-                              <span className="text-[10px] text-muted-foreground">
-                                (₹{targetBid.toLocaleString()})
-                              </span>
-                            </button>
-                          )
-                        })}
-                      </div>
-
-                      {/* Custom Bid Input & Submit */}
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-mono">
-                            ₹
-                          </span>
-                          <input
-                            type="number"
-                            placeholder={`Max safe bid: ₹${maxAllowedBid.toLocaleString()}`}
-                            value={customBidAmount}
-                            onChange={(e) => setCustomBidAmount(e.target.value)}
-                            className="w-full pl-7 pr-3 py-2 text-xs rounded-lg border border-border bg-muted text-foreground focus:border-primary focus:outline-none font-mono"
-                          />
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={
-                            !customBidAmount ||
-                            Number(customBidAmount) <= currentBid ||
-                            Number(customBidAmount) > maxAllowedBid ||
-                            isSquadFull ||
-                            isSubmittingBid
-                          }
-                          onClick={() => handlePlaceBid(Number(customBidAmount))}
-                          className="px-5 py-2 rounded-lg bg-primary font-bold text-xs text-background hover:bg-primary/90 transition disabled:opacity-40"
-                        >
-                          {isSubmittingBid ? 'Bidding...' : 'Place Bid'}
-                        </button>
-                      </div>
-                    </>
-                  )}
-
-                  {/* Take / Finalize Player CTA (When winning) */}
-                  {isWinningCurrentBid && activePlayer.status !== 'sold' && (
-                    <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-bold text-emerald-400">
-                          You are currently the highest bidder for {activePlayer.ign}!
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          Take player now or await auctioneer hammer drop.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleAcquirePlayer}
-                        className="px-4 py-2 rounded-lg bg-emerald-500 text-background font-black text-xs hover:bg-emerald-400 transition shadow"
-                      >
-                        Draft to Squad (Take Player)
-                      </button>
-                    </div>
-                  )}
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] uppercase font-bold text-red-300 block">Hammer Drop In</span>
+                  <span className="text-3xl sm:text-4xl font-black font-mono text-yellow-300">{timerSeconds}s</span>
                 </div>
               </div>
-            ) : (
-              <div className="p-12 text-center rounded-2xl border border-border bg-card text-muted-foreground">
-                <Gavel className="size-10 mx-auto mb-2 opacity-50" />
-                <p className="text-sm font-semibold">No active candidate on hammer</p>
-                <p className="text-xs">Select a player from the pool below to begin bidding.</p>
-              </div>
-            )}
 
-            {/* LIVE BID HISTORY FEED */}
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <TrendingUp className="size-4 text-primary" />
-                  Live Bid Activity Log
-                </h3>
-                <span className="text-[10px] text-muted-foreground font-mono">
-                  {bidHistory.length} bids recorded
-                </span>
-              </div>
-
-              <div className="divide-y divide-border max-h-48 overflow-y-auto space-y-1">
-                {bidHistory.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-4 text-center">
-                    No bids recorded for this candidate yet. Place your opening bid above!
-                  </p>
-                ) : (
-                  bidHistory.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="py-2 flex items-center justify-between text-xs hover:bg-muted/30 px-2 rounded transition"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`size-2 rounded-full ${
-                            item.team.toLowerCase() === myTeamName.toLowerCase()
-                              ? 'bg-emerald-400'
-                              : 'bg-primary'
-                          }`}
-                        />
-                        <span
-                          className={`font-semibold ${
-                            item.team.toLowerCase() === myTeamName.toLowerCase()
-                              ? 'text-emerald-400'
-                              : 'text-foreground'
-                          }`}
-                        >
-                          {item.team}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-foreground">
-                          ₹{item.amount.toLocaleString()}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">{item.time}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
+              {/* Countdown Progress Bar */}
+              <div className="w-full bg-red-950/80 rounded-full h-3 mt-3 overflow-hidden border border-red-500/40">
+                <div
+                  className="bg-gradient-to-r from-amber-400 via-orange-400 to-red-500 h-full transition-all duration-300 rounded-full"
+                  style={{ width: `${Math.min(100, Math.max(0, (timerSeconds / 5) * 100))}%` }}
+                />
               </div>
             </div>
-          </div>
+          )}
 
-          {/* RIGHT: REGISTERED DRAFT POOL (5 cols) */}
-          <div className="lg:col-span-5 space-y-4">
-            <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Users className="size-4 text-primary" />
-                  Auction Candidate Pool ({players.length})
-                </h3>
-                <button
-                  type="button"
-                  onClick={loadPlayers}
-                  className="text-xs text-muted-foreground hover:text-primary transition flex items-center gap-1"
-                >
-                  <RefreshCw className="size-3" />
-                  <span>Refresh</span>
-                </button>
-              </div>
-
-              {/* Filters */}
-              <div className="space-y-2 mb-4">
-                <div className="relative">
-                  <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="Search candidate IGN or role..."
-                    value={searchFilter}
-                    onChange={(e) => setSearchFilter(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs rounded border border-border bg-muted text-foreground focus:border-primary focus:outline-none"
-                  />
+          {activePlayer?.status === 'sold' && (
+            <div className="rounded-2xl border-2 border-emerald-500/50 bg-gradient-to-r from-emerald-950/80 via-emerald-900/60 to-emerald-950/80 p-4 sm:p-5 text-white shadow-xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="size-12 rounded-xl bg-emerald-600 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="size-7 text-white" />
                 </div>
-
-                <div className="flex gap-2">
-                  <select
-                    value={roleFilter}
-                    onChange={(e) => setRoleFilter(e.target.value)}
-                    className="flex-1 py-1 px-2 rounded border border-border bg-muted text-xs text-foreground"
-                  >
-                    <option value="all">All Roles</option>
-                    <option value="Rusher">Rusher</option>
-                    <option value="Sniper">Sniper</option>
-                    <option value="IGL">IGL</option>
-                    <option value="Support">Support</option>
-                    <option value="Assaulter">Assaulter</option>
-                  </select>
-
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="flex-1 py-1 px-2 rounded border border-border bg-muted text-xs text-foreground"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="available">Available</option>
-                    <option value="sold">Sold</option>
-                    <option value="unsold">Unsold</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Candidate List */}
-              <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
-                {filteredPlayers.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-8 text-center">
-                    No candidates match the filter criteria.
+                <div>
+                  <h4 className="font-black text-sm uppercase tracking-wider text-emerald-300">
+                    HAMMER DROPPED — PLAYER SOLD!
+                  </h4>
+                  <p className="text-xs sm:text-sm text-slate-200">
+                    {activePlayer.ign} sold to <strong className="text-emerald-300">{activePlayer.soldToTeam || highestBidderTeam}</strong> for <strong className="text-white font-mono">₹{(activePlayer.soldPrice || currentBid).toLocaleString()}</strong>
                   </p>
-                ) : (
-                  filteredPlayers.map((player) => {
-                    const isSelected = player.id === activePlayer?.id
-                    const isSoldToMe =
-                      player.status === 'sold' &&
-                      player.soldToTeam?.toLowerCase() === myTeamName.toLowerCase()
+                </div>
+              </div>
+              {isWinningCurrentBid && (
+                <span className="text-xs font-black uppercase px-3 py-1.5 rounded-lg bg-emerald-500 text-background">
+                  In Your Squad
+                </span>
+              )}
+            </div>
+          )}
 
-                    return (
-                      <div
-                        key={player.id}
-                        onClick={() => {
-                          setActivePlayerId(player.id)
-                          setCurrentBid(player.soldPrice || player.basePrice)
-                          setHighestBidderTeam(player.soldToTeam || '')
-                        }}
-                        className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                          isSelected
-                            ? 'border-primary bg-primary/10 shadow'
-                            : 'border-border bg-muted/30 hover:border-primary/50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <img
-                            src={
-                              player.photoUrl && !player.photoUrl.includes('photo-1566492031773-4f4e44671857')
-                                ? player.photoUrl
-                                : '/gg.png'
-                            }
-                            alt={player.ign}
-                            className="size-10 rounded-lg object-cover border border-border shrink-0"
-                          />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-xs text-foreground truncate">
-                                {player.ign}
-                              </span>
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground font-mono">
-                                {player.role}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-muted-foreground block truncate">
-                              Reserve: ₹{player.basePrice.toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
+          {activePlayer ? (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* LEFT: CANDIDATE SPOTLIGHT & BIDDING CONTROLS (6 cols) */}
+              <div className="lg:col-span-6 space-y-6">
+                <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 shadow-xl relative overflow-hidden">
+                  {/* Status Bar */}
+                  <div className="flex items-center justify-between border-b border-border pb-4 mb-5">
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                      </span>
+                      <span className="text-xs font-black uppercase tracking-wider text-red-400">
+                        CURRENTLY ON THE HAMMER
+                      </span>
+                    </div>
 
-                        <div className="text-right shrink-0">
-                          {player.status === 'sold' ? (
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                isSoldToMe
-                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                  : 'bg-muted text-muted-foreground'
-                              }`}
-                            >
-                              {isSoldToMe ? 'In Your Squad' : `Sold (${player.soldToTeam})`}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                        UID: {activePlayer.gameUid || 'N/A'}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                        {activePlayer.tier || 'Marquee Draft'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Candidate Bio */}
+                  <div className="flex flex-col sm:flex-row gap-5 items-start sm:items-center">
+                    <div className="relative shrink-0 mx-auto sm:mx-0">
+                      <img
+                        src={
+                          activePlayer.photoUrl && !activePlayer.photoUrl.includes('photo-1566492031773-4f4e44671857')
+                            ? activePlayer.photoUrl
+                            : '/gg.png'
+                        }
+                        alt={activePlayer.ign}
+                        className="size-28 sm:size-32 rounded-2xl object-cover border-2 border-primary/40 shadow-xl"
+                      />
+                      <span className="absolute -bottom-2 -right-2 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-primary text-background shadow">
+                        {activePlayer.role}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 space-y-2 text-center sm:text-left">
+                      <h2 className="text-2xl sm:text-3xl font-black font-heading text-foreground">
+                        {activePlayer.ign}
+                      </h2>
+                      <p className="text-xs text-muted-foreground font-medium">
+                        Real Name: <strong className="text-foreground">{activePlayer.name}</strong>
+                      </p>
+
+                      {/* Stats pills */}
+                      {activePlayer.stats && (
+                        <div className="flex flex-wrap gap-2 pt-1 justify-center sm:justify-start">
+                          {activePlayer.stats.kd && (
+                            <span className="text-[11px] px-2 py-0.5 rounded bg-muted text-foreground border border-border">
+                              K/D: <strong>{activePlayer.stats.kd}</strong>
                             </span>
-                          ) : (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
-                              Available
+                          )}
+                          {activePlayer.stats.headshotRate && (
+                            <span className="text-[11px] px-2 py-0.5 rounded bg-muted text-foreground border border-border">
+                              HS Rate: <strong>{activePlayer.stats.headshotRate}</strong>
+                            </span>
+                          )}
+                          {activePlayer.stats.matchesPlayed && (
+                            <span className="text-[11px] px-2 py-0.5 rounded bg-muted text-foreground border border-border">
+                              Matches: <strong>{activePlayer.stats.matchesPlayed}</strong>
                             </span>
                           )}
                         </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* PRICE & HAMMER DISPLAY */}
+                  <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 sm:p-5">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
+                          Base Reserve Price
+                        </span>
+                        <span className="text-base sm:text-lg font-bold text-muted-foreground font-mono">
+                          ₹{basePrice.toLocaleString()}
+                        </span>
                       </div>
-                    )
-                  })
-                )}
+
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-primary block">
+                          Current Highest Bid
+                        </span>
+                        <span className="text-2xl sm:text-3xl font-black font-heading text-primary font-mono">
+                          ₹{currentBid.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Leading Bidder Banner */}
+                    <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Leading Bidder:</span>
+                      {highestBidderTeam ? (
+                        <span
+                          className={`text-xs font-black uppercase tracking-wider px-3 py-1 rounded-full flex items-center gap-1.5 ${
+                            isWinningCurrentBid
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          }`}
+                        >
+                          {isWinningCurrentBid ? (
+                            <>
+                              <Check className="size-3.5" />
+                              <span>Your Team ({highestBidderTeam}) is Leading!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Flame className="size-3.5" />
+                              <span>{highestBidderTeam}</span>
+                            </>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">No bids placed yet</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* AMBASSADOR FIXED-INCREMENT BIDDING CONTROLS */}
+                  <div className="mt-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">
+                        Official Bid for {myTeamName}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-muted text-foreground border border-border">
+                        Squad: {squadCount} / {maxSquadSize}
+                      </span>
+                    </div>
+
+                    {isSquadFull ? (
+                      <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 flex items-center gap-3">
+                        <CheckCircle2 className="size-6 text-emerald-400 shrink-0" />
+                        <div>
+                          <h5 className="font-bold text-emerald-400 text-xs uppercase tracking-wide">
+                            Squad Complete ({squadCount}/{maxSquadSize} Players Acquired)
+                          </h5>
+                          <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                            Your franchise team has successfully drafted all {maxSquadSize} players! Bidding is concluded for your squad.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Purse Reserve Gatekeeper Notice */}
+                        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] flex items-start gap-2.5">
+                          <Shield className="size-4 text-amber-400 shrink-0 mt-0.5" />
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-amber-400 uppercase tracking-wide text-[10px]">
+                                Purse Reserve Notice
+                              </span>
+                              <span className="text-[10px] font-mono text-muted-foreground">
+                                {remainingSlotsAfter} slots remaining
+                              </span>
+                            </div>
+                            <p className="text-muted-foreground leading-relaxed text-[11px]">
+                              Remaining Purse: <strong className="text-emerald-400 font-mono">₹{remainingPurse.toLocaleString()}</strong>. Reserved for remaining slots: <strong className="text-foreground">₹{requiredReserve.toLocaleString()}</strong>. Max allowed bid: <strong className="text-amber-400 font-bold font-mono">₹{maxAllowedBid.toLocaleString()}</strong>.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* SINGLE FIXED-INCREMENT BID BUTTON (Configured by Creator) */}
+                        {(() => {
+                          const increment = bidIncrement || 500
+                          const nextBidAmount = currentBid + increment
+                          const canAfford = nextBidAmount <= maxAllowedBid && !isSquadFull && activePlayer.status !== 'sold'
+
+                          return (
+                            <div className="space-y-2">
+                              <button
+                                type="button"
+                                disabled={!canAfford || isSubmittingBid || isWinningCurrentBid}
+                                onClick={() => handlePlaceBid(nextBidAmount)}
+                                className={`w-full py-4 px-6 rounded-xl font-black text-sm sm:text-base flex items-center justify-center gap-3 shadow-xl transition-all ${
+                                  isWinningCurrentBid
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 cursor-default'
+                                    : 'bg-gradient-to-r from-primary to-orange-500 text-background hover:opacity-95 active:scale-[0.99] shadow-primary/25 disabled:opacity-40 disabled:pointer-events-none'
+                                }`}
+                              >
+                                <Gavel className="size-5 shrink-0" />
+                                <span>
+                                  {isSubmittingBid
+                                    ? 'Placing Bid...'
+                                    : isWinningCurrentBid
+                                    ? `Leading Bidder at ₹${currentBid.toLocaleString()}`
+                                    : `Bid +₹${increment.toLocaleString()} (Place ₹${nextBidAmount.toLocaleString()})`}
+                                </span>
+                              </button>
+
+                              <p className="text-[10px] text-center text-muted-foreground">
+                                Fixed bid step: <strong className="text-foreground">₹{increment.toLocaleString()}</strong> (Set by tournament organizer). Each counter-bid resets the 5-second countdown.
+                              </p>
+                            </div>
+                          )
+                        })()}
+                      </>
+                    )}
+
+                    {/* Take / Finalize Player CTA (When winning) */}
+                    {isWinningCurrentBid && activePlayer.status !== 'sold' && (
+                      <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-bold text-emerald-400">
+                            You are currently the highest bidder for {activePlayer.ign}!
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            Draft player to squad or await 5s countdown completion.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAcquirePlayer}
+                          className="px-4 py-2 rounded-lg bg-emerald-500 text-background font-black text-xs hover:bg-emerald-400 transition shadow"
+                        >
+                          Draft Now
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT: REGISTERED GAMEPLAY HIGHLIGHTS & LIVE BID ACTIVITY (6 cols) */}
+              <div className="lg:col-span-6 space-y-6">
+                {/* GAMEPLAY HIGHLIGHTS / CLIP SCREEN */}
+                <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                      <Video className="size-4 text-primary" />
+                      <span>Registered Gameplay Highlights / Clip</span>
+                    </h3>
+                    {activePlayer.clipUrl && (
+                      <a
+                        href={activePlayer.clipUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1"
+                      >
+                        <ExternalLink className="size-3" /> External Link
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-border bg-black/80 overflow-hidden aspect-video relative flex items-center justify-center shadow-inner group">
+                    {activePlayer.clipUrl ? (
+                      getEmbedVideoUrl(activePlayer.clipUrl) ? (
+                        <iframe
+                          src={getEmbedVideoUrl(activePlayer.clipUrl)!}
+                          title={`${activePlayer.ign} Gameplay Clip`}
+                          className="w-full h-full border-0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <div className="text-center p-6 space-y-3">
+                          <div className="size-12 rounded-full bg-primary/20 text-primary mx-auto flex items-center justify-center">
+                            <Play className="size-6 ml-0.5" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-xs text-foreground">Gameplay Montage Clip</p>
+                            <p className="text-[11px] text-muted-foreground truncate max-w-xs mx-auto">
+                              {activePlayer.clipUrl}
+                            </p>
+                          </div>
+                          <a
+                            href={activePlayer.clipUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-xs font-bold text-background"
+                          >
+                            Watch Full Video <ExternalLink className="size-3" />
+                          </a>
+                        </div>
+                      )
+                    ) : (
+                      <div className="text-center p-6 text-muted-foreground text-xs space-y-2">
+                        <Video className="size-8 mx-auto opacity-40" />
+                        <p>No gameplay clip submitted during registration</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* LIVE BID HISTORY FEED */}
+                <div className="rounded-2xl border border-border bg-card p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <TrendingUp className="size-4 text-primary" />
+                      Live Bid Activity Log
+                    </h3>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      {bidHistory.length} bids recorded
+                    </span>
+                  </div>
+
+                  <div className="divide-y divide-border max-h-56 overflow-y-auto space-y-1">
+                    {bidHistory.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-6 text-center">
+                        No bids recorded for this candidate yet. Place your opening bid above!
+                      </p>
+                    ) : (
+                      bidHistory.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="py-2.5 flex items-center justify-between text-xs hover:bg-muted/30 px-2 rounded transition"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`size-2 rounded-full ${
+                                item.team.toLowerCase() === myTeamName.toLowerCase()
+                                  ? 'bg-emerald-400'
+                                  : 'bg-primary'
+                              }`}
+                            />
+                            <span
+                              className={`font-semibold ${
+                                item.team.toLowerCase() === myTeamName.toLowerCase()
+                                  ? 'text-emerald-400'
+                                  : 'text-foreground'
+                              }`}
+                            >
+                              {item.team}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono font-bold text-foreground">
+                              ₹{item.amount.toLocaleString()}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">{item.time}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="p-16 text-center rounded-2xl border border-border bg-card text-muted-foreground space-y-3">
+              <Gavel className="size-12 mx-auto opacity-50 text-primary animate-bounce" />
+              <h3 className="text-lg font-bold text-foreground">Waiting for Next Candidate</h3>
+              <p className="text-xs max-w-md mx-auto">
+                The Tournament Organizer / Creator is selecting the next candidate for the hammer. As soon as a candidate is chosen, they will appear right here live!
+              </p>
+            </div>
+          )}
         </div>
       )}
 

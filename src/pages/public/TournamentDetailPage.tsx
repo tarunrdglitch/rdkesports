@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Trophy,
@@ -38,6 +38,8 @@ import {
   Zap,
   Crosshair,
   Target,
+  Gavel,
+  TrendingUp,
 } from 'lucide-react'
 import { useAuth } from '@/stores/authStore'
 import { StatusBadge } from '@/components/common/StatusBadge'
@@ -203,9 +205,32 @@ function mapTeamsToCandidates(teamList: any[], tourneyId: string = ''): AuctionP
   })
 }
 
+const getEmbedVideoUrl = (url?: string) => {
+  if (!url) return null
+  if (url.includes('drive.google.com')) {
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/)
+    if (match && match[1]) {
+      return `https://drive.google.com/file/d/${match[1]}/preview`
+    }
+  }
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    if (url.includes('embed')) return url
+    if (url.includes('youtu.be/')) {
+      const id = url.split('youtu.be/')[1]?.split('?')[0]
+      return `https://www.youtube.com/embed/${id}`
+    }
+    try {
+      const v = new URL(url).searchParams.get('v')
+      if (v) return `https://www.youtube.com/embed/${v}`
+    } catch {}
+  }
+  return null
+}
+
 export default function TournamentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
+  const [searchParams] = useSearchParams()
 
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
@@ -221,12 +246,52 @@ export default function TournamentDetailPage() {
     captainIgn?: string
     players?: any[]
   } | null>(null)
-  const [activeTab, setActiveTab] = useState<'live' | 'overview' | 'teams' | 'auction_pool' | 'roadmap' | 'room' | 'rules' | 'points'>('overview')
+  const [activeTab, setActiveTab] = useState<'live' | 'auction_live' | 'overview' | 'teams' | 'auction_pool' | 'roadmap' | 'room' | 'rules' | 'points'>('overview')
   const [roadmap, setRoadmap] = useState<TournamentRoadmap | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
+  // Live Auction State for Spectators (Registered players & fans)
+  const [liveAuctionState, setLiveAuctionState] = useState<{
+    activePlayerId?: string
+    basePrice?: number
+    currentBid?: number
+    highestBidderTeam?: string
+    bidHistory?: { team: string; amount: number; time: string }[]
+    bidIncrement?: number
+    timerSeconds?: number
+    timerStatus?: 'idle' | 'running' | 'paused' | 'ended'
+    activePlayer?: AuctionPlayer
+  } | null>(null)
+
   const isAuction = Boolean(tournament && (tournament.format === 'Auction Tournament' || tournament.format.toLowerCase().includes('auction')))
+
+  // Poll live auction state every 1s for instant spectator updates
+  useEffect(() => {
+    if (!id || !isAuction) return
+
+    const fetchAuctionState = async () => {
+      try {
+        const res = await fetch(`/api/auctions/${id}/state`)
+        if (res.ok) {
+          const data = await res.json()
+          setLiveAuctionState(data)
+        }
+      } catch {}
+    }
+
+    fetchAuctionState()
+    const interval = setInterval(fetchAuctionState, 1000)
+    return () => clearInterval(interval)
+  }, [id, isAuction])
+
+  // Sync tab with URL parameter
+  useEffect(() => {
+    const tabParam = searchParams.get('tab')
+    if (tabParam === 'auction_live' || tabParam === 'auction') {
+      setActiveTab('auction_live')
+    }
+  }, [searchParams])
 
   // Video Montage Clip Modal State
   const [activeClip, setActiveClip] = useState<{ ign: string; name: string; url: string; role: string } | null>(null)
@@ -1343,7 +1408,25 @@ export default function TournamentDetailPage() {
             ) : null}
           </button>
 
-          {/* TAB 1: Auction Pool & Video Clips (If Auction Tournament) */}
+          {/* TAB 1: Auction Stage (Live Spectator for Registered Players and Fans) */}
+          {isAuction && (
+            <button
+              onClick={() => setActiveTab('auction_live')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-all border-b-2 whitespace-nowrap ${
+                activeTab === 'auction_live'
+                  ? 'border-red-500 text-red-400 bg-red-500/10'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Gavel className="size-3.5 text-red-500 animate-pulse" />
+              <span>Live Auction Stage</span>
+              <span className="rounded bg-red-500 text-white px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider animate-pulse shadow-sm">
+                LIVE
+              </span>
+            </button>
+          )}
+
+          {/* TAB 2: Auction Pool & Video Clips (If Auction Tournament) */}
           {isAuction && (
             <button
               onClick={() => setActiveTab('auction_pool')}
@@ -1453,6 +1536,333 @@ export default function TournamentDetailPage() {
             <span>Rulebook</span>
           </button>
         </div>
+
+        {/* ═══ TAB: LIVE AUCTION STAGE (SPECTATOR VIEW FOR REGISTERED PLAYERS & FANS) ═══ */}
+        {activeTab === 'auction_live' && (
+          <div className="mt-6 space-y-6 max-w-6xl mx-auto">
+            {/* 5-SECOND HAMMER COUNTDOWN BANNER */}
+            {liveAuctionState?.timerStatus === 'running' && (
+              <div className="rounded-2xl border-2 border-red-500 bg-gradient-to-r from-red-950 via-red-900 to-red-950 p-4 sm:p-5 text-white shadow-2xl animate-pulse">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="size-14 rounded-2xl bg-red-600 flex items-center justify-center font-black font-mono text-3xl text-white shadow-xl shrink-0 border-2 border-red-400">
+                      {liveAuctionState.timerSeconds || 5}s
+                    </div>
+                    <div>
+                      <div className="text-xs font-black uppercase tracking-wider text-red-300 flex items-center gap-1.5">
+                        <Clock className="size-4 text-yellow-300 animate-spin" />
+                        <span>5-Second Hammer Countdown Active!</span>
+                      </div>
+                      <p className="text-sm sm:text-base font-bold text-slate-100 mt-0.5">
+                        {liveAuctionState.highestBidderTeam
+                          ? `Auctioneer dropping hammer! Selling to ${liveAuctionState.highestBidderTeam} for ₹${(liveAuctionState.currentBid || 0).toLocaleString()} unless outbid!`
+                          : '5 seconds to place opening bid!'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] uppercase font-bold text-red-300 block">Hammer Drop In</span>
+                    <span className="text-3xl sm:text-4xl font-black font-mono text-yellow-300">
+                      {liveAuctionState.timerSeconds || 5}s
+                    </span>
+                  </div>
+                </div>
+
+                <div className="w-full bg-red-950/80 rounded-full h-3 mt-3 overflow-hidden border border-red-500/40">
+                  <div
+                    className="bg-gradient-to-r from-amber-400 via-orange-400 to-red-500 h-full transition-all duration-300 rounded-full"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, ((liveAuctionState.timerSeconds || 5) / 5) * 100))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* SOLD BANNER */}
+            {(liveAuctionState?.activePlayer?.status === 'sold' || liveAuctionState?.timerStatus === 'ended') && (
+              <div className="rounded-2xl border-2 border-emerald-500/50 bg-gradient-to-r from-emerald-950/80 via-emerald-900/60 to-emerald-950/80 p-4 sm:p-5 text-white shadow-xl flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="size-12 rounded-xl bg-emerald-600 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="size-7 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm uppercase tracking-wider text-emerald-300">
+                      HAMMER DROPPED — CANDIDATE SOLD!
+                    </h4>
+                    <p className="text-xs sm:text-sm text-slate-200">
+                      Sold to{' '}
+                      <strong className="text-emerald-300">
+                        {liveAuctionState?.activePlayer?.soldToTeam || liveAuctionState?.highestBidderTeam}
+                      </strong>{' '}
+                      for{' '}
+                      <strong className="text-white font-mono">
+                        ₹
+                        {(
+                          liveAuctionState?.activePlayer?.soldPrice ||
+                          liveAuctionState?.currentBid ||
+                          0
+                        ).toLocaleString()}
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs font-black uppercase px-3 py-1.5 rounded-lg bg-emerald-500 text-background">
+                  Hammer Closed
+                </span>
+              </div>
+            )}
+
+            {(() => {
+              const activeCandidate =
+                liveAuctionState?.activePlayer ||
+                auctionPlayers.find((p) => p.id === liveAuctionState?.activePlayerId) ||
+                auctionPlayers[0]
+
+              if (!activeCandidate) {
+                return (
+                  <div className="p-16 text-center rounded-2xl border border-border bg-card text-muted-foreground space-y-3">
+                    <Gavel className="size-12 mx-auto opacity-50 text-primary animate-bounce" />
+                    <h3 className="text-lg font-bold text-foreground">Awaiting Next Candidate on Hammer</h3>
+                    <p className="text-xs max-w-md mx-auto">
+                      The tournament organizer is preparing the next player. This live stage will update instantly when the candidate is called up!
+                    </p>
+                  </div>
+                )
+              }
+
+              const currentHammerBid = liveAuctionState?.currentBid || activeCandidate.basePrice || 5000
+              const leadingTeam = liveAuctionState?.highestBidderTeam || ''
+              const clip = activeCandidate.clipUrl || ''
+
+              return (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* LEFT: CURRENT PLAYER CARD & BIDDING AMOUNT (6 cols) */}
+                  <div className="lg:col-span-6 space-y-6">
+                    <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 shadow-xl relative overflow-hidden">
+                      {/* Status Bar */}
+                      <div className="flex items-center justify-between border-b border-border pb-4 mb-5">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                          </span>
+                          <span className="text-xs font-black uppercase tracking-wider text-red-400">
+                            CURRENTLY ON THE HAMMER
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                            UID: {activeCandidate.gameUid || 'N/A'}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                            {activeCandidate.tier || 'Marquee Draft'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Bio */}
+                      <div className="flex flex-col sm:flex-row gap-5 items-start sm:items-center">
+                        <div className="relative shrink-0 mx-auto sm:mx-0">
+                          <img
+                            src={
+                              activeCandidate.photoUrl &&
+                              !activeCandidate.photoUrl.includes('photo-1566492031773-4f4e44671857')
+                                ? activeCandidate.photoUrl
+                                : '/gg.png'
+                            }
+                            alt={activeCandidate.ign}
+                            className="size-28 sm:size-32 rounded-2xl object-cover border-2 border-primary/40 shadow-xl"
+                          />
+                          <span className="absolute -bottom-2 -right-2 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-primary text-background shadow">
+                            {activeCandidate.role}
+                          </span>
+                        </div>
+
+                        <div className="flex-1 space-y-2 text-center sm:text-left">
+                          <h2 className="text-2xl sm:text-3xl font-black font-heading text-foreground">
+                            {activeCandidate.ign}
+                          </h2>
+                          <p className="text-xs text-muted-foreground font-medium">
+                            Real Name: <strong className="text-foreground">{activeCandidate.name}</strong>
+                          </p>
+
+                          {/* Stats pills */}
+                          {activeCandidate.stats && (
+                            <div className="flex flex-wrap gap-2 pt-1 justify-center sm:justify-start">
+                              {activeCandidate.stats.kd && (
+                                <span className="text-[11px] px-2 py-0.5 rounded bg-muted text-foreground border border-border">
+                                  K/D: <strong>{activeCandidate.stats.kd}</strong>
+                                </span>
+                              )}
+                              {activeCandidate.stats.headshotRate && (
+                                <span className="text-[11px] px-2 py-0.5 rounded bg-muted text-foreground border border-border">
+                                  HS Rate: <strong>{activeCandidate.stats.headshotRate}</strong>
+                                </span>
+                              )}
+                              {activeCandidate.stats.matchesPlayed && (
+                                <span className="text-[11px] px-2 py-0.5 rounded bg-muted text-foreground border border-border">
+                                  Matches: <strong>{activeCandidate.stats.matchesPlayed}</strong>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* BIDDING AMOUNT & LEADING FRANCHISE */}
+                      <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 sm:p-5">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
+                              Base Reserve Price
+                            </span>
+                            <span className="text-base sm:text-lg font-bold text-muted-foreground font-mono">
+                              ₹{(liveAuctionState?.basePrice || activeCandidate.basePrice || 5000).toLocaleString()}
+                            </span>
+                          </div>
+
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-primary block">
+                              Current Bidding Amount
+                            </span>
+                            <span className="text-2xl sm:text-4xl font-black font-heading text-primary font-mono">
+                              ₹{currentHammerBid.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Leading Bidder */}
+                        <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">Highest Leading Franchise:</span>
+                          {leadingTeam ? (
+                            <span className="text-xs font-black uppercase tracking-wider px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1.5">
+                              <Flame className="size-3.5" />
+                              <span>{leadingTeam}</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">Awaiting Opening Bid</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Spectator Note */}
+                      <div className="mt-4 p-3 rounded-lg bg-primary/5 border border-primary/20 text-xs text-muted-foreground flex items-center gap-2">
+                        <ShieldCheck className="size-4 text-primary shrink-0" />
+                        <span>
+                          <strong>Spectator Mode:</strong> Registered players can observe real-time auction action. Official bids are submitted live by credentialed franchise ambassadors.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* RIGHT: REGISTERED GAMEPLAY SCREEN & LIVE BIDS (6 cols) */}
+                  <div className="lg:col-span-6 space-y-6">
+                    {/* VIDEO SCREEN */}
+                    <div className="rounded-2xl border border-border bg-card p-5 sm:p-6 shadow-xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                          <Video className="size-4 text-primary" />
+                          <span>Candidate Gameplay Screen</span>
+                        </h3>
+                        {clip && (
+                          <a
+                            href={clip}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1"
+                          >
+                            <ExternalLink className="size-3" /> External Link
+                          </a>
+                        )}
+                      </div>
+
+                      <div className="rounded-xl border border-border bg-black/80 overflow-hidden aspect-video relative flex items-center justify-center shadow-inner group">
+                        {clip ? (
+                          getEmbedVideoUrl(clip) ? (
+                            <iframe
+                              src={getEmbedVideoUrl(clip)!}
+                              title={`${activeCandidate.ign} Gameplay Clip`}
+                              className="w-full h-full border-0"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          ) : (
+                            <div className="text-center p-6 space-y-3">
+                              <div className="size-12 rounded-full bg-primary/20 text-primary mx-auto flex items-center justify-center">
+                                <Play className="size-6 ml-0.5" />
+                              </div>
+                              <div>
+                                <p className="font-bold text-xs text-foreground">Gameplay Montage Clip</p>
+                                <p className="text-[11px] text-muted-foreground truncate max-w-xs mx-auto">
+                                  {clip}
+                                </p>
+                              </div>
+                              <a
+                                href={clip}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-xs font-bold text-background"
+                              >
+                                Watch Full Video <ExternalLink className="size-3" />
+                              </a>
+                            </div>
+                          )
+                        ) : (
+                          <div className="text-center p-6 text-muted-foreground text-xs space-y-2">
+                            <Video className="size-8 mx-auto opacity-40" />
+                            <p>No gameplay clip submitted during registration</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* LIVE BID LOG */}
+                    <div className="rounded-2xl border border-border bg-card p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                          <TrendingUp className="size-4 text-primary" />
+                          Live Bids Stream
+                        </h3>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {liveAuctionState?.bidHistory?.length || 0} bids
+                        </span>
+                      </div>
+
+                      <div className="divide-y divide-border max-h-52 overflow-y-auto space-y-1">
+                        {!liveAuctionState?.bidHistory || liveAuctionState.bidHistory.length === 0 ? (
+                          <p className="text-xs text-muted-foreground py-6 text-center">
+                            Awaiting opening bids for this candidate...
+                          </p>
+                        ) : (
+                          liveAuctionState.bidHistory.map((item, idx) => (
+                            <div
+                              key={idx}
+                              className="py-2.5 flex items-center justify-between text-xs hover:bg-muted/30 px-2 rounded transition"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="size-2 rounded-full bg-primary" />
+                                <span className="font-semibold text-foreground">{item.team}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="font-mono font-bold text-primary">
+                                  ₹{item.amount.toLocaleString()}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">{item.time}</span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        )}
 
         {/* ═══ TAB: LIVE STREAM BROADCAST (AUDIENCE & SPECTATORS - NO REGISTRATION REQUIRED) ═══ */}
         {activeTab === 'live' && (

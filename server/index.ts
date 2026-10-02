@@ -4649,17 +4649,27 @@ app.post('/api/auctions/:id/finalize', (req: Request, res: Response) => {
 })
 
 // Live Auction State
-let LIVE_AUCTION_STATE: Record<
-  string,
-  {
-    activePlayerId: string
-    currentBid: number
-    highestBidderTeam: string
-    bidHistory: { team: string; amount: number; time: string }[]
-  }
-> = {
+interface LiveAuctionStateItem {
+  activePlayerId: string
+  basePrice: number
+  currentBid: number
+  highestBidderTeam: string
+  bidHistory: { team: string; amount: number; time: string }[]
+  bidIncrement: number
+  timerDuration: number
+  timerStartedAt: number | null
+  timerSeconds: number | null
+  timerStatus: 'idle' | 'running' | 'expired'
+  status: 'idle' | 'on_auction' | 'sold' | 'unsold'
+  soldToTeam?: string
+  soldPrice?: number
+  updatedAt: number
+}
+
+let LIVE_AUCTION_STATE: Record<string, LiveAuctionStateItem> = {
   t3: {
     activePlayerId: 'ap_1',
+    basePrice: 10000,
     currentBid: 25000,
     highestBidderTeam: 'Aura XtremeZ',
     bidHistory: [
@@ -4667,9 +4677,77 @@ let LIVE_AUCTION_STATE: Record<
       { team: 'Tamil Titans', amount: 20000, time: '12:01:10' },
       { team: 'Aura XtremeZ', amount: 25000, time: '12:02:40' },
     ],
+    bidIncrement: 500,
+    timerDuration: 5,
+    timerStartedAt: null,
+    timerSeconds: null,
+    timerStatus: 'idle',
+    status: 'on_auction',
+    updatedAt: Date.now(),
   },
 }
 
+// Helper: Sell player to franchise and deduct purse
+function sellPlayerInternal(auctionId: string, playerId: string, teamName: string, price: number) {
+  const player = AUCTION_PLAYERS.find(
+    (p) => (p.auctionId === auctionId || p.tournamentId === auctionId) && p.id === playerId
+  )
+  if (player) {
+    player.status = 'sold'
+    player.soldPrice = price
+    player.soldToTeam = teamName
+  }
+
+  // Deduct from bidder purse
+  const bidder = EPHEMERAL_BIDDERS.find(
+    (b) => b.auctionId === auctionId && b.teamName.toLowerCase() === teamName.toLowerCase()
+  )
+  if (bidder) {
+    bidder.allocatedPurse = Math.max(0, bidder.allocatedPurse - price)
+  }
+
+  // Sync into REGISTERED_TEAMS squad roster
+  let matchedTeam = REGISTERED_TEAMS.find(
+    (t) => (t.tournamentId === auctionId || t.tournamentId === player?.tournamentId) &&
+           t.name.toLowerCase().trim() === teamName.toLowerCase().trim()
+  )
+  if (!matchedTeam) {
+    matchedTeam = {
+      id: `team_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
+      tournamentId: player?.tournamentId || auctionId,
+      name: teamName.trim(),
+      captainName: `${teamName.trim()} Official`,
+      captainEmail: `${teamName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}@franchise.rdk`,
+      captainPhone: '',
+      captainIgn: `${teamName.trim()} Official`,
+      players: [],
+      status: 'verified',
+      registeredAt: new Date().toISOString(),
+    }
+    REGISTERED_TEAMS.push(matchedTeam)
+  }
+  if (player && matchedTeam) {
+    const alreadyInSquad = matchedTeam.players.some((p: any) => p.ign === player.ign || (player.gameUid && p.gameUid === player.gameUid))
+    if (!alreadyInSquad) {
+      matchedTeam.players.push({
+        ign: player.ign,
+        gameUid: player.gameUid,
+      })
+    }
+  }
+
+  const state = LIVE_AUCTION_STATE[auctionId]
+  if (state) {
+    state.status = 'sold'
+    state.soldToTeam = teamName
+    state.soldPrice = price
+    state.timerStatus = 'expired'
+    state.timerSeconds = 0
+    state.updatedAt = Date.now()
+  }
+}
+
+// 1. GET Auction State (with dynamic 5s countdown computation)
 app.get('/api/auctions/:id/state', (req: Request, res: Response) => {
   const id = String(req.params.id)
   let state = LIVE_AUCTION_STATE[id]
@@ -4677,34 +4755,259 @@ app.get('/api/auctions/:id/state', (req: Request, res: Response) => {
     const firstPlayer = AUCTION_PLAYERS.find((p) => p.auctionId === id || p.tournamentId === id)
     state = {
       activePlayerId: firstPlayer ? firstPlayer.id : '',
-      currentBid: firstPlayer ? firstPlayer.basePrice : 10000,
+      basePrice: firstPlayer ? firstPlayer.basePrice : 5000,
+      currentBid: firstPlayer ? firstPlayer.basePrice : 5000,
       highestBidderTeam: '',
       bidHistory: [],
+      bidIncrement: 500,
+      timerDuration: 5,
+      timerStartedAt: null,
+      timerSeconds: null,
+      timerStatus: 'idle',
+      status: firstPlayer ? 'on_auction' : 'idle',
+      updatedAt: Date.now(),
     }
     LIVE_AUCTION_STATE[id] = state
   }
-  return res.json(state)
+
+  // Timer countdown handling
+  if (state.timerStatus === 'running' && state.timerStartedAt) {
+    const elapsed = Math.floor((Date.now() - state.timerStartedAt) / 1000)
+    const remaining = Math.max(0, (state.timerDuration || 5) - elapsed)
+    state.timerSeconds = remaining
+
+    if (remaining === 0) {
+      state.timerStatus = 'expired'
+      // If there is an active highest bidder when 5s timer expires, sell to them automatically!
+      if (state.highestBidderTeam && state.activePlayerId && state.status !== 'sold') {
+        sellPlayerInternal(id, state.activePlayerId, state.highestBidderTeam, state.currentBid)
+      }
+    }
+  }
+
+  const activePlayer = AUCTION_PLAYERS.find((p) => p.id === state.activePlayerId)
+  return res.json({
+    ...state,
+    activePlayer: activePlayer || null,
+  })
 })
 
+// 2. Set Current Player on Hammer (Broadcasted to all Ambassadors & Players instantly)
+app.post('/api/auctions/:id/set-player', (req: Request, res: Response) => {
+  const id = String(req.params.id)
+  const { playerId, basePrice, bidIncrement } = req.body
+
+  const player = AUCTION_PLAYERS.find(
+    (p) => (p.auctionId === id || p.tournamentId === id) && p.id === playerId
+  )
+  if (!player) {
+    return res.status(404).json({ error: 'Player not found in auction pool' })
+  }
+
+  if (basePrice !== undefined && Number(basePrice) > 0) {
+    player.basePrice = Number(basePrice)
+  }
+
+  const effBasePrice = player.basePrice || 5000
+  const effIncrement = Number(bidIncrement) > 0 ? Number(bidIncrement) : (LIVE_AUCTION_STATE[id]?.bidIncrement || 500)
+
+  // Mark previous player back to available if unsold
+  const prevState = LIVE_AUCTION_STATE[id]
+  if (prevState?.activePlayerId && prevState.activePlayerId !== playerId) {
+    const prevP = AUCTION_PLAYERS.find((p) => p.id === prevState.activePlayerId)
+    if (prevP && prevP.status === 'on_auction') {
+      prevP.status = 'available'
+    }
+  }
+
+  if (player.status !== 'sold') {
+    player.status = 'on_auction'
+  }
+
+  LIVE_AUCTION_STATE[id] = {
+    activePlayerId: player.id,
+    basePrice: effBasePrice,
+    currentBid: effBasePrice,
+    highestBidderTeam: '',
+    bidHistory: [],
+    bidIncrement: effIncrement,
+    timerDuration: 5,
+    timerStartedAt: null,
+    timerSeconds: null,
+    timerStatus: 'idle',
+    status: 'on_auction',
+    updatedAt: Date.now(),
+  }
+
+  return res.json({
+    success: true,
+    state: LIVE_AUCTION_STATE[id],
+    activePlayer: player,
+  })
+})
+
+// 3. Update Auction Settings (Base Price & Bid Increment Step)
+app.post('/api/auctions/:id/update-settings', (req: Request, res: Response) => {
+  const id = String(req.params.id)
+  const { basePrice, bidIncrement } = req.body
+
+  let state = LIVE_AUCTION_STATE[id]
+  if (!state) {
+    return res.status(404).json({ error: 'No active auction state found' })
+  }
+
+  if (bidIncrement !== undefined && Number(bidIncrement) > 0) {
+    state.bidIncrement = Number(bidIncrement)
+  }
+
+  if (basePrice !== undefined && Number(basePrice) > 0) {
+    state.basePrice = Number(basePrice)
+    const player = AUCTION_PLAYERS.find((p) => p.id === state.activePlayerId)
+    if (player) {
+      player.basePrice = Number(basePrice)
+    }
+    // If no bids placed yet, reset currentBid to new basePrice
+    if (!state.highestBidderTeam || state.bidHistory.length === 0) {
+      state.currentBid = Number(basePrice)
+    }
+  }
+
+  state.updatedAt = Date.now()
+  const activePlayer = AUCTION_PLAYERS.find((p) => p.id === state.activePlayerId)
+  return res.json({ success: true, state, activePlayer })
+})
+
+// 4. Start 5-Second Countdown Timer ("Going Once... Going Twice...")
+app.post('/api/auctions/:id/start-timer', (req: Request, res: Response) => {
+  const id = String(req.params.id)
+  const duration = Number(req.body.duration) || 5
+
+  let state = LIVE_AUCTION_STATE[id]
+  if (!state || !state.activePlayerId) {
+    return res.status(400).json({ error: 'No active player on the hammer' })
+  }
+
+  state.timerDuration = duration
+  state.timerStartedAt = Date.now()
+  state.timerStatus = 'running'
+  state.timerSeconds = duration
+  state.updatedAt = Date.now()
+
+  return res.json({ success: true, state })
+})
+
+// 5. Stop / Pause Timer
+app.post('/api/auctions/:id/stop-timer', (req: Request, res: Response) => {
+  const id = String(req.params.id)
+  let state = LIVE_AUCTION_STATE[id]
+  if (state) {
+    state.timerStatus = 'idle'
+    state.timerStartedAt = null
+    state.timerSeconds = null
+    state.updatedAt = Date.now()
+  }
+  return res.json({ success: true, state })
+})
+
+// 6. Conductor Decision: Mark Sold
+app.post('/api/auctions/:id/mark-sold', (req: Request, res: Response) => {
+  const id = String(req.params.id)
+  const { playerId, teamName, price } = req.body
+
+  const state = LIVE_AUCTION_STATE[id]
+  const targetPlayerId = playerId || state?.activePlayerId
+  const targetTeam = teamName || state?.highestBidderTeam
+  const targetPrice = Number(price || state?.currentBid || 0)
+
+  if (!targetPlayerId || !targetTeam || targetPrice <= 0) {
+    return res.status(400).json({ error: 'Valid player, team name, and price required to mark sold' })
+  }
+
+  sellPlayerInternal(id, targetPlayerId, targetTeam, targetPrice)
+  return res.json({
+    success: true,
+    message: `Player marked sold to ${targetTeam} for ₹${targetPrice.toLocaleString()}`,
+    state: LIVE_AUCTION_STATE[id],
+  })
+})
+
+// 7. Conductor Decision: Mark Unsold
+app.post('/api/auctions/:id/mark-unsold', (req: Request, res: Response) => {
+  const id = String(req.params.id)
+  const { playerId } = req.body
+
+  const state = LIVE_AUCTION_STATE[id]
+  const targetPlayerId = playerId || state?.activePlayerId
+
+  const player = AUCTION_PLAYERS.find((p) => p.id === targetPlayerId)
+  if (player) {
+    player.status = 'unsold'
+  }
+
+  if (state) {
+    state.status = 'unsold'
+    state.timerStatus = 'idle'
+    state.timerStartedAt = null
+    state.timerSeconds = null
+    state.highestBidderTeam = ''
+    state.updatedAt = Date.now()
+  }
+
+  return res.json({
+    success: true,
+    message: 'Candidate marked unsold',
+    state: LIVE_AUCTION_STATE[id],
+  })
+})
+
+// 8. Place Official Bid (Ambassador or Conductor)
 const handlePlaceBid = (req: Request, res: Response) => {
   try {
     const id = String(req.params.id)
-    const { teamName, amount, playerId } = req.body
+    const { teamName, amount, increment, playerId } = req.body
 
-    if (!teamName || !amount) {
-      return res.status(400).json({ error: 'Team name and bid amount are required' })
+    if (!teamName) {
+      return res.status(400).json({ error: 'Franchise team name is required' })
     }
 
-    const numAmount = Number(amount)
+    let state = LIVE_AUCTION_STATE[id]
+    if (!state) {
+      const firstPlayer = AUCTION_PLAYERS.find((p) => p.auctionId === id || p.tournamentId === id)
+      state = {
+        activePlayerId: firstPlayer ? firstPlayer.id : '',
+        basePrice: firstPlayer ? firstPlayer.basePrice : 5000,
+        currentBid: firstPlayer ? firstPlayer.basePrice : 5000,
+        highestBidderTeam: '',
+        bidHistory: [],
+        bidIncrement: 500,
+        timerDuration: 5,
+        timerStartedAt: null,
+        timerSeconds: null,
+        timerStatus: 'idle',
+        status: 'on_auction',
+        updatedAt: Date.now(),
+      }
+      LIVE_AUCTION_STATE[id] = state
+    }
+
+    // Determine bid amount
+    let numAmount = Number(amount)
     if (isNaN(numAmount) || numAmount <= 0) {
-      return res.status(400).json({ error: 'Valid positive bid amount is required' })
+      const step = Number(increment) > 0 ? Number(increment) : (state.bidIncrement || 500)
+      numAmount = state.currentBid + step
+    }
+
+    // Check against current bid
+    if (numAmount <= state.currentBid) {
+      return res.status(400).json({
+        error: `Bid must be greater than current bid (₹${state.currentBid.toLocaleString()}). Minimum next bid is ₹${(state.currentBid + (state.bidIncrement || 500)).toLocaleString()}`,
+      })
     }
 
     // Find bidder to verify remaining purse balance
     const bidder = EPHEMERAL_BIDDERS.find(
       (b) => b.auctionId === id && b.teamName.toLowerCase() === String(teamName).toLowerCase()
     )
-
     const currentPurse = bidder ? bidder.allocatedPurse : 150000
 
     if (numAmount > currentPurse) {
@@ -4718,14 +5021,14 @@ const handlePlaceBid = (req: Request, res: Response) => {
     const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
     const maxSquadSize = tourney?.maxSquadSize || 6
 
-    // Find active player being bid on
-    const targetPlayerId = playerId || LIVE_AUCTION_STATE[id]?.activePlayerId
+    // Target player
+    const targetPlayerId = playerId || state.activePlayerId
     const activePlayer = AUCTION_PLAYERS.find(
       (p) => (p.auctionId === id || p.tournamentId === id) && p.id === targetPlayerId
     )
-    const baseBidPrice = activePlayer?.basePrice || tourney?.basePrice || 5000
+    const baseBidPrice = activePlayer?.basePrice || state.basePrice || 5000
 
-    // Count players already acquired by this franchise
+    // Count players already acquired
     const mySquad = AUCTION_PLAYERS.filter(
       (p) =>
         (p.auctionId === id || p.tournamentId === id) &&
@@ -4742,18 +5045,14 @@ const handlePlaceBid = (req: Request, res: Response) => {
       })
     }
 
-    // Budget Gatekeeper Constraint:
-    // After winning this player, the franchise will need remainingSlotsAfter = maxSquadSize - (currentSquadCount + 1)
-    // Each remaining player requires at least baseBidPrice.
-    // requiredReserve = remainingSlotsAfter * baseBidPrice.
-    // maxAllowedBid = currentPurse - requiredReserve.
+    // Budget Gatekeeper Constraint
     const remainingSlotsAfter = Math.max(0, maxSquadSize - (currentSquadCount + 1))
     const requiredReserve = remainingSlotsAfter * baseBidPrice
     const maxAllowedBid = Math.max(0, currentPurse - requiredReserve)
 
     if (numAmount > maxAllowedBid) {
       return res.status(400).json({
-        error: `Purse Reserve Violation: Team "${teamName}" must keep at least ₹${requiredReserve.toLocaleString()} (₹${baseBidPrice.toLocaleString()} base bid × ${remainingSlotsAfter} slots) in reserve to complete the ${maxSquadSize}-member squad. Maximum allowed bid is ₹${maxAllowedBid.toLocaleString()}.`,
+        error: `Purse Reserve Violation: Team "${teamName}" must keep at least ₹${requiredReserve.toLocaleString()} (₹${baseBidPrice.toLocaleString()} base bid × ${remainingSlotsAfter} slots) in reserve to complete the squad. Maximum allowed bid is ₹${maxAllowedBid.toLocaleString()}.`,
         maxAllowedBid,
         requiredReserve,
         remainingSlotsAfter,
@@ -4761,23 +5060,8 @@ const handlePlaceBid = (req: Request, res: Response) => {
       })
     }
 
-    let state = LIVE_AUCTION_STATE[id]
-    if (!state) {
-      state = {
-        activePlayerId: playerId || '',
-        currentBid: 0,
-        highestBidderTeam: '',
-        bidHistory: [],
-      }
-      LIVE_AUCTION_STATE[id] = state
-    }
-
     if (playerId && state.activePlayerId !== playerId) {
       state.activePlayerId = playerId
-    }
-
-    if (numAmount <= state.currentBid) {
-      return res.status(400).json({ error: `Bid must be greater than current bid (₹${state.currentBid.toLocaleString()})` })
     }
 
     state.currentBid = numAmount
@@ -4787,6 +5071,16 @@ const handlePlaceBid = (req: Request, res: Response) => {
       amount: numAmount,
       time: new Date().toLocaleTimeString(),
     })
+
+    // If timer was running, restart 5-second countdown timer to allow competing bids!
+    if (state.timerStatus === 'running') {
+      state.timerStartedAt = Date.now()
+      state.timerSeconds = state.timerDuration || 5
+      state.timerStatus = 'running'
+    }
+
+    state.status = 'on_auction'
+    state.updatedAt = Date.now()
 
     return res.json({
       success: true,

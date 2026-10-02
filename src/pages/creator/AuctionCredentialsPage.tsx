@@ -29,6 +29,8 @@ import {
   Crosshair,
   Plus,
   RotateCcw,
+  Clock,
+  ArrowLeft,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 
@@ -154,9 +156,18 @@ export default function AuctionCredentialsPage() {
   const [activePlayerId, setActivePlayerId] = useState<string>('')
   const [currentBid, setCurrentBid] = useState<number>(0)
   const [selectedBidderTeam, setSelectedBidderTeam] = useState<string>('')
+  const [highestBidderTeam, setHighestBidderTeam] = useState<string>('')
   const [bidHistory, setBidHistory] = useState<{ team: string; amount: number; time: string }[]>([])
   const [previewClipUrl, setPreviewClipUrl] = useState<string | null>(null)
   const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null)
+
+  // Real-time Auction Controls & Settings
+  const [basePriceInput, setBasePriceInput] = useState<number>(5000)
+  const [bidIncrement, setBidIncrement] = useState<number>(500)
+  const [timerSeconds, setTimerSeconds] = useState<number | null>(null)
+  const [timerStatus, setTimerStatus] = useState<'idle' | 'running' | 'expired'>('idle')
+  const [isStartingTimer, setIsStartingTimer] = useState<boolean>(false)
+  const [isUpdatingSettings, setIsUpdatingSettings] = useState<boolean>(false)
 
   // Reversal State (Audit-Logged Purse Restoration)
   const [reversalTarget, setReversalTarget] = useState<{
@@ -181,7 +192,7 @@ export default function AuctionCredentialsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to seed TNBBL data')
       setMsg(data.message || 'TNBBL Season 2 seeded successfully with 36 franchise teams and ₹1,50,000 purse!')
-      await Promise.all([loadCredentials(), loadPlayers()])
+      await Promise.all([loadCredentials(), loadPlayers(), loadAuctionState()])
     } catch (e: unknown) {
       if (e instanceof Error) setErr(e.message)
       else setErr('Failed to seed TNBBL data')
@@ -190,12 +201,52 @@ export default function AuctionCredentialsPage() {
     }
   }
 
+  // Load initial data and poll state every 1 second
   useEffect(() => {
     if (auctionId) {
       loadCredentials()
       loadPlayers()
+      loadAuctionState()
+      const interval = setInterval(loadAuctionState, 1000)
+      return () => clearInterval(interval)
     }
   }, [auctionId])
+
+  const loadAuctionState = async () => {
+    try {
+      const res = await fetch(`/api/auctions/${auctionId}/state`)
+      if (res.ok) {
+        const state = await res.json()
+        if (state.activePlayerId && state.activePlayerId !== activePlayerId) {
+          setActivePlayerId(state.activePlayerId)
+        }
+        if (state.basePrice !== undefined) {
+          setBasePriceInput(state.basePrice)
+        }
+        if (state.currentBid !== undefined) {
+          setCurrentBid(state.currentBid)
+        }
+        if (state.highestBidderTeam !== undefined) {
+          setHighestBidderTeam(state.highestBidderTeam)
+          if (state.highestBidderTeam && !selectedBidderTeam) {
+            setSelectedBidderTeam(state.highestBidderTeam)
+          }
+        }
+        if (state.bidHistory) {
+          setBidHistory(state.bidHistory)
+        }
+        if (state.bidIncrement) {
+          setBidIncrement(state.bidIncrement)
+        }
+        if (state.timerSeconds !== undefined) {
+          setTimerSeconds(state.timerSeconds)
+        }
+        if (state.timerStatus) {
+          setTimerStatus(state.timerStatus)
+        }
+      }
+    } catch {}
+  }
 
   const loadCredentials = async () => {
     try {
@@ -223,6 +274,7 @@ export default function AuctionCredentialsPage() {
           const first = fetchedPlayers[0]
           setActivePlayerId(first.id)
           setCurrentBid(first.basePrice)
+          setBasePriceInput(first.basePrice)
         }
       }
     } catch {
@@ -232,49 +284,155 @@ export default function AuctionCredentialsPage() {
 
   const activePlayer = players.find((p) => p.id === activePlayerId) || players[0]
 
-  const handleSelectPlayer = (player: AuctionPlayer) => {
+  const handleSelectPlayer = async (player: AuctionPlayer) => {
     setActivePlayerId(player.id)
-    setCurrentBid(player.soldPrice || player.basePrice)
+    setBasePriceInput(player.basePrice || 5000)
+    setCurrentBid(player.basePrice || 5000)
+    setHighestBidderTeam('')
     setBidHistory([])
+    setTimerStatus('idle')
+    setTimerSeconds(null)
+    setErr('')
+    try {
+      const res = await fetch(`/api/auctions/${auctionId}/set-player`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerId: player.id,
+          basePrice: player.basePrice,
+          bidIncrement,
+        }),
+      })
+      if (res.ok) {
+        setMsg(`🔨 Placed ${player.ign} on the hammer! Now active on all ambassador and player screens.`)
+        loadPlayers()
+      }
+    } catch {}
   }
 
-  const handlePlaceBid = (increment: number) => {
+  const handleUpdateBasePrice = async (newPrice: number) => {
+    if (!newPrice || newPrice <= 0) return
+    setBasePriceInput(newPrice)
+    setIsUpdatingSettings(true)
+    try {
+      const res = await fetch(`/api/auctions/${auctionId}/update-settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          basePrice: newPrice,
+          bidIncrement,
+        }),
+      })
+      if (res.ok) {
+        setMsg(`Base price set to ₹${newPrice.toLocaleString()} for ${activePlayer?.ign || 'player'}`)
+        loadPlayers()
+        loadAuctionState()
+      }
+    } catch {} finally {
+      setIsUpdatingSettings(false)
+    }
+  }
+
+  const handleSetBidIncrement = async (step: number) => {
+    setBidIncrement(step)
+    try {
+      await fetch(`/api/auctions/${auctionId}/update-settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bidIncrement: step,
+        }),
+      })
+      setMsg(`Bid increment set to ₹${step.toLocaleString()} for all franchise bidders`)
+    } catch {}
+  }
+
+  const handleStartTimer = async () => {
+    setIsStartingTimer(true)
+    setErr('')
+    try {
+      const res = await fetch(`/api/auctions/${auctionId}/start-timer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration: 5 }),
+      })
+      if (res.ok) {
+        setTimerStatus('running')
+        setTimerSeconds(5)
+        setMsg('⏱️ 5-second countdown started! Hammer will drop if no higher bids arrive.')
+      }
+    } catch {} finally {
+      setIsStartingTimer(false)
+    }
+  }
+
+  const handleStopTimer = async () => {
+    try {
+      await fetch(`/api/auctions/${auctionId}/stop-timer`, { method: 'POST' })
+      setTimerStatus('idle')
+      setTimerSeconds(null)
+      setMsg('Countdown paused.')
+    } catch {}
+  }
+
+  const handlePlaceBid = async (increment?: number) => {
     if (!selectedBidderTeam) {
       setErr('Please select a franchise bidder team to place a bid')
       return
     }
-    const newBid = currentBid + increment
-    setCurrentBid(newBid)
-    setBidHistory((prev) => [
-      { team: selectedBidderTeam, amount: newBid, time: new Date().toLocaleTimeString() },
-      ...prev,
-    ])
-    setMsg(`Bid placed: ${selectedBidderTeam} bid ₹${newBid.toLocaleString()} for ${activePlayer?.ign}!`)
+    const step = increment || bidIncrement || 500
+    const targetBid = currentBid + step
+    setErr('')
+    try {
+      const res = await fetch(`/api/auctions/${auctionId}/bid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teamName: selectedBidderTeam,
+          amount: targetBid,
+          increment: step,
+          playerId: activePlayer?.id,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to place bid')
+
+      setCurrentBid(targetBid)
+      setHighestBidderTeam(selectedBidderTeam)
+      setMsg(`Bid placed: ${selectedBidderTeam} bid ₹${targetBid.toLocaleString()} for ${activePlayer?.ign}!`)
+      loadCredentials()
+      loadAuctionState()
+    } catch (e: unknown) {
+      if (e instanceof Error) setErr(e.message)
+      else setErr('Error placing bid')
+    }
   }
 
   const handleMarkSold = async () => {
     if (!activePlayer) return
-    if (!selectedBidderTeam) {
-      setErr('Please select the winning franchise bidder team')
+    const team = highestBidderTeam || selectedBidderTeam
+    if (!team) {
+      setErr('Please select or wait for a franchise bidder team before marking sold')
       return
     }
 
     try {
-      const res = await fetch(`/api/auctions/${auctionId}/players/${activePlayer.id}`, {
-        method: 'PATCH',
+      const res = await fetch(`/api/auctions/${auctionId}/mark-sold`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status: 'sold',
-          soldPrice: currentBid,
-          soldToTeam: selectedBidderTeam,
+          playerId: activePlayer.id,
+          teamName: team,
+          price: currentBid,
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to update player')
+      if (!res.ok) throw new Error(data.error || 'Failed to mark player as sold')
 
-      setMsg(`SOLD! ${activePlayer.ign} sold to ${selectedBidderTeam} for ₹${currentBid.toLocaleString()}!`)
+      setMsg(`🔨 SOLD! ${activePlayer.ign} sold to ${team} for ₹${currentBid.toLocaleString()}!`)
       loadPlayers()
       loadCredentials()
+      loadAuctionState()
     } catch (e: unknown) {
       if (e instanceof Error) setErr(e.message)
     }
@@ -283,11 +441,11 @@ export default function AuctionCredentialsPage() {
   const handleMarkUnsold = async () => {
     if (!activePlayer) return
     try {
-      const res = await fetch(`/api/auctions/${auctionId}/players/${activePlayer.id}`, {
-        method: 'PATCH',
+      const res = await fetch(`/api/auctions/${auctionId}/mark-unsold`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status: 'unsold',
+          playerId: activePlayer.id,
         }),
       })
       const data = await res.json()
@@ -295,6 +453,7 @@ export default function AuctionCredentialsPage() {
 
       setMsg(`${activePlayer.ign} marked as UNSOLD for this round.`)
       loadPlayers()
+      loadAuctionState()
     } catch (e: unknown) {
       if (e instanceof Error) setErr(e.message)
     }
@@ -765,6 +924,36 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                           <p className="font-extrabold text-emerald-400 text-sm">₹{activePlayer.basePrice.toLocaleString()}</p>
                         </div>
                       </div>
+
+                      {/* Creator Base Price Control */}
+                      <div className="p-3 rounded-lg bg-card border border-border space-y-1.5">
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase flex items-center justify-between">
+                          <span>Set Candidate Base Price</span>
+                          <span className="text-[10px] text-primary">Live on Hammer</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <span className="absolute left-2.5 top-1.5 text-xs text-muted-foreground font-mono">₹</span>
+                            <input
+                              type="number"
+                              value={basePriceInput}
+                              onChange={(e) => setBasePriceInput(Number(e.target.value))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleUpdateBasePrice(basePriceInput)
+                              }}
+                              className="w-full pl-6 pr-2 py-1 text-xs font-mono font-bold rounded bg-muted border border-border text-emerald-400 focus:border-primary focus:outline-none"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateBasePrice(basePriceInput)}
+                            disabled={isUpdatingSettings}
+                            className="px-3 py-1 text-xs font-bold rounded bg-primary text-background hover:opacity-90 transition disabled:opacity-50"
+                          >
+                            Set
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Gameplay Video Clip Preview Section */}
@@ -829,7 +1018,7 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                       </div>
 
                       {/* Live Bidding Box */}
-                      <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
+                      <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-4">
                         <div className="flex items-center justify-between">
                           <div>
                             <span className="text-[10px] text-muted-foreground uppercase font-bold">CURRENT HIGHEST BID</span>
@@ -841,7 +1030,7 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                           <div className="text-right">
                             <span className="text-[10px] text-muted-foreground uppercase font-bold">FRANCHISE ON BID</span>
                             <div className="text-sm font-extrabold text-foreground">
-                              {selectedBidderTeam || 'Select Franchise'}
+                              {highestBidderTeam || selectedBidderTeam || 'No Bids Yet'}
                             </div>
                           </div>
                         </div>
@@ -849,7 +1038,7 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                         {/* Franchise Selector */}
                         <div>
                           <label className="block text-[11px] font-medium text-muted-foreground mb-1">
-                            Current Bidding Franchise Team:
+                            Current Bidding Franchise Team (Creator Override):
                           </label>
                           <select
                             value={selectedBidderTeam}
@@ -865,13 +1054,90 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                           </select>
                         </div>
 
-                        {/* Increment Buttons */}
+                        {/* Bid Increment Setting */}
+                        <div className="space-y-1.5 pt-1 border-t border-border">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-bold text-muted-foreground uppercase">
+                              Franchise Bid Increment (Step):
+                            </label>
+                            <span className="text-[11px] font-bold font-mono text-amber-400">
+                              +₹{bidIncrement.toLocaleString()} / bid
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {[500, 1000, 2500, 5000].map((step) => (
+                              <button
+                                key={step}
+                                type="button"
+                                onClick={() => handleSetBidIncrement(step)}
+                                className={`rounded py-1.5 text-xs font-bold font-mono transition border ${
+                                  bidIncrement === step
+                                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
+                                    : 'bg-card border-border text-foreground hover:border-amber-500/50'
+                                }`}
+                              >
+                                +₹{step.toLocaleString()}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* 5-SECOND COUNTDOWN HAMMER TIMER */}
+                        {timerStatus === 'running' ? (
+                          <div className="rounded-xl border-2 border-red-500 bg-red-500/15 p-3.5 space-y-2 animate-pulse">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Clock className="size-5 text-red-400 animate-spin" />
+                                <span className="font-heading font-black text-sm text-red-400 uppercase tracking-widest">
+                                  GOING ONCE, TWICE... HAMMER DROP!
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleStopTimer}
+                                className="px-2.5 py-1 text-[11px] font-bold rounded bg-muted text-muted-foreground hover:text-foreground"
+                              >
+                                Pause
+                              </button>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <div className="text-3xl font-black font-mono text-red-400">
+                                {timerSeconds}s
+                              </div>
+                              <div className="flex-1">
+                                <div className="h-3 w-full rounded-full bg-black/40 overflow-hidden">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-amber-500 to-red-500 transition-all duration-1000 ease-linear"
+                                    style={{ width: `${((timerSeconds || 0) / 5) * 100}%` }}
+                                  />
+                                </div>
+                                <p className="text-[10px] text-red-300 mt-1">
+                                  If no higher bid is placed in {timerSeconds}s, player is sold to {highestBidderTeam || selectedBidderTeam || 'leading team'}!
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleStartTimer}
+                            disabled={isStartingTimer || activePlayer.status === 'sold'}
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 py-3 text-xs font-heading font-black text-black shadow-lg shadow-amber-500/25 hover:scale-[1.01] active:scale-[0.99] transition disabled:opacity-40"
+                          >
+                            <Clock className="size-4" />
+                            START 5-SECOND COUNTDOWN ("GOING ONCE, GOING TWICE...")
+                          </button>
+                        )}
+
+                        {/* Increment Buttons for Conductor */}
                         <div className="grid grid-cols-4 gap-2">
                           {[500, 1000, 2500, 5000].map((inc) => (
                             <button
                               key={inc}
                               onClick={() => handlePlaceBid(inc)}
-                              className="rounded border border-border bg-card py-2 text-xs font-extrabold text-foreground hover:border-primary hover:text-primary transition shadow-sm"
+                              disabled={activePlayer.status === 'sold'}
+                              className="rounded border border-border bg-card py-2 text-xs font-extrabold text-foreground hover:border-primary hover:text-primary transition shadow-sm disabled:opacity-40"
                             >
                               +₹{inc.toLocaleString()}
                             </button>
@@ -882,14 +1148,16 @@ Arun Kumar,VIPER_ASSAULT,661928374,Assaulter,7500,https://www.youtube.com/watch?
                         <div className="grid grid-cols-2 gap-3 pt-2">
                           <button
                             onClick={handleMarkSold}
-                            className="inline-flex items-center justify-center gap-1.5 rounded bg-emerald-500 py-2.5 text-xs font-black text-black hover:bg-emerald-400 transition shadow"
+                            disabled={activePlayer.status === 'sold' || (!highestBidderTeam && !selectedBidderTeam)}
+                            className="inline-flex items-center justify-center gap-1.5 rounded bg-emerald-500 py-2.5 text-xs font-black text-black hover:bg-emerald-400 transition shadow disabled:opacity-40"
                           >
                             <Gavel className="size-4" />
-                            SOLD TO {selectedBidderTeam ? selectedBidderTeam.split(' ')[0] : 'TEAM'}
+                            SOLD TO {highestBidderTeam ? highestBidderTeam.split(' ')[0] : (selectedBidderTeam ? selectedBidderTeam.split(' ')[0] : 'TEAM')} (₹{currentBid.toLocaleString()})
                           </button>
                           <button
                             onClick={handleMarkUnsold}
-                            className="inline-flex items-center justify-center gap-1.5 rounded border border-danger/40 bg-danger/10 py-2.5 text-xs font-bold text-danger hover:bg-danger/20 transition"
+                            disabled={activePlayer.status === 'sold'}
+                            className="inline-flex items-center justify-center gap-1.5 rounded border border-danger/40 bg-danger/10 py-2.5 text-xs font-bold text-danger hover:bg-danger/20 transition disabled:opacity-40"
                           >
                             <X className="size-4" />
                             MARK UNSOLD

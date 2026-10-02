@@ -17,6 +17,7 @@ import {
   Copy,
   Clock,
   Sparkles,
+  Gavel,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatCard } from '@/components/common/StatCard'
@@ -165,6 +166,19 @@ export default function PlayerDashboard() {
   const registeredCount = playerData.count
   const isNewUser = registeredCount === 0
 
+  const registeredAuctionTourney = useMemo(() => {
+    return (
+      playerData.tournaments.find(
+        (t) => t.format === 'Auction Tournament' || t.format?.toLowerCase().includes('auction')
+      ) ||
+      allTournaments.find(
+        (t) =>
+          (t.format === 'Auction Tournament' || t.format?.toLowerCase().includes('auction')) &&
+          t.status === 'live'
+      )
+    )
+  }, [playerData.tournaments, allTournaments])
+
   return (
     <div className="space-y-7 page-enter max-w-6xl">
       <PageHeader
@@ -211,6 +225,41 @@ export default function PlayerDashboard() {
           accent={isNewUser ? 'white' : playerData.paymentStatus === 'Verified' ? 'success' : 'gold'}
         />
       </motion.div>
+
+      {/* ── Live Auction Stage Banner for Players ── */}
+      {registeredAuctionTourney && (
+        <motion.div {...fadeUp(0.08)}>
+          <div className="rounded-2xl border border-red-500/40 bg-gradient-to-r from-red-950/40 via-card to-card p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-3.5">
+              <div className="size-11 rounded-xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-500 shrink-0">
+                <Gavel className="size-5 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black uppercase tracking-wider text-red-400">
+                    Live Auction Tournament Stage
+                  </span>
+                  <span className="size-2 rounded-full bg-red-500 animate-ping" />
+                </div>
+                <h4 className="font-black text-sm text-foreground mt-0.5">
+                  {registeredAuctionTourney.name}
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Watch franchise ambassadors bid on player candidates, gameplay clips, and live hammer drops!
+                </p>
+              </div>
+            </div>
+            <Link
+              to={`/tournaments/${registeredAuctionTourney.id}?tab=auction_live`}
+              className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-red-600/25 shrink-0 transition"
+            >
+              <Gavel className="size-3.5" />
+              <span>Watch Live Auction</span>
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+        </motion.div>
+      )}
 
       {/* ── Live Match Room Alert OR Get Started Callout ── */}
       <motion.div {...fadeUp(0.1)}>
