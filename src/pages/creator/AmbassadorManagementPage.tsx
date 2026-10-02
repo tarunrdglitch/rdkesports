@@ -25,7 +25,7 @@ export default function AmbassadorManagementPage() {
   const [err, setErr] = useState('')
   const [formData, setFormData] = useState({
     name: '', email: '', password: 'password123',
-    tournamentId: '', assignedTeamRange: 'Teams 1 to 16', phone: '',
+    tournamentId: '', phone: '',
   })
 
   useEffect(() => { loadAmbassadors(); loadTournaments() }, [])
@@ -61,14 +61,14 @@ export default function AmbassadorManagementPage() {
       const res = await fetch('/api/creators/ambassadors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: formData.name, email: formData.email, password: formData.password, tournamentId: selectedTourney.id, tournamentName: selectedTourney.name, assignedTeamRange: formData.assignedTeamRange, phone: formData.phone, creatorId: user?.organizationId || 'cr_creator' }),
+        body: JSON.stringify({ name: formData.name, email: formData.email, password: formData.password, tournamentId: selectedTourney.id, tournamentName: selectedTourney.name, assignedTeamRange: 'Live Auction Bidder', phone: formData.phone, creatorId: user?.organizationId || 'cr_creator' }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed to create ambassador')
       setMsg(`Ambassador "${formData.name}" provisioned for "${selectedTourney.name}"! Login: ${formData.email}`)
       setIsOpen(false)
       loadAmbassadors()
-      setFormData({ name: '', email: '', password: 'password123', tournamentId: selectedTourney.id, assignedTeamRange: 'Teams 1 to 16', phone: '' })
+      setFormData({ name: '', email: '', password: 'password123', tournamentId: selectedTourney.id, phone: '' })
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'An error occurred')
     } finally { setIsSubmitting(false) }
@@ -157,7 +157,7 @@ export default function AmbassadorManagementPage() {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    {['Ambassador', 'Login Email', 'Tournament', 'Assigned Teams', 'Contact', 'Actions'].map(h => (
+                    {['Ambassador', 'Login Email', 'Tournament', 'Access / Role', 'Contact', 'Actions'].map(h => (
                       <th key={h} className="px-4 py-3.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70 font-body">{h}</th>
                     ))}
                   </tr>
@@ -196,7 +196,7 @@ export default function AmbassadorManagementPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 text-primary font-bold font-body text-[11px]">
-                          {a.assignedTeamRange}
+                          {a.assignedTeamRange || 'Live Auction Bidder'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground font-body">{a.phone || '—'}</td>
@@ -276,19 +276,11 @@ export default function AmbassadorManagementPage() {
                       </select>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider font-body mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>Team Delegation *</label>
-                        <input type="text" required placeholder="e.g. Tamil Titans" value={formData.assignedTeamRange}
-                          onChange={e => setFormData({ ...formData, assignedTeamRange: e.target.value })}
-                          className="rdk-input text-xs" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider font-body mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>WhatsApp</label>
-                        <input type="tel" placeholder="+91 98765 43210" value={formData.phone}
-                          onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                          className="rdk-input text-xs" />
-                      </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider font-body mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>WhatsApp Contact (Optional)</label>
+                      <input type="tel" placeholder="+91 98765 43210" value={formData.phone}
+                        onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                        className="rdk-input text-xs" />
                     </div>
 
                     <div className="flex justify-end gap-2 pt-2">

@@ -1390,8 +1390,8 @@ app.post('/api/creators/ambassadors', async (req: Request, res: Response) => {
   try {
     const { name, email, password, tournamentId, tournamentName, assignedTeamRange, phone, creatorId } = req.body
 
-    if (!name || !email || !tournamentId || !assignedTeamRange) {
-      return res.status(400).json({ error: 'Name, email, tournament, and assigned team range are required' })
+    if (!name || !email || !tournamentId) {
+      return res.status(400).json({ error: 'Name, email, and tournament are required' })
     }
 
     const normalizedEmail = email.trim().toLowerCase()
@@ -1407,7 +1407,7 @@ app.post('/api/creators/ambassadors', async (req: Request, res: Response) => {
       creatorId: creatorId || 'cr_clashers',
       tournamentId,
       tournamentName: tournamentName || 'Tournament',
-      assignedTeamRange,
+      assignedTeamRange: assignedTeamRange?.trim() || 'Live Auction Bidder',
       phone: phone || '',
       createdAt: new Date().toISOString(),
     }

@@ -215,7 +215,6 @@ export default function TournamentManagePage() {
     name: '',
     email: '',
     password: 'password123',
-    assignedTeamRange: 'Teams 1 to 16',
     phone: '',
   })
 
@@ -800,7 +799,7 @@ export default function TournamentManagePage() {
           password: ambassadorForm.password,
           tournamentId: tournament.id,
           tournamentName: tournament.name,
-          assignedTeamRange: ambassadorForm.assignedTeamRange,
+          assignedTeamRange: 'Live Auction Bidder',
           phone: ambassadorForm.phone,
         }),
       })
@@ -815,7 +814,6 @@ export default function TournamentManagePage() {
         name: '',
         email: '',
         password: 'password123',
-        assignedTeamRange: 'Teams 1 to 16',
         phone: '',
       })
       loadAmbassadors()
@@ -3477,7 +3475,7 @@ export default function TournamentManagePage() {
                   <tr>
                     <th className="p-3 font-semibold">Ambassador Name</th>
                     <th className="p-3 font-semibold">Login Email</th>
-                    <th className="p-3 font-semibold">Assigned Team / Franchise</th>
+                    <th className="p-3 font-semibold">Access / Role</th>
                     <th className="p-3 font-semibold">Contact Phone</th>
                     <th className="p-3 font-semibold text-right">Actions</th>
                   </tr>
@@ -3505,26 +3503,9 @@ export default function TournamentManagePage() {
                           </span>
                         </td>
                         <td className="p-3">
-                          <div className="flex flex-col gap-1 items-start">
-                            <span className="rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-primary font-semibold text-[11px]">
-                              {a.assignedTeamRange}
-                            </span>
-                            {(() => {
-                              const allottedCount = teams.filter((t) =>
-                                t.ambassadorId === a.id ||
-                                (t.ambassadorName && t.ambassadorName.trim().toLowerCase() === a.name.trim().toLowerCase()) ||
-                                (a.assignedTeamRange && t.name && (
-                                  t.name.toLowerCase().includes(a.assignedTeamRange.toLowerCase()) ||
-                                  a.assignedTeamRange.toLowerCase().includes(t.name.toLowerCase())
-                                ))
-                              ).length
-                              return allottedCount > 0 ? (
-                                <span className="text-[10px] text-emerald-400 font-bold">
-                                  {allottedCount} squads allotted
-                                </span>
-                              ) : null
-                            })()}
-                          </div>
+                          <span className="rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-primary font-semibold text-[11px]">
+                            {a.assignedTeamRange || 'Live Auction Bidder'}
+                          </span>
                         </td>
                         <td className="p-3 text-muted-foreground">{a.phone || '—'}</td>
                         <td className="p-3 text-right">
@@ -3606,30 +3587,16 @@ export default function TournamentManagePage() {
                     />
                   </label>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="block text-xs font-medium text-foreground">
-                      Team / Franchise Assigned *
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Tamil Titans or Team 1"
-                        className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
-                        value={ambassadorForm.assignedTeamRange}
-                        onChange={(e) => setAmbassadorForm({ ...ambassadorForm, assignedTeamRange: e.target.value })}
-                      />
-                    </label>
-
-                    <label className="block text-xs font-medium text-foreground">
-                      Phone (WhatsApp)
-                      <input
-                        type="tel"
-                        placeholder="+91 98765 43210"
-                        className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
-                        value={ambassadorForm.phone}
-                        onChange={(e) => setAmbassadorForm({ ...ambassadorForm, phone: e.target.value })}
-                      />
-                    </label>
-                  </div>
+                  <label className="block text-xs font-medium text-foreground">
+                    Phone (WhatsApp Contact - Optional)
+                    <input
+                      type="tel"
+                      placeholder="+91 98765 43210"
+                      className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                      value={ambassadorForm.phone}
+                      onChange={(e) => setAmbassadorForm({ ...ambassadorForm, phone: e.target.value })}
+                    />
+                  </label>
 
                   <div className="pt-3 flex justify-end gap-2 border-t border-border mt-4">
                     <button
