@@ -56,6 +56,7 @@ import {
   TournamentRoadmap,
   BracketMatch,
 } from '@/components/tournament/TournamentRoadmapTree'
+import { PointsTableManager } from '@/components/tournament/PointsTableManager'
 
 interface Tournament {
   id: string
@@ -197,7 +198,7 @@ export default function TournamentManagePage() {
     createdAt: string
   }
 
-  type TabType = 'teams' | 'room' | 'live' | 'roadmap' | 'payments' | 'auction' | 'ambassadors' | 'settlement'
+  type TabType = 'teams' | 'room' | 'live' | 'roadmap' | 'payments' | 'auction' | 'ambassadors' | 'settlement' | 'points'
 
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
@@ -1444,6 +1445,22 @@ export default function TournamentManagePage() {
           <span>Roadmap & Rulebook Studio</span>
           <span className="rounded bg-blue-500/20 text-blue-400 px-1.5 py-0.5 text-[9px] font-bold">
             CUSTOMIZER
+          </span>
+        </button>
+
+        {/* POINTS TABLE & STANDINGS TAB */}
+        <button
+          onClick={() => setActiveTab('points')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+            activeTab === 'points'
+              ? 'border-amber-500 text-amber-400 bg-amber-500/10'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Trophy className="size-4 text-amber-400" />
+          <span>Points Table & Standings</span>
+          <span className="rounded bg-amber-500/20 text-amber-300 px-1.5 py-0.5 text-[9px] font-bold">
+            STANDINGS
           </span>
         </button>
 
@@ -3810,6 +3827,18 @@ export default function TournamentManagePage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ═══ TAB: POINTS TABLE & LEADERBOARD ═══ */}
+      {activeTab === 'points' && tournament && (
+        <div className="mt-6">
+          <PointsTableManager
+            tournamentId={tournament.id}
+            tournamentName={tournament.name}
+            gameFormat={tournament.game || tournament.format || 'Free Fire'}
+            isOrganizer={true}
+          />
         </div>
       )}
 

@@ -2403,6 +2403,394 @@ app.patch('/api/tournaments/:id/stream', requirePartnerOrAdmin, (req: Request, r
   })
 })
 
+// ═══════════════════════════════════════════════════════════════
+// 7b. POINTS TABLE & LEADERBOARD SYSTEM (Match Scores & Graphics)
+// ═══════════════════════════════════════════════════════════════
+export interface MatchResultEntry {
+  teamId: string
+  teamName: string
+  rank: number
+  kills: number
+  placementPoints: number
+  killPoints: number
+  totalPoints: number
+}
+
+export interface PointsMatchRecord {
+  id: string
+  matchNumber: number
+  map: string
+  group?: string
+  title: string
+  status: 'completed' | 'in_progress'
+  createdAt: string
+  results: MatchResultEntry[]
+}
+
+export interface PointsTableRecord {
+  tournamentId: string
+  pointSystem: {
+    killPoint: number
+    placementPoints: Record<string, number>
+  }
+  matches: PointsMatchRecord[]
+  updatedAt: string
+}
+
+let TOURNAMENT_POINTS_TABLES: Record<string, PointsTableRecord> = {}
+
+export function getDefaultPointSystem() {
+  return {
+    killPoint: 1,
+    placementPoints: {
+      '1': 12,
+      '2': 9,
+      '3': 8,
+      '4': 7,
+      '5': 6,
+      '6': 5,
+      '7': 4,
+      '8': 3,
+      '9': 2,
+      '10': 1,
+      '11': 0,
+      '12': 0,
+    } as Record<string, number>,
+  }
+}
+
+function computeStandings(pointsTable: PointsTableRecord) {
+  const teamStats: Record<
+    string,
+    {
+      teamId: string
+      teamName: string
+      matchesPlayed: number
+      booyahs: number
+      killPoints: number
+      placementPoints: number
+      totalPoints: number
+      bestPlacement: number
+    }
+  > = {}
+
+  for (const m of pointsTable.matches) {
+    for (const r of m.results) {
+      if (!r.teamName || !r.teamName.trim()) continue
+      const key = r.teamName.trim().toLowerCase()
+      if (!teamStats[key]) {
+        teamStats[key] = {
+          teamId: r.teamId || `team_${key}`,
+          teamName: r.teamName.trim(),
+          matchesPlayed: 0,
+          booyahs: 0,
+          killPoints: 0,
+          placementPoints: 0,
+          totalPoints: 0,
+          bestPlacement: 999,
+        }
+      }
+      teamStats[key].matchesPlayed += 1
+      if (r.rank === 1) teamStats[key].booyahs += 1
+      teamStats[key].killPoints += Number(r.killPoints) || 0
+      teamStats[key].placementPoints += Number(r.placementPoints) || 0
+      teamStats[key].totalPoints += Number(r.totalPoints) || 0
+      if (r.rank > 0 && r.rank < teamStats[key].bestPlacement) {
+        teamStats[key].bestPlacement = r.rank
+      }
+    }
+  }
+
+  const sorted = Object.values(teamStats).sort((a, b) => {
+    if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints
+    if (b.killPoints !== a.killPoints) return b.killPoints - a.killPoints
+    if (b.booyahs !== a.booyahs) return b.booyahs - a.booyahs
+    return a.bestPlacement - b.bestPlacement
+  })
+
+  return sorted.map((s, idx) => ({
+    rank: idx + 1,
+    ...s,
+    bestPlacement: s.bestPlacement === 999 ? 0 : s.bestPlacement,
+  }))
+}
+
+// Get Points Table and Standings for a Tournament
+app.get('/api/tournaments/:id/points-table', (req: Request, res: Response) => {
+  const { id } = req.params
+  const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+  if (!tourney) {
+    return res.status(404).json({ error: 'Tournament not found' })
+  }
+
+  const targetId = tourney.id
+
+  // Gather available teams for autocomplete in score entry
+  const availableTeams: Array<{ id: string; name: string; group?: string }> = []
+  const seenTeams = new Set<string>()
+
+  // 1. From REGISTERED_TEAMS
+  REGISTERED_TEAMS.filter((t) => t.tournamentId === targetId).forEach((tm) => {
+    const key = tm.name.toLowerCase().trim()
+    if (!seenTeams.has(key)) {
+      seenTeams.add(key)
+      availableTeams.push({ id: tm.id, name: tm.name, group: tm.group })
+    }
+  })
+
+  // 2. From EPHEMERAL_BIDDERS
+  EPHEMERAL_BIDDERS.filter((b) => b.auctionId === targetId).forEach((b) => {
+    const key = b.teamName.toLowerCase().trim()
+    if (!seenTeams.has(key)) {
+      seenTeams.add(key)
+      availableTeams.push({ id: b.id, name: b.teamName, group: b.group })
+    }
+  })
+
+  // 3. From AMBASSADORS
+  AMBASSADORS.filter((a) => a.tournamentId === targetId).forEach((a) => {
+    const key = a.assignedTeamRange.toLowerCase().trim()
+    if (key && !seenTeams.has(key)) {
+      seenTeams.add(key)
+      availableTeams.push({ id: a.id, name: a.assignedTeamRange })
+    }
+  })
+
+  // Seed default demo matches if empty for TNBBL or any tournament
+  if (!TOURNAMENT_POINTS_TABLES[targetId]) {
+    const isTnbbl = tourney.name.toLowerCase().includes('tnbbl')
+    const seedTeams = availableTeams.length >= 8
+      ? availableTeams.slice(0, 12).map((t) => t.name)
+      : [
+          'MADURAI WARRIORS',
+          'KRISHNAGIRI ELITES',
+          'KARUR KNIGHTS',
+          'VELLORE EMPIRES',
+          'CHENNAI CHALLENGERS',
+          'NAMAKKAL DOMINATORS',
+          'KANCHIPURAM TITANS',
+          'KANYAKUMARI KODEX',
+          'RAMANATHAPURAM ROYALS',
+          'TIRUVANAMALAI THUNDERS',
+          'VILLUPURAM WIPERS',
+          'TRICHY UNITED',
+        ]
+
+    const seedMatches: PointsMatchRecord[] = [
+      {
+        id: `match_1_${targetId}`,
+        matchNumber: 1,
+        map: 'Bermuda',
+        title: 'Match 1 - Bermuda (Battle Royale)',
+        status: 'completed',
+        createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+        results: [
+          { teamId: 't1', teamName: seedTeams[0] || 'MADURAI WARRIORS', rank: 1, kills: 14, placementPoints: 12, killPoints: 14, totalPoints: 26 },
+          { teamId: 't2', teamName: seedTeams[1] || 'KRISHNAGIRI ELITES', rank: 2, kills: 9, placementPoints: 9, killPoints: 9, totalPoints: 18 },
+          { teamId: 't3', teamName: seedTeams[2] || 'KARUR KNIGHTS', rank: 3, kills: 6, placementPoints: 8, killPoints: 6, totalPoints: 14 },
+          { teamId: 't4', teamName: seedTeams[3] || 'VELLORE EMPIRES', rank: 4, kills: 5, placementPoints: 7, killPoints: 5, totalPoints: 12 },
+          { teamId: 't5', teamName: seedTeams[4] || 'CHENNAI CHALLENGERS', rank: 5, kills: 4, placementPoints: 6, killPoints: 4, totalPoints: 10 },
+          { teamId: 't6', teamName: seedTeams[5] || 'NAMAKKAL DOMINATORS', rank: 6, kills: 3, placementPoints: 5, killPoints: 3, totalPoints: 8 },
+          { teamId: 't7', teamName: seedTeams[6] || 'KANCHIPURAM TITANS', rank: 7, kills: 2, placementPoints: 4, killPoints: 2, totalPoints: 6 },
+          { teamId: 't8', teamName: seedTeams[7] || 'KANYAKUMARI KODEX', rank: 8, kills: 2, placementPoints: 3, killPoints: 2, totalPoints: 5 },
+          { teamId: 't9', teamName: seedTeams[8] || 'RAMANATHAPURAM ROYALS', rank: 9, kills: 1, placementPoints: 2, killPoints: 1, totalPoints: 3 },
+          { teamId: 't10', teamName: seedTeams[9] || 'TIRUVANAMALAI THUNDERS', rank: 10, kills: 1, placementPoints: 1, killPoints: 1, totalPoints: 2 },
+          { teamId: 't11', teamName: seedTeams[10] || 'VILLUPURAM WIPERS', rank: 11, kills: 0, placementPoints: 0, killPoints: 0, totalPoints: 0 },
+          { teamId: 't12', teamName: seedTeams[11] || 'TRICHY UNITED', rank: 12, kills: 1, placementPoints: 0, killPoints: 1, totalPoints: 1 },
+        ],
+      },
+      {
+        id: `match_2_${targetId}`,
+        matchNumber: 2,
+        map: 'Purgatory',
+        title: 'Match 2 - Purgatory (Battle Royale)',
+        status: 'completed',
+        createdAt: new Date(Date.now() - 3600000).toISOString(),
+        results: [
+          { teamId: 't2', teamName: seedTeams[1] || 'KRISHNAGIRI ELITES', rank: 1, kills: 12, placementPoints: 12, killPoints: 12, totalPoints: 24 },
+          { teamId: 't5', teamName: seedTeams[4] || 'CHENNAI CHALLENGERS', rank: 2, kills: 8, placementPoints: 9, killPoints: 8, totalPoints: 17 },
+          { teamId: 't1', teamName: seedTeams[0] || 'MADURAI WARRIORS', rank: 3, kills: 7, placementPoints: 8, killPoints: 7, totalPoints: 15 },
+          { teamId: 't3', teamName: seedTeams[2] || 'KARUR KNIGHTS', rank: 4, kills: 5, placementPoints: 7, killPoints: 5, totalPoints: 12 },
+          { teamId: 't7', teamName: seedTeams[6] || 'KANCHIPURAM TITANS', rank: 5, kills: 4, placementPoints: 6, killPoints: 4, totalPoints: 10 },
+          { teamId: 't4', teamName: seedTeams[3] || 'VELLORE EMPIRES', rank: 6, kills: 3, placementPoints: 5, killPoints: 3, totalPoints: 8 },
+          { teamId: 't6', teamName: seedTeams[5] || 'NAMAKKAL DOMINATORS', rank: 7, kills: 3, placementPoints: 4, killPoints: 3, totalPoints: 7 },
+          { teamId: 't10', teamName: seedTeams[9] || 'TIRUVANAMALAI THUNDERS', rank: 8, kills: 2, placementPoints: 3, killPoints: 2, totalPoints: 5 },
+          { teamId: 't8', teamName: seedTeams[7] || 'KANYAKUMARI KODEX', rank: 9, kills: 1, placementPoints: 2, killPoints: 1, totalPoints: 3 },
+          { teamId: 't9', teamName: seedTeams[8] || 'RAMANATHAPURAM ROYALS', rank: 10, kills: 0, placementPoints: 1, killPoints: 0, totalPoints: 1 },
+          { teamId: 't12', teamName: seedTeams[11] || 'TRICHY UNITED', rank: 11, kills: 2, placementPoints: 0, killPoints: 2, totalPoints: 2 },
+          { teamId: 't11', teamName: seedTeams[10] || 'VILLUPURAM WIPERS', rank: 12, kills: 1, placementPoints: 0, killPoints: 1, totalPoints: 1 },
+        ],
+      },
+    ]
+
+    TOURNAMENT_POINTS_TABLES[targetId] = {
+      tournamentId: targetId,
+      pointSystem: getDefaultPointSystem(),
+      matches: seedMatches,
+      updatedAt: new Date().toISOString(),
+    }
+  }
+
+  const tableRecord = TOURNAMENT_POINTS_TABLES[targetId]
+  const standings = computeStandings(tableRecord)
+
+  return res.json({
+    success: true,
+    tournamentId: targetId,
+    tournamentName: tourney.name,
+    pointSystem: tableRecord.pointSystem,
+    matches: tableRecord.matches,
+    standings,
+    availableTeams,
+    updatedAt: tableRecord.updatedAt,
+  })
+})
+
+// Update Points Table (Full save / Point System update)
+app.put('/api/tournaments/:id/points-table', (req: Request, res: Response) => {
+  const { id } = req.params
+  const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+  if (!tourney) {
+    return res.status(404).json({ error: 'Tournament not found' })
+  }
+
+  const targetId = tourney.id
+  const { pointSystem, matches } = req.body
+
+  const current = TOURNAMENT_POINTS_TABLES[targetId] || {
+    tournamentId: targetId,
+    pointSystem: getDefaultPointSystem(),
+    matches: [],
+    updatedAt: new Date().toISOString(),
+  }
+
+  if (pointSystem) current.pointSystem = pointSystem
+  if (Array.isArray(matches)) current.matches = matches
+  current.updatedAt = new Date().toISOString()
+
+  TOURNAMENT_POINTS_TABLES[targetId] = current
+  const standings = computeStandings(current)
+
+  return res.json({
+    success: true,
+    message: 'Points table updated successfully!',
+    pointSystem: current.pointSystem,
+    matches: current.matches,
+    standings,
+    updatedAt: current.updatedAt,
+  })
+})
+
+// Add or Update a Specific Match
+app.post('/api/tournaments/:id/points-table/match', (req: Request, res: Response) => {
+  const { id } = req.params
+  const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+  if (!tourney) {
+    return res.status(404).json({ error: 'Tournament not found' })
+  }
+
+  const targetId = tourney.id
+  const { matchId, matchNumber, map, title, results, status } = req.body
+
+  if (!results || !Array.isArray(results)) {
+    return res.status(400).json({ error: 'Match results array is required' })
+  }
+
+  const current = TOURNAMENT_POINTS_TABLES[targetId] || {
+    tournamentId: targetId,
+    pointSystem: getDefaultPointSystem(),
+    matches: [],
+    updatedAt: new Date().toISOString(),
+  }
+
+  const killPtVal = current.pointSystem.killPoint || 1
+  const placePtsMap = current.pointSystem.placementPoints || {}
+
+  // Recalculate each row's total points based on point system
+  const formattedResults: MatchResultEntry[] = results.map((r: any, idx: number) => {
+    const rank = Number(r.rank) || idx + 1
+    const kills = Number(r.kills) || 0
+    const placementPoints = Number(placePtsMap[String(rank)]) !== undefined ? Number(placePtsMap[String(rank)]) : 0
+    const killPoints = kills * killPtVal
+    const totalPoints = placementPoints + killPoints
+
+    return {
+      teamId: r.teamId || `team_${r.teamName?.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+      teamName: String(r.teamName || `Team ${idx + 1}`).trim(),
+      rank,
+      kills,
+      placementPoints,
+      killPoints,
+      totalPoints,
+    }
+  })
+
+  // Sort results by rank
+  formattedResults.sort((a, b) => a.rank - b.rank)
+
+  const matchNum = Number(matchNumber) || (current.matches.length + 1)
+  const existingIdx = current.matches.findIndex((m) => m.id === matchId)
+
+  const matchRecord: PointsMatchRecord = {
+    id: matchId || `match_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    matchNumber: matchNum,
+    map: map || 'Bermuda',
+    title: title || `Match ${matchNum} - ${map || 'Bermuda'}`,
+    status: status || 'completed',
+    createdAt: new Date().toISOString(),
+    results: formattedResults,
+  }
+
+  if (existingIdx !== -1) {
+    current.matches[existingIdx] = matchRecord
+  } else {
+    current.matches.push(matchRecord)
+  }
+
+  // Sort matches by matchNumber
+  current.matches.sort((a, b) => a.matchNumber - b.matchNumber)
+  current.updatedAt = new Date().toISOString()
+  TOURNAMENT_POINTS_TABLES[targetId] = current
+
+  const standings = computeStandings(current)
+
+  return res.json({
+    success: true,
+    message: `Match ${matchNum} results recorded successfully!`,
+    match: matchRecord,
+    standings,
+    matches: current.matches,
+  })
+})
+
+// Delete a Match
+app.delete('/api/tournaments/:id/points-table/match/:matchId', (req: Request, res: Response) => {
+  const { id, matchId } = req.params
+  const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+  if (!tourney) {
+    return res.status(404).json({ error: 'Tournament not found' })
+  }
+
+  const targetId = tourney.id
+  const current = TOURNAMENT_POINTS_TABLES[targetId]
+  if (!current) {
+    return res.status(404).json({ error: 'Points table not initialized' })
+  }
+
+  current.matches = current.matches.filter((m) => m.id !== matchId)
+  current.updatedAt = new Date().toISOString()
+  TOURNAMENT_POINTS_TABLES[targetId] = current
+
+  const standings = computeStandings(current)
+
+  return res.json({
+    success: true,
+    message: 'Match removed from points table',
+    matches: current.matches,
+    standings,
+  })
+})
+
 // Verify Registered Player Access to Match Room Credentials
 app.post('/api/tournaments/:id/verify-room-access', (req: Request, res: Response) => {
   const { id } = req.params

@@ -43,6 +43,7 @@ import { useAuth } from '@/stores/authStore'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { parseStreamEmbed } from '@/utils/stream'
 import { TournamentRoadmapTree, TournamentRoadmap } from '@/components/tournament/TournamentRoadmapTree'
+import { PointsTableManager } from '@/components/tournament/PointsTableManager'
 import { compressImageFile } from '@/utils/imageCompressor'
 import { SHEET_CLIPS, SHEET_ROLES, SHEET_NAMES } from '@/data/sheetClips'
 
@@ -205,7 +206,7 @@ export default function TournamentDetailPage() {
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
   const [auctionPlayers, setAuctionPlayers] = useState<AuctionPlayer[]>([])
-  const [activeTab, setActiveTab] = useState<'live' | 'overview' | 'teams' | 'auction_pool' | 'roadmap' | 'room' | 'rules'>('overview')
+  const [activeTab, setActiveTab] = useState<'live' | 'overview' | 'teams' | 'auction_pool' | 'roadmap' | 'room' | 'rules' | 'points'>('overview')
   const [roadmap, setRoadmap] = useState<TournamentRoadmap | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1156,6 +1157,21 @@ export default function TournamentDetailPage() {
             <span>{isAuction ? `Franchise Teams (${franchiseGroups.length})` : `Enrolled Squads (${teams.length})`}</span>
           </button>
 
+          <button
+            onClick={() => setActiveTab('points')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-all border-b-2 whitespace-nowrap ${
+              activeTab === 'points'
+                ? 'border-amber-500 text-amber-400 bg-amber-500/10'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Trophy className="size-3.5 text-amber-400" />
+            <span>Points Table</span>
+            <span className="rounded bg-amber-500/20 text-amber-300 px-1.5 py-0.5 text-[9px] font-bold">
+              LIVE
+            </span>
+          </button>
+
           {/* Match Room Credentials Tab (Only available to registered players) */}
           {registeredAccess.isAuthorized && (
             <button
@@ -1848,6 +1864,18 @@ export default function TournamentDetailPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ═══ TAB: POINTS TABLE & LEADERBOARD (PUBLIC LIVE STANDINGS) ═══ */}
+        {activeTab === 'points' && tournament && (
+          <div className="mt-6">
+            <PointsTableManager
+              tournamentId={tournament.id}
+              tournamentName={tournament.name}
+              gameFormat={tournament.game || tournament.format || 'Free Fire'}
+              isOrganizer={false}
+            />
           </div>
         )}
 
