@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   ShieldCheck,
   CheckCircle2,
@@ -20,6 +20,8 @@ import {
   ExternalLink,
   Clock,
   AlertTriangle,
+  ArrowUpRight,
+  Sparkles,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { useAuth } from '@/stores/authStore'
@@ -71,6 +73,12 @@ interface SettlementStats {
   pendingVerificationCount: number
   collectionRate: number
 }
+
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 16 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1], delay },
+})
 
 export default function PaymentsManagementPage() {
   const { user } = useAuth()
@@ -260,50 +268,65 @@ export default function PaymentsManagementPage() {
   ).length
 
   return (
-    <div className="max-w-6xl mx-auto py-4 px-2 sm:px-4 space-y-6">
+    <div className="max-w-7xl mx-auto py-6 px-3 sm:px-6 space-y-6">
       <PageHeader
         title="Financial Ledger & Settlements Desk"
         description="Powered by RDK Technologies platform engine. Oversee player registration entry verifications and Official Partner 10% platform fee remittances."
+        badge="Platform Treasury"
         actions={
           <button
             onClick={loadAll}
-            className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground border border-border rounded px-3 py-1.5 transition-colors"
+            className="flex items-center gap-2 text-xs font-bold text-white/80 hover:text-white bg-[#141414] hover:bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-2 transition-all cursor-pointer shadow-lg active:scale-95"
           >
-            <RefreshCw className="size-3.5" />
-            <span>Refresh All Data</span>
+            <RefreshCw className={`size-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Refresh Ledger</span>
           </button>
         }
       />
 
       {/* Notifications */}
-      {actionMsg && (
-        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-xs flex items-center gap-2">
-          <CheckCircle2 className="size-4 shrink-0" />
-          <span>{actionMsg}</span>
-        </div>
-      )}
+      <AnimatePresence>
+        {actionMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs flex items-center gap-2.5 shadow-lg backdrop-blur-md"
+          >
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
+            <span className="font-medium">{actionMsg}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-xs flex items-center gap-2">
-          <AlertCircle className="size-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs flex items-center gap-2.5 shadow-lg backdrop-blur-md"
+          >
+            <AlertCircle className="size-4 shrink-0 text-red-400" />
+            <span className="font-medium">{error}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Top View Selector Tabs */}
-      <div className="flex items-center gap-2 border-b border-border pb-px">
+      {/* Top View Selector Tabs — Modern Segmented Control */}
+      <div className="flex items-center p-1.5 bg-[#0D0D0D] border border-white/10 rounded-2xl w-fit gap-1 shadow-inner">
         <button
           onClick={() => setActiveView('settlements')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+          className={`flex items-center gap-2.5 px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer relative ${
             activeView === 'settlements'
-              ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+              : 'text-white/60 hover:text-white hover:bg-white/5 border border-transparent'
           }`}
         >
           <Receipt className="size-4 text-emerald-400" />
           <span>RDK 10% Platform Settlements</span>
           {settlements.filter((s) => s.status === 'UNDER_REVIEW').length > 0 && (
-            <span className="size-4 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-black">
+            <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-black flex items-center justify-center text-[10px] font-black animate-pulse">
               {settlements.filter((s) => s.status === 'UNDER_REVIEW').length}
             </span>
           )}
@@ -311,16 +334,16 @@ export default function PaymentsManagementPage() {
 
         <button
           onClick={() => setActiveView('teams')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+          className={`flex items-center gap-2.5 px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer relative ${
             activeView === 'teams'
-              ? 'border-primary text-primary bg-primary/5'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'text-primary bg-primary/15 border border-primary/30 shadow-[0_0_20px_rgba(229,57,53,0.15)]'
+              : 'text-white/60 hover:text-white hover:bg-white/5 border border-transparent'
           }`}
         >
           <ShieldCheck className="size-4 text-primary" />
           <span>Player Entry Verification Queue</span>
           {payments.filter((p) => p.status === 'pending').length > 0 && (
-            <span className="size-4 rounded-full bg-primary text-background flex items-center justify-center text-[10px] font-black">
+            <span className="px-1.5 py-0.5 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-black animate-pulse">
               {payments.filter((p) => p.status === 'pending').length}
             </span>
           )}
@@ -332,69 +355,105 @@ export default function PaymentsManagementPage() {
         <div className="space-y-6">
           {/* Executive Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 rounded-xl border border-border bg-card">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block mb-1">
-                Gross Platform Turnover
-              </span>
-              <div className="text-2xl font-heading font-black text-foreground">
+            <motion.div
+              {...fadeUp(0)}
+              className="p-5 rounded-2xl border border-white/10 bg-[#0E0E0E] relative overflow-hidden group hover:border-white/20 transition-all shadow-xl"
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase font-bold text-white/50 tracking-wider">
+                  Gross Platform Turnover
+                </span>
+                <div className="size-8 rounded-lg bg-white/5 flex items-center justify-center text-white/60">
+                  <Coins className="size-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-display font-black text-white">
                 ₹{(settlementStats?.totalGrossRevenue ?? 0).toLocaleString()}
               </div>
-              <span className="text-[11px] text-muted-foreground block mt-1">
+              <span className="text-[11px] text-white/40 block mt-1.5">
                 100% of approved player entries
               </span>
-            </div>
+            </motion.div>
 
-            <div className="p-4 rounded-xl border border-border bg-card">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block mb-1">
-                RDK 10% Platform Volume
-              </span>
-              <div className="text-2xl font-heading font-black text-emerald-400">
+            <motion.div
+              {...fadeUp(0.06)}
+              className="p-5 rounded-2xl border border-emerald-500/20 bg-[#0E0E0E] relative overflow-hidden group hover:border-emerald-500/40 transition-all shadow-xl"
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">
+                  RDK 10% Platform Volume
+                </span>
+                <div className="size-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400">
+                  <Landmark className="size-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-display font-black text-emerald-400">
                 ₹{(settlementStats?.totalRdkFeeVolume ?? 0).toLocaleString()}
               </div>
-              <span className="text-[11px] text-muted-foreground block mt-1">
+              <span className="text-[11px] text-white/40 block mt-1.5">
                 Calculated strictly on paid entries
               </span>
-            </div>
+            </motion.div>
 
-            <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5">
-              <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider block mb-1">
-                Verified Fees Collected
-              </span>
-              <div className="text-2xl font-heading font-black text-emerald-400">
+            <motion.div
+              {...fadeUp(0.12)}
+              className="p-5 rounded-2xl border border-emerald-500/30 bg-[#0E0E0E] relative overflow-hidden group hover:border-emerald-500/50 transition-all shadow-xl"
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/15 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">
+                  Verified Fees Collected
+                </span>
+                <div className="size-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <CheckCircle2 className="size-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-display font-black text-emerald-400">
                 ₹{(settlementStats?.verifiedFeesCollected ?? 0).toLocaleString()}
               </div>
-              <span className="text-[11px] text-emerald-500/80 block mt-1">
+              <span className="text-[11px] text-emerald-400/80 block mt-1.5 font-medium">
                 Collection rate: {settlementStats?.collectionRate ?? 0}%
               </span>
-            </div>
+            </motion.div>
 
-            <div className="p-4 rounded-xl border border-border bg-card">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block mb-1">
-                Pending Settlements Due
-              </span>
-              <div className="text-2xl font-heading font-black text-amber-400">
+            <motion.div
+              {...fadeUp(0.18)}
+              className="p-5 rounded-2xl border border-amber-500/20 bg-[#0E0E0E] relative overflow-hidden group hover:border-amber-500/40 transition-all shadow-xl"
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider">
+                  Pending Settlements Due
+                </span>
+                <div className="size-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400">
+                  <Clock className="size-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-display font-black text-amber-400">
                 ₹{(settlementStats?.pendingFeesDue ?? 0).toLocaleString()}
               </div>
-              <span className="text-[11px] text-amber-400/80 block mt-1">
+              <span className="text-[11px] text-amber-400/80 block mt-1.5 font-medium">
                 {settlementStats?.pendingVerificationCount ?? 0} events awaiting review
               </span>
-            </div>
+            </motion.div>
           </div>
 
           {/* Search & Filter Toolbar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 bg-card border border-border rounded-xl">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 bg-[#0D0D0D] border border-white/10 rounded-2xl shadow-xl">
             <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+              <Search className="absolute left-3.5 top-3 size-4 text-white/40" />
               <input
                 type="text"
                 placeholder="Search tournament, partner, or UTR..."
                 value={settlementSearch}
                 onChange={(e) => setSettlementSearch(e.target.value)}
-                className="w-full bg-background border border-border rounded pl-9 pr-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
+                className="w-full bg-[#141414] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-white/40 focus:outline-none focus:border-emerald-500 transition-colors"
               />
             </div>
 
-            <div className="flex items-center gap-1.5 self-start sm:self-auto overflow-x-auto">
+            <div className="flex items-center gap-1.5 self-start sm:self-auto overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
               {[
                 { id: 'all', label: 'All Settlements' },
                 { id: 'under_review', label: 'Under Review' },
@@ -405,10 +464,10 @@ export default function PaymentsManagementPage() {
                 <button
                   key={tab.id}
                   onClick={() => setSettlementFilter(tab.id)}
-                  className={`px-3 py-1 rounded text-xs font-bold whitespace-nowrap transition-colors ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                     settlementFilter === tab.id
-                      ? 'bg-emerald-500 text-black'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      ? 'bg-emerald-500 text-black shadow-lg'
+                      : 'text-white/60 hover:bg-white/5 hover:text-white'
                   }`}
                 >
                   {tab.label}
@@ -419,82 +478,85 @@ export default function PaymentsManagementPage() {
 
           {/* Settlements Table */}
           {isLoading ? (
-            <div className="p-12 text-center">
-              <div className="size-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto" />
+            <div className="p-16 text-center bg-[#0D0D0D] rounded-2xl border border-white/10">
+              <div className="size-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-xs text-white/40 font-mono">Synchronizing financial records…</p>
             </div>
           ) : filteredSettlements.length === 0 ? (
-            <div className="p-12 text-center border border-border rounded-xl bg-card">
-              <Receipt className="size-8 text-muted-foreground mx-auto mb-2 opacity-40" />
-              <p className="text-xs text-muted-foreground">
-                No platform settlements found matching the filter criteria.
+            <div className="p-16 text-center border border-white/10 rounded-2xl bg-[#0D0D0D]">
+              <Receipt className="size-10 text-white/20 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-white/80">No settlements found</p>
+              <p className="text-xs text-white/40 mt-1">
+                No platform settlements matched your active filter or search query.
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#0D0D0D] shadow-2xl">
               <table className="w-full text-xs">
-                <thead className="border-b border-border bg-muted/30 text-left text-muted-foreground font-semibold">
+                <thead className="border-b border-white/10 bg-white/[0.02] text-left text-white/50 font-bold uppercase tracking-wider text-[10px]">
                   <tr>
-                    <th className="px-4 py-3">Tournament & Type</th>
-                    <th className="px-4 py-3">Official Partner</th>
-                    <th className="px-4 py-3">Entries & Fee</th>
-                    <th className="px-4 py-3">Gross Turnover</th>
-                    <th className="px-4 py-3 text-emerald-400 font-bold">RDK 10% Fee</th>
-                    <th className="px-4 py-3">Partner 90% Net</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Proof / UTR</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-5 py-4">Tournament & Type</th>
+                    <th className="px-5 py-4">Official Partner</th>
+                    <th className="px-5 py-4">Entries & Fee</th>
+                    <th className="px-5 py-4">Gross Turnover</th>
+                    <th className="px-5 py-4 text-emerald-400 font-bold">RDK 10% Fee</th>
+                    <th className="px-5 py-4">Partner 90% Net</th>
+                    <th className="px-5 py-4">Status</th>
+                    <th className="px-5 py-4">Proof / UTR</th>
+                    <th className="px-5 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-white/5">
                   {filteredSettlements.map((s) => (
-                    <tr key={s.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5 font-bold text-foreground">
-                          <Trophy className="size-3.5 text-primary shrink-0" />
-                          <span>{s.tournamentName}</span>
+                    <tr key={s.id} className="hover:bg-white/[0.02] transition-colors group">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2 font-bold text-white">
+                          <Trophy className="size-4 text-primary shrink-0" />
+                          <span className="group-hover:text-primary transition-colors">{s.tournamentName}</span>
                         </div>
-                        <span className="text-[10px] text-muted-foreground font-mono">
+                        <span className="text-[10px] text-white/40 font-mono mt-0.5 block">
                           {s.tournamentType || 'TOURNAMENT'}
                         </span>
                       </td>
 
-                      <td className="px-4 py-3 font-semibold text-foreground">
+                      <td className="px-5 py-4 font-semibold text-white/90">
                         {s.partnerName}
                       </td>
 
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {s.approvedEntries} squads × ₹{s.entryFee}
+                      <td className="px-5 py-4 text-white/60">
+                        <span className="text-white font-medium">{s.approvedEntries} squads</span> × ₹{s.entryFee}
                       </td>
 
-                      <td className="px-4 py-3 font-semibold text-foreground">
+                      <td className="px-5 py-4 font-semibold text-white">
                         ₹{s.grossRevenue.toLocaleString()}
                       </td>
 
-                      <td className="px-4 py-3 font-heading font-black text-emerald-400 text-sm">
+                      <td className="px-5 py-4 font-display font-black text-emerald-400 text-sm">
                         ₹{s.rdkFee.toLocaleString()}
                       </td>
 
-                      <td className="px-4 py-3 font-semibold text-primary">
+                      <td className="px-5 py-4 font-semibold text-white/80">
                         ₹{s.partnerNet.toLocaleString()}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         <span
-                          className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded border ${
+                          className={`text-[9px] uppercase font-bold px-2.5 py-1 rounded-full border tracking-wide inline-flex items-center gap-1 ${
                             s.status === 'VERIFIED'
-                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                               : s.status === 'UNDER_REVIEW'
-                              ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                              ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 animate-pulse'
                               : s.status === 'REJECTED'
-                              ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                              : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                              ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                              : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
                           }`}
                         >
+                          <span className="size-1.5 rounded-full bg-current" />
                           {s.status}
                         </span>
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         {s.screenshotUrl ? (
                           <div className="flex items-center gap-3">
                             <button
@@ -510,16 +572,16 @@ export default function PaymentsManagementPage() {
                                   settlementItem: s,
                                 })
                               }
-                              className="group relative size-12 rounded-lg border-2 border-primary/30 overflow-hidden bg-black/60 hover:border-primary shrink-0 transition shadow-sm hover:scale-105 active:scale-95"
+                              className="group/img relative size-11 rounded-xl border border-white/10 overflow-hidden bg-black/60 hover:border-emerald-400 shrink-0 transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer"
                               title="Click to view full payment screenshot"
                             >
                               <img
                                 src={s.screenshotUrl}
                                 alt="Payment Proof"
-                                className="size-full object-cover group-hover:opacity-90"
+                                className="size-full object-cover group-hover/img:opacity-80"
                               />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
-                                <Eye className="size-4 text-white" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition">
+                                <Eye className="size-3.5 text-white" />
                               </div>
                             </button>
                             <div className="space-y-0.5 min-w-0">
@@ -536,46 +598,46 @@ export default function PaymentsManagementPage() {
                                     settlementItem: s,
                                   })
                                 }
-                                className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
+                                className="text-xs font-bold text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
                               >
-                                <Eye className="size-3" /> View Screenshot
+                                <Eye className="size-3" /> View Proof
                               </button>
                               {s.utr && !s.utr.startsWith('SCREENSHOT-') ? (
-                                <span className="font-mono text-[10px] text-muted-foreground block truncate max-w-[130px]" title={s.utr}>
+                                <span className="font-mono text-[10px] text-white/50 block truncate max-w-[130px]" title={s.utr}>
                                   Ref: {s.utr}
                                 </span>
                               ) : (
-                                <span className="text-[10px] text-emerald-400 block font-semibold">
-                                  Screenshot Uploaded
+                                <span className="text-[10px] text-emerald-400/80 block font-semibold">
+                                  Screenshot Attached
                                 </span>
                               )}
                             </div>
                           </div>
                         ) : s.utr ? (
                           <div className="space-y-0.5">
-                            <span className="font-mono text-[11px] font-bold text-foreground select-all bg-muted/30 px-1.5 py-0.5 rounded block w-fit">
+                            <span className="font-mono text-[11px] font-bold text-white select-all bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg block w-fit">
                               {s.utr}
                             </span>
-                            <span className="text-amber-400 text-[10px] block">No image attached</span>
+                            <span className="text-amber-400/80 text-[10px] block">No image attached</span>
                           </div>
                         ) : (
-                          <span className="text-muted-foreground text-[10px] italic">
+                          <span className="text-white/30 text-[10px] italic">
                             No proof yet
                           </span>
                         )}
                       </td>
 
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="px-5 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
                           {isSuperAdmin && s.status === 'UNDER_REVIEW' && (
                             <>
                               <button
                                 onClick={() => handleVerifySettlement(s)}
                                 disabled={isProcessingAction}
-                                className="px-2.5 py-1 rounded bg-emerald-500 text-black font-bold text-[11px] hover:bg-emerald-400 transition flex items-center gap-1"
+                                className="px-3 py-1.5 rounded-xl bg-emerald-500 text-black font-bold text-[11px] hover:bg-emerald-400 transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
                                 title="Verify settlement and unlock closure"
                               >
-                                <Check className="size-3" />
+                                <Check className="size-3 stroke-[3]" />
                                 <span>Verify</span>
                               </button>
 
@@ -585,10 +647,10 @@ export default function PaymentsManagementPage() {
                                   setRejectionReason('')
                                 }}
                                 disabled={isProcessingAction}
-                                className="px-2.5 py-1 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 font-bold text-[11px] transition flex items-center gap-1"
+                                className="px-3 py-1.5 rounded-xl border border-red-500/40 text-red-400 hover:bg-red-500/10 font-bold text-[11px] transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
                                 title="Reject proof with explanation"
                               >
-                                <X className="size-3" />
+                                <X className="size-3 stroke-[3]" />
                                 <span>Reject</span>
                               </button>
                             </>
@@ -596,7 +658,7 @@ export default function PaymentsManagementPage() {
 
                           <Link
                             to={`/creator/tournaments/${s.tournamentId}`}
-                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition"
+                            className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all"
                             title="Go to tournament control room"
                           >
                             <ExternalLink className="size-3.5" />
@@ -616,64 +678,90 @@ export default function PaymentsManagementPage() {
       {activeView === 'teams' && (
         <div className="space-y-6">
           {/* Quick Summary Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="p-4 rounded-xl border border-border bg-card">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">
-                Pending Queue
-              </span>
-              <span className="text-2xl font-heading font-black text-amber-400">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <motion.div
+              {...fadeUp(0)}
+              className="p-5 rounded-2xl border border-amber-500/20 bg-[#0E0E0E] relative overflow-hidden group hover:border-amber-500/40 transition-all shadow-xl"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider">
+                  Pending Verification
+                </span>
+                <div className="size-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400">
+                  <Clock className="size-4" />
+                </div>
+              </div>
+              <span className="text-3xl font-display font-black text-amber-400">
                 {payments.filter((p) => p.status === 'pending').length}
               </span>
-              <span className="text-[11px] text-muted-foreground block mt-0.5">
-                Awaiting manual check
+              <span className="text-[11px] text-white/40 block mt-1">
+                Awaiting manual UTR/Screenshot check
               </span>
-            </div>
-            <div className="p-4 rounded-xl border border-border bg-card">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">
-                Approved & Verified
-              </span>
-              <span className="text-2xl font-heading font-black text-emerald-400">
+            </motion.div>
+
+            <motion.div
+              {...fadeUp(0.06)}
+              className="p-5 rounded-2xl border border-emerald-500/20 bg-[#0E0E0E] relative overflow-hidden group hover:border-emerald-500/40 transition-all shadow-xl"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">
+                  Approved & Confirmed
+                </span>
+                <div className="size-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400">
+                  <CheckCircle2 className="size-4" />
+                </div>
+              </div>
+              <span className="text-3xl font-display font-black text-emerald-400">
                 {payments.filter((p) => p.status === 'approved').length}
               </span>
-              <span className="text-[11px] text-muted-foreground block mt-0.5">
-                Enrolled in brackets
+              <span className="text-[11px] text-white/40 block mt-1">
+                Enrolled officially in match brackets
               </span>
-            </div>
-            <div className="p-4 rounded-xl border border-border bg-card">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">
-                Total Submissions
-              </span>
-              <span className="text-2xl font-heading font-black text-foreground">
+            </motion.div>
+
+            <motion.div
+              {...fadeUp(0.12)}
+              className="p-5 rounded-2xl border border-white/10 bg-[#0E0E0E] relative overflow-hidden group hover:border-white/20 transition-all shadow-xl"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase font-bold text-white/50 tracking-wider">
+                  Total Submissions
+                </span>
+                <div className="size-8 rounded-lg bg-white/5 flex items-center justify-center text-white/60">
+                  <Coins className="size-4" />
+                </div>
+              </div>
+              <span className="text-3xl font-display font-black text-white">
                 {payments.length}
               </span>
-              <span className="text-[11px] text-muted-foreground block mt-0.5">
-                Across all events
+              <span className="text-[11px] text-white/40 block mt-1">
+                Across all active and closed tournaments
               </span>
-            </div>
+            </motion.div>
           </div>
 
           {/* Search and Filters */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 bg-card border border-border rounded-xl">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 bg-[#0D0D0D] border border-white/10 rounded-2xl shadow-xl">
             <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+              <Search className="absolute left-3.5 top-3 size-4 text-white/40" />
               <input
                 type="text"
                 placeholder="Search by team, captain, or UTR..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-background border border-border rounded pl-9 pr-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
+                className="w-full bg-[#141414] border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-white/40 focus:outline-none focus:border-primary transition-colors"
               />
             </div>
 
-            <div className="flex items-center gap-1.5 self-start sm:self-auto">
+            <div className="flex items-center gap-1.5 self-start sm:self-auto overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
               {['all', 'pending', 'approved', 'rejected'].map((st) => (
                 <button
                   key={st}
                   onClick={() => setFilterStatus(st)}
-                  className={`px-3 py-1 rounded text-xs font-bold capitalize transition-colors ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold capitalize transition-all cursor-pointer ${
                     filterStatus === st
-                      ? 'bg-primary text-background'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                      : 'text-white/60 hover:bg-white/5 hover:text-white'
                   }`}
                 >
                   {st}
@@ -684,91 +772,96 @@ export default function PaymentsManagementPage() {
 
           {/* Table Queue */}
           {isLoading ? (
-            <div className="p-12 text-center">
-              <div className="size-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+            <div className="p-16 text-center bg-[#0D0D0D] rounded-2xl border border-white/10">
+              <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-xs text-white/40 font-mono">Loading team payments queue…</p>
             </div>
           ) : filteredPayments.length === 0 ? (
-            <div className="p-12 text-center border border-border rounded-xl bg-card">
-              <ShieldCheck className="size-8 text-muted-foreground mx-auto mb-2 opacity-40" />
-              <p className="text-xs text-muted-foreground">
-                No payments found matching the selected filter.
+            <div className="p-16 text-center border border-white/10 rounded-2xl bg-[#0D0D0D]">
+              <ShieldCheck className="size-10 text-white/20 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-white/80">No entries in queue</p>
+              <p className="text-xs text-white/40 mt-1">
+                No team payments match the selected status or query.
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#0D0D0D] shadow-2xl">
               <table className="w-full text-xs">
-                <thead className="border-b border-border bg-muted/30 text-left text-muted-foreground font-semibold">
+                <thead className="border-b border-white/10 bg-white/[0.02] text-left text-white/50 font-bold uppercase tracking-wider text-[10px]">
                   <tr>
-                    <th className="px-4 py-3">Tournament</th>
-                    <th className="px-4 py-3">Team Name</th>
-                    <th className="px-4 py-3">Captain</th>
-                    <th className="px-4 py-3">Fee</th>
-                    <th className="px-4 py-3">12-Digit UTR / Ref</th>
-                    <th className="px-4 py-3">Screenshot Proof</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-right">Verification Action</th>
+                    <th className="px-5 py-4">Tournament</th>
+                    <th className="px-5 py-4">Team Name</th>
+                    <th className="px-5 py-4">Captain</th>
+                    <th className="px-5 py-4">Fee Amount</th>
+                    <th className="px-5 py-4">12-Digit UTR / Ref</th>
+                    <th className="px-5 py-4">Screenshot Proof</th>
+                    <th className="px-5 py-4">Status</th>
+                    <th className="px-5 py-4 text-right">Verification Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-white/5">
                   {filteredPayments.map((p) => (
-                    <tr key={p.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3 font-semibold text-foreground flex items-center gap-1.5">
+                    <tr key={p.id} className="hover:bg-white/[0.02] transition-colors group">
+                      <td className="px-5 py-4 font-semibold text-white flex items-center gap-2">
                         <Trophy className="size-3.5 text-primary shrink-0" />
-                        <span>{p.tournamentName}</span>
+                        <span className="group-hover:text-primary transition-colors">{p.tournamentName}</span>
                       </td>
-                      <td className="px-4 py-3 font-bold text-foreground">{p.teamName}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{p.captainName}</td>
-                      <td className="px-4 py-3 font-bold text-primary">{p.amount}</td>
-                      <td className="px-4 py-3 font-mono font-bold text-foreground select-all bg-muted/20 px-2 py-1 rounded">
-                        {p.utr}
+                      <td className="px-5 py-4 font-bold text-white">{p.teamName}</td>
+                      <td className="px-5 py-4 text-white/60">{p.captainName}</td>
+                      <td className="px-5 py-4 font-bold text-primary font-mono">{p.amount}</td>
+                      <td className="px-5 py-4">
+                        <span className="font-mono font-bold text-white select-all bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg inline-block">
+                          {p.utr}
+                        </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         {p.screenshotUrl ? (
                           <a
                             href={p.screenshotUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                            className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-bold"
                           >
                             <Eye className="size-3.5" />
                             View Proof
                           </a>
                         ) : (
-                          <span className="text-muted-foreground text-[11px]">N/A</span>
+                          <span className="text-white/30 text-xs">N/A</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         <span
-                          className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded ${
+                          className={`text-[9px] uppercase font-bold px-2.5 py-1 rounded-full border tracking-wide inline-flex items-center gap-1 ${
                             p.status === 'approved'
-                              ? 'bg-emerald-500/20 text-emerald-400'
+                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                               : p.status === 'rejected'
-                              ? 'bg-red-500/20 text-red-400'
-                              : 'bg-amber-500/20 text-amber-400'
+                              ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                              : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
                           }`}
                         >
+                          <span className="size-1.5 rounded-full bg-current" />
                           {p.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-5 py-4 text-right">
                         {p.status === 'pending' ? (
-                          <div className="flex items-center justify-end gap-1.5">
+                          <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => handleTeamPaymentAction(p.id, 'approved')}
-                              className="flex items-center gap-1 text-[11px] font-bold bg-emerald-500 text-black px-2.5 py-1 rounded hover:bg-emerald-400 transition"
+                              className="flex items-center gap-1.5 text-[11px] font-bold bg-emerald-500 text-black px-3 py-1.5 rounded-xl hover:bg-emerald-400 transition-all shadow-md active:scale-95 cursor-pointer"
                             >
-                              <CheckCircle2 className="size-3" /> Approve
+                              <CheckCircle2 className="size-3.5" /> Approve
                             </button>
                             <button
                               onClick={() => handleTeamPaymentAction(p.id, 'rejected')}
-                              className="flex items-center gap-1 text-[11px] font-bold border border-red-500/40 text-red-400 hover:bg-red-500/10 px-2.5 py-1 rounded transition"
+                              className="flex items-center gap-1.5 text-[11px] font-bold border border-red-500/40 text-red-400 hover:bg-red-500/10 px-3 py-1.5 rounded-xl transition-all active:scale-95 cursor-pointer"
                             >
-                              <XCircle className="size-3" /> Reject
+                              <XCircle className="size-3.5" /> Reject
                             </button>
                           </div>
                         ) : (
-                          <span className="text-[11px] text-muted-foreground capitalize">
-                            Verified
+                          <span className="text-xs text-white/40 capitalize font-medium">
+                            Processed
                           </span>
                         )}
                       </td>
@@ -782,173 +875,195 @@ export default function PaymentsManagementPage() {
       )}
 
       {/* Super Admin Rejection Reason Modal */}
-      {rejectingSettlement && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-card border border-border rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="size-5 text-red-400" />
-                <h3 className="font-heading font-black text-sm uppercase tracking-wider text-foreground">
-                  Reject Platform Settlement
-                </h3>
-              </div>
-              <button
-                onClick={() => setRejectingSettlement(null)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Rejecting settlement for <strong className="text-foreground">{rejectingSettlement.tournamentName}</strong> (Amount: ₹{rejectingSettlement.rdkFee.toLocaleString()}). The Official Partner will be requested to review and resubmit proof.
-            </p>
-
-            <form onSubmit={handleRejectSettlementSubmit} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                  Reason for Rejection *
-                </label>
-                <textarea
-                  required
-                  rows={3}
-                  placeholder="e.g. UTR reference not matching platform bank statement, or payment under amount."
-                  value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
-                  className="w-full bg-background border border-border rounded-lg p-2.5 text-xs text-foreground focus:outline-none focus:border-primary"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
+      <AnimatePresence>
+        {rejectingSettlement && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              className="bg-[#0E0E0E] border border-red-500/30 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="size-8 rounded-lg bg-red-500/15 flex items-center justify-center text-red-400">
+                    <AlertTriangle className="size-4" />
+                  </div>
+                  <h3 className="font-display text-sm tracking-wider text-white">
+                    Reject Platform Settlement
+                  </h3>
+                </div>
                 <button
-                  type="button"
                   onClick={() => setRejectingSettlement(null)}
-                  className="px-3 py-1.5 rounded border border-border text-xs text-muted-foreground hover:bg-muted"
+                  className="size-7 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isProcessingAction}
-                  className="px-4 py-1.5 rounded bg-red-500 text-white font-bold text-xs hover:bg-red-600 transition disabled:opacity-60"
-                >
-                  {isProcessingAction ? 'Rejecting…' : 'Confirm Rejection'}
+                  <X className="size-4" />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+
+              <p className="text-xs text-white/60 leading-relaxed">
+                Rejecting settlement for <strong className="text-white">{rejectingSettlement.tournamentName}</strong> (Amount: ₹{rejectingSettlement.rdkFee.toLocaleString()}). The Official Partner will be requested to review and resubmit proof.
+              </p>
+
+              <form onSubmit={handleRejectSettlementSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-white/50 mb-1.5">
+                    Reason for Rejection *
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    placeholder="e.g. UTR reference not matching platform bank statement, or payment under amount."
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    className="w-full bg-[#141414] border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-red-500 transition-colors"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setRejectingSettlement(null)}
+                    className="px-4 py-2 rounded-xl border border-white/10 text-xs text-white/60 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isProcessingAction}
+                    className="px-5 py-2 rounded-xl bg-red-500 text-white font-bold text-xs hover:bg-red-600 transition-all shadow-lg active:scale-95 disabled:opacity-60 cursor-pointer"
+                  >
+                    {isProcessingAction ? 'Rejecting…' : 'Confirm Rejection'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Lightbox Modal for Payment Screenshot Proof */}
-      {previewProofModal && (
-        <div
-          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-in fade-in"
-          onClick={() => setPreviewProofModal(null)}
-        >
-          <div
-            className="relative max-w-3xl w-full max-h-[92vh] bg-card border border-border rounded-2xl overflow-hidden shadow-2xl flex flex-col"
-            onClick={(e) => e.stopPropagation()}
+      <AnimatePresence>
+        {previewProofModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
+            onClick={() => setPreviewProofModal(null)}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-border bg-card">
-              <div>
-                <h4 className="font-heading font-black text-sm uppercase tracking-wider text-foreground flex items-center gap-2">
-                  <Receipt className="size-4 text-primary" />
-                  {previewProofModal.title}
-                </h4>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground mt-1">
-                  {previewProofModal.partnerName && (
-                    <span>
-                      Sender: <strong className="text-foreground">{previewProofModal.partnerName}</strong>
-                    </span>
-                  )}
-                  {previewProofModal.amount && (
-                    <span>
-                      Fee Amount: <strong className="text-emerald-400">₹{previewProofModal.amount.toLocaleString()}</strong>
-                    </span>
-                  )}
-                  {previewProofModal.utr && !previewProofModal.utr.startsWith('SCREENSHOT-') && (
-                    <span className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded text-foreground">
-                      Ref: {previewProofModal.utr}
-                    </span>
-                  )}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative max-w-3xl w-full max-h-[92vh] bg-[#0E0E0E] border border-white/10 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-white/10 bg-[#0E0E0E]">
+                <div>
+                  <h4 className="font-display text-sm tracking-wider text-white flex items-center gap-2">
+                    <Receipt className="size-4 text-emerald-400" />
+                    {previewProofModal.title}
+                  </h4>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-white/50 mt-1">
+                    {previewProofModal.partnerName && (
+                      <span>
+                        Sender: <strong className="text-white">{previewProofModal.partnerName}</strong>
+                      </span>
+                    )}
+                    {previewProofModal.amount && (
+                      <span>
+                        Fee Amount: <strong className="text-emerald-400 font-bold">₹{previewProofModal.amount.toLocaleString()}</strong>
+                      </span>
+                    )}
+                    {previewProofModal.utr && !previewProofModal.utr.startsWith('SCREENSHOT-') && (
+                      <span className="font-mono text-[11px] bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg text-white font-semibold">
+                        Ref: {previewProofModal.utr}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreviewProofModal(null)}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition"
-                title="Close"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
-
-            {/* Image Viewport */}
-            <div className="p-4 overflow-auto flex-1 flex items-center justify-center bg-black/70 min-h-[300px]">
-              <img
-                src={previewProofModal.url}
-                alt="Payment Proof Screenshot"
-                className="max-h-[62vh] w-auto max-w-full object-contain rounded-lg shadow-2xl border border-white/10"
-              />
-            </div>
-
-            {/* Footer / Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 border-t border-border bg-card">
-              <a
-                href={previewProofModal.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-primary hover:underline flex items-center gap-1 font-semibold"
-              >
-                <ExternalLink className="size-3.5" />
-                Open original full resolution
-              </a>
-
-              <div className="flex items-center gap-2">
-                {previewProofModal.settlementItem &&
-                  isSuperAdmin &&
-                  previewProofModal.settlementItem.status === 'UNDER_REVIEW' && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const item = previewProofModal.settlementItem!
-                          setPreviewProofModal(null)
-                          setRejectingSettlement(item)
-                          setRejectionReason('')
-                        }}
-                        className="px-3 py-1.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 font-bold text-xs transition"
-                      >
-                        Reject Proof
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const item = previewProofModal.settlementItem!
-                          setPreviewProofModal(null)
-                          handleVerifySettlement(item)
-                        }}
-                        className="px-4 py-1.5 rounded bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition flex items-center gap-1.5 shadow"
-                      >
-                        <Check className="size-3.5" />
-                        Verify 10% Settlement
-                      </button>
-                    </>
-                  )}
                 <button
                   type="button"
                   onClick={() => setPreviewProofModal(null)}
-                  className="px-4 py-1.5 rounded border border-border text-xs text-muted-foreground hover:bg-muted font-semibold"
+                  className="size-8 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                  title="Close"
                 >
-                  Close
+                  <X className="size-4" />
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+
+              {/* Image Viewport */}
+              <div className="p-4 overflow-auto flex-1 flex items-center justify-center bg-black/80 min-h-[300px]">
+                <img
+                  src={previewProofModal.url}
+                  alt="Payment Proof Screenshot"
+                  className="max-h-[62vh] w-auto max-w-full object-contain rounded-xl shadow-2xl border border-white/10"
+                />
+              </div>
+
+              {/* Footer / Actions */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-t border-white/10 bg-[#0E0E0E]">
+                <a
+                  href={previewProofModal.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-primary hover:underline flex items-center gap-1.5 font-bold"
+                >
+                  <ExternalLink className="size-3.5" />
+                  Open original resolution
+                </a>
+
+                <div className="flex items-center gap-2.5">
+                  {previewProofModal.settlementItem &&
+                    isSuperAdmin &&
+                    previewProofModal.settlementItem.status === 'UNDER_REVIEW' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const item = previewProofModal.settlementItem!
+                            setPreviewProofModal(null)
+                            setRejectingSettlement(item)
+                            setRejectionReason('')
+                          }}
+                          className="px-3.5 py-1.5 rounded-xl border border-red-500/40 text-red-400 hover:bg-red-500/10 font-bold text-xs transition-all cursor-pointer"
+                        >
+                          Reject Proof
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const item = previewProofModal.settlementItem!
+                            setPreviewProofModal(null)
+                            handleVerifySettlement(item)
+                          }}
+                          className="px-4 py-1.5 rounded-xl bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition-all flex items-center gap-1.5 shadow-lg active:scale-95 cursor-pointer"
+                        >
+                          <Check className="size-3.5 stroke-[3]" />
+                          Verify 10% Settlement
+                        </button>
+                      </>
+                    )}
+                  <button
+                    type="button"
+                    onClick={() => setPreviewProofModal(null)}
+                    className="px-4 py-1.5 rounded-xl border border-white/10 text-xs text-white/60 hover:text-white hover:bg-white/5 font-semibold transition-all cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

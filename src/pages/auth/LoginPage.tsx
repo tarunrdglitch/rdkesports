@@ -655,6 +655,220 @@ function RegisterModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
   )
 }
 
+/* ═══ Inline Register Form ═════════════════════════════════ */
+function InlineRegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void }) {
+  const [showPw, setShowPw] = useState(false)
+  const [serverError, setServerError] = useState('')
+  const [isSuccess, setIsSuccess] = useState(false)
+  const { login } = useAuth()
+  const nav = useNavigate()
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<RegisterValues>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: { name: '', ign: '', email: '', password: '', terms: false },
+  })
+
+  const pwValue = watch('password')
+  const strength = getStrength(pwValue)
+
+  const onSubmit = async (data: RegisterValues) => {
+    setServerError('')
+    try {
+      const response = await authService.register({
+        name: data.name,
+        ign: data.ign,
+        email: data.email,
+        password: data.password,
+        role: 'player',
+      })
+      setIsSuccess(true)
+      setTimeout(() => {
+        login(response.user)
+        nav(homeFor(response.user.role))
+      }, 700)
+    } catch (err: unknown) {
+      setServerError(err instanceof Error ? err.message : 'Registration failed. Please try again.')
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <AnimatePresence>
+        {serverError && (
+          <motion.div
+            className="alert-box alert-danger mb-4"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+          >
+            <AlertCircle className="size-4 shrink-0 mt-0.5" />
+            <span>{serverError}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label className="rdk-label">Full Name</label>
+            <div className="input-icon-wrap">
+              <User className="input-icon size-4" />
+              <input
+                type="text"
+                autoComplete="name"
+                placeholder="John Doe"
+                className="rdk-input"
+                {...register('name')}
+                aria-invalid={!!errors.name}
+              />
+            </div>
+            {errors.name && (
+              <span className="block text-[11px] text-red-400 font-body">{errors.name.message}</span>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <label className="rdk-label">
+              <span>IGN</span>
+              <span className="ml-1 normal-case text-[10px] text-white/40">(in-game)</span>
+            </label>
+            <div className="input-icon-wrap">
+              <Gamepad2 className="input-icon size-4" />
+              <input
+                type="text"
+                autoComplete="username"
+                placeholder="DragonSlayer"
+                className="rdk-input"
+                {...register('ign')}
+                aria-invalid={!!errors.ign}
+              />
+            </div>
+            {errors.ign && (
+              <span className="block text-[11px] text-red-400 font-body">{errors.ign.message}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="rdk-label">Email Address</label>
+          <div className="input-icon-wrap">
+            <Mail className="input-icon size-4" />
+            <input
+              type="email"
+              autoComplete="email"
+              placeholder="player@gamers.com"
+              className="rdk-input"
+              {...register('email')}
+              aria-invalid={!!errors.email}
+            />
+          </div>
+          {errors.email && (
+            <span className="block text-[11px] text-red-400 font-body">{errors.email.message}</span>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="rdk-label">Create Password</label>
+          <div className="input-icon-wrap">
+            <Lock className="input-icon size-4" />
+            <input
+              type={showPw ? 'text' : 'password'}
+              autoComplete="new-password"
+              placeholder="Min. 8 characters"
+              className="rdk-input pr-12"
+              {...register('password')}
+              aria-invalid={!!errors.password}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPw(!showPw)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-white/40 hover:text-white"
+            >
+              {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
+          {pwValue && (
+            <div className="space-y-1 pt-1">
+              <div className="flex gap-1">
+                {[1, 2, 3, 4].map((seg) => (
+                  <div
+                    key={seg}
+                    className="h-1 flex-1 rounded-full transition-colors"
+                    style={{ backgroundColor: seg <= strength.level ? strength.color : '#1A1A1A' }}
+                  />
+                ))}
+              </div>
+              {strength.label && (
+                <p className="text-[10px] font-body" style={{ color: strength.color }}>
+                  {strength.label} password
+                </p>
+              )}
+            </div>
+          )}
+          {errors.password && (
+            <span className="block text-[11px] text-red-400 font-body">{errors.password.message}</span>
+          )}
+        </div>
+
+        <div className="space-y-1 pt-1">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" className="rdk-checkbox mt-0.5" {...register('terms')} />
+            <span className="text-xs text-white/50 leading-relaxed font-body">
+              I agree to RDK Esports <span className="text-primary hover:underline">Terms</span> and{' '}
+              <span className="text-primary hover:underline">Privacy Policy</span>
+            </span>
+          </label>
+          {errors.terms && (
+            <span className="block text-[11px] text-red-400 font-body">{errors.terms.message}</span>
+          )}
+        </div>
+
+        <motion.button
+          type="submit"
+          disabled={isSubmitting || isSuccess}
+          className="btn-primary w-full justify-center shadow-lg shadow-primary/25 cursor-pointer mt-2"
+          whileHover={!isSubmitting ? { scale: 1.01 } : {}}
+          whileTap={!isSubmitting ? { scale: 0.98 } : {}}
+        >
+          <AnimatePresence mode="wait">
+            {isSuccess ? (
+              <motion.span key="s" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <CheckCircle2 className="size-4" /> Setting up your profile…
+              </motion.span>
+            ) : isSubmitting ? (
+              <motion.span key="l" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <span className="size-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                Creating account…
+              </motion.span>
+            ) : (
+              <motion.span key="i" className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                Create Free Account <ArrowRight className="size-4" />
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </motion.button>
+      </form>
+
+      <div className="mt-5 pt-4 border-t border-white/10 text-center">
+        <p className="text-xs text-white/50">
+          Already registered?{' '}
+          <button
+            type="button"
+            onClick={onSwitchToLogin}
+            className="text-primary font-bold hover:underline cursor-pointer ml-1"
+          >
+            Sign in instead →
+          </button>
+        </p>
+      </div>
+    </div>
+  )
+}
+
 /* ═══════════════════════════════════════════════════════════
    Main LoginPage
 ═══════════════════════════════════════════════════════════ */
@@ -663,13 +877,16 @@ export default function LoginPage() {
   const [serverError, setServerError] = useState('')
   const [isSuccess, setIsSuccess] = useState(false)
   const [showRegister, setShowRegister] = useState(false)
+  const [authTab, setAuthTab] = useState<'login' | 'register'>('login')
   const { user, login, checkAuth, isInitialized } = useAuth()
   const nav = useNavigate()
   const [searchParams] = useSearchParams()
 
-  // Open register modal automatically if ?mode=register is in the URL
+  // Open register tab automatically if ?mode=register is in the URL
   useEffect(() => {
-    if (searchParams.get('mode') === 'register') setShowRegister(true)
+    if (searchParams.get('mode') === 'register') {
+      setAuthTab('register')
+    }
   }, [searchParams])
 
   const {
@@ -846,210 +1063,260 @@ export default function LoginPage() {
             animate="show"
           >
             {/* Mobile logo */}
-            <motion.div variants={itemVariants} className="lg:hidden flex items-center gap-3 mb-8">
+            <motion.div variants={itemVariants} className="lg:hidden flex items-center gap-3 mb-6">
               <img src="/logo.png" alt="RDK Esports" className="h-9 w-auto logo-glow" />
               <span className="font-display text-base tracking-widest text-white">RDK ESPORTS</span>
             </motion.div>
 
-            {/* Headline */}
-            <motion.div variants={itemVariants} className="mb-8">
-              <h2 className="font-display text-3xl text-white tracking-wide">
-                Welcome back.
-              </h2>
-              <p className="mt-2 text-sm font-body" style={{ color: '#666' }}>
-                Sign in — we'll route you to the right station.
-              </p>
-              <div className="red-line mt-3" />
+            {/* Glowing Segmented Auth Tab Switcher */}
+            <motion.div variants={itemVariants} className="mb-7">
+              <div
+                className="relative rounded-2xl p-1.5 flex items-center bg-[#111111] border border-white/10 shadow-inner"
+              >
+                <motion.div
+                  className="absolute top-1.5 bottom-1.5 rounded-xl bg-gradient-to-r from-primary to-[#C62828] shadow-[0_0_20px_rgba(229,57,53,0.4)] pointer-events-none"
+                  style={{
+                    width: 'calc(50% - 6px)',
+                    left: authTab === 'login' ? 6 : 'calc(50%)',
+                  }}
+                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setAuthTab('login')}
+                  className={`relative z-10 flex-1 py-2.5 text-xs font-bold font-body transition-colors cursor-pointer flex items-center justify-center gap-2 ${
+                    authTab === 'login' ? 'text-white' : 'text-white/50 hover:text-white'
+                  }`}
+                >
+                  <ShieldCheck className="size-3.5" />
+                  <span>Sign In</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuthTab('register')}
+                  className={`relative z-10 flex-1 py-2.5 text-xs font-bold font-body transition-colors cursor-pointer flex items-center justify-center gap-2 ${
+                    authTab === 'register' ? 'text-white' : 'text-white/50 hover:text-white'
+                  }`}
+                >
+                  <Zap className="size-3.5" />
+                  <span>Create Account</span>
+                </button>
+              </div>
             </motion.div>
 
-            {/* Server error */}
-            <AnimatePresence>
-              {serverError && (
+            <AnimatePresence mode="wait">
+              {authTab === 'login' ? (
                 <motion.div
-                  className="alert-box alert-danger mb-6"
-                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                  key="login-tab"
+                  initial={{ opacity: 0, x: -16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 16 }}
                   transition={{ duration: 0.25 }}
                 >
-                  <AlertCircle className="size-4 shrink-0 mt-0.5" />
-                  <span>{serverError}</span>
+                  {/* Headline */}
+                  <div className="mb-6">
+                    <h2 className="font-display text-3xl text-white tracking-wide">
+                      Welcome back.
+                    </h2>
+                    <p className="mt-2 text-sm font-body text-white/50">
+                      Sign in — we'll route you to the right station.
+                    </p>
+                    <div className="red-line mt-3" />
+                  </div>
+
+                  {/* Server error */}
+                  <AnimatePresence>
+                    {serverError && (
+                      <motion.div
+                        className="alert-box alert-danger mb-6"
+                        initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                        transition={{ duration: 0.25 }}
+                      >
+                        <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                        <span>{serverError}</span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Form */}
+                  <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+                    {/* Email */}
+                    <div className="space-y-1.5">
+                      <label className="rdk-label">Email Address</label>
+                      <div className="input-icon-wrap">
+                        <Mail className="input-icon size-4" />
+                        <input
+                          type="email"
+                          autoComplete="email"
+                          placeholder="name@organization.com"
+                          className="rdk-input"
+                          {...register('email')}
+                          aria-invalid={!!errors.email}
+                        />
+                      </div>
+                      <AnimatePresence>
+                        {errors.email && (
+                          <motion.span
+                            role="alert"
+                            className="block text-xs font-body text-red-400"
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                          >
+                            {errors.email.message}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    {/* Password */}
+                    <div className="space-y-1.5">
+                      <label className="rdk-label">Password</label>
+                      <div className="input-icon-wrap">
+                        <Lock className="input-icon size-4" />
+                        <input
+                          type={showPass ? 'text' : 'password'}
+                          autoComplete="current-password"
+                          placeholder="••••••••"
+                          className="rdk-input pr-12"
+                          {...register('password')}
+                          aria-invalid={!!errors.password}
+                        />
+                        <button
+                          type="button"
+                          aria-label={showPass ? 'Hide password' : 'Show password'}
+                          onClick={() => setShowPass((s) => !s)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer transition-colors text-white/40 hover:text-white"
+                        >
+                          {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                        </button>
+                      </div>
+                      <AnimatePresence>
+                        {errors.password && (
+                          <motion.span
+                            role="alert"
+                            className="block text-xs font-body text-red-400"
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                          >
+                            {errors.password.message}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    {/* Remember + Forgot */}
+                    <div className="flex items-center justify-between text-xs font-body pt-1">
+                      <label className="flex items-center gap-2.5 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          className="rdk-checkbox"
+                          {...register('remember')}
+                        />
+                        <span className="transition-colors group-hover:text-white text-white/60">
+                          Remember me
+                        </span>
+                      </label>
+                      <a
+                        href="#forgot"
+                        onClick={(e) => { e.preventDefault(); alert('Password recovery is managed by RDK Technologies.') }}
+                        className="transition-colors hover:underline text-primary font-medium"
+                      >
+                        Forgot password?
+                      </a>
+                    </div>
+
+                    {/* Submit */}
+                    <div className="pt-2">
+                      <motion.button
+                        type="submit"
+                        disabled={isSubmitting || isSuccess}
+                        className="btn-primary w-full justify-center shadow-lg shadow-primary/25 cursor-pointer"
+                        whileHover={!isSubmitting ? { scale: 1.01 } : {}}
+                        whileTap={!isSubmitting ? { scale: 0.98 } : {}}
+                      >
+                        <AnimatePresence mode="wait">
+                          {isSuccess ? (
+                            <motion.span
+                              key="success"
+                              className="flex items-center gap-2"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                            >
+                              <ShieldCheck className="size-4" />
+                              Routing you in…
+                            </motion.span>
+                          ) : isSubmitting ? (
+                            <motion.span
+                              key="loading"
+                              className="flex items-center gap-2"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                            >
+                              <span className="size-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                              Authenticating…
+                            </motion.span>
+                          ) : (
+                            <motion.span
+                              key="idle"
+                              className="flex items-center gap-2"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                            >
+                              Sign In
+                              <ArrowRight className="size-4" />
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </motion.button>
+                    </div>
+                  </form>
+
+                  {/* Switch to Register */}
+                  <div className="mt-7 pt-5 border-t border-white/10 text-center">
+                    <p className="text-xs text-white/50">
+                      New to RDK Esports?{' '}
+                      <button
+                        type="button"
+                        onClick={() => setAuthTab('register')}
+                        className="text-primary font-bold hover:underline cursor-pointer ml-1"
+                      >
+                        Create an account →
+                      </button>
+                    </p>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="register-tab"
+                  initial={{ opacity: 0, x: 16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -16 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  {/* Headline */}
+                  <div className="mb-6">
+                    <h2 className="font-display text-3xl text-white tracking-wide">
+                      Join the Arena.
+                    </h2>
+                    <p className="mt-2 text-sm font-body text-white/50">
+                      Compete, win, and claim your spot on the leaderboard.
+                    </p>
+                    <div className="red-line mt-3" />
+                  </div>
+
+                  <InlineRegisterForm onSwitchToLogin={() => setAuthTab('login')} />
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
-
-              {/* Email */}
-              <motion.div variants={itemVariants} className="space-y-1.5">
-                <label className="rdk-label">Email Address</label>
-                <div className="input-icon-wrap">
-                  <Mail className="input-icon size-4" />
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    placeholder="name@organization.com"
-                    className="rdk-input"
-                    {...register('email')}
-                    aria-invalid={!!errors.email}
-                  />
-                </div>
-                <AnimatePresence>
-                  {errors.email && (
-                    <motion.span
-                      role="alert"
-                      className="block text-xs font-body"
-                      style={{ color: '#ff6b6b' }}
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                    >
-                      {errors.email.message}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-
-              {/* Password */}
-              <motion.div variants={itemVariants} className="space-y-1.5">
-                <label className="rdk-label">Password</label>
-                <div className="input-icon-wrap">
-                  <Lock className="input-icon size-4" />
-                  <input
-                    type={showPass ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    placeholder="••••••••"
-                    className="rdk-input pr-12"
-                    {...register('password')}
-                    aria-invalid={!!errors.password}
-                  />
-                  <motion.button
-                    type="button"
-                    aria-label={showPass ? 'Hide password' : 'Show password'}
-                    onClick={() => setShowPass((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer transition-colors"
-                    style={{ color: '#555' }}
-                    whileTap={{ scale: 0.9 }}
-                    whileHover={{ color: '#ffffff' }}
-                  >
-                    {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </motion.button>
-                </div>
-                <AnimatePresence>
-                  {errors.password && (
-                    <motion.span
-                      role="alert"
-                      className="block text-xs font-body"
-                      style={{ color: '#ff6b6b' }}
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                    >
-                      {errors.password.message}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-
-              {/* Remember + Forgot */}
-              <motion.div
-                variants={itemVariants}
-                className="flex items-center justify-between text-xs font-body"
-              >
-                <label className="flex items-center gap-2.5 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    className="rdk-checkbox"
-                    {...register('remember')}
-                  />
-                  <span className="transition-colors group-hover:text-white" style={{ color: '#666' }}>
-                    Remember me
-                  </span>
-                </label>
-                <a
-                  href="#forgot"
-                  onClick={(e) => { e.preventDefault(); alert('Password recovery is managed by RDK Technologies.') }}
-                  className="transition-colors hover:text-white"
-                  style={{ color: '#E53935' }}
-                >
-                  Forgot password?
-                </a>
-              </motion.div>
-
-              {/* Submit */}
-              <motion.div variants={itemVariants}>
-                <motion.button
-                  type="submit"
-                  disabled={isSubmitting || isSuccess}
-                  className="btn-primary w-full justify-center mt-2"
-                  whileHover={!isSubmitting ? { scale: 1.01 } : {}}
-                  whileTap={!isSubmitting ? { scale: 0.98 } : {}}
-                >
-                  <AnimatePresence mode="wait">
-                    {isSuccess ? (
-                      <motion.span
-                        key="success"
-                        className="flex items-center gap-2"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                      >
-                        <ShieldCheck className="size-4" />
-                        Routing you in…
-                      </motion.span>
-                    ) : isSubmitting ? (
-                      <motion.span
-                        key="loading"
-                        className="flex items-center gap-2"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                      >
-                        <span className="size-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                        Authenticating…
-                      </motion.span>
-                    ) : (
-                      <motion.span
-                        key="idle"
-                        className="flex items-center gap-2"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                      >
-                        Sign In
-                        <ArrowRight className="size-4" />
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </motion.button>
-              </motion.div>
-            </form>
-
-            {/* Divider */}
-            <motion.div variants={itemVariants} className="flex items-center gap-3 my-7">
-              <div className="flex-1 h-px" style={{ background: '#1A1A1A' }} />
-              <span className="text-[10px] font-body tracking-widest uppercase" style={{ color: '#333' }}>
-                New here?
-              </span>
-              <div className="flex-1 h-px" style={{ background: '#1A1A1A' }} />
-            </motion.div>
-
-            {/* Register CTA — opens modal popup */}
-            <motion.div variants={itemVariants}>
-              <motion.button
-                type="button"
-                onClick={() => setShowRegister(true)}
-                className="btn-outline-white w-full justify-center"
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                Create a free account
-              </motion.button>
-            </motion.div>
-
             {/* Footer */}
             <motion.p
               variants={itemVariants}
-              className="text-center text-[10px] font-body mt-8 tracking-wider uppercase"
-              style={{ color: '#2D2D2D' }}
+              className="text-center text-[10px] font-mono mt-8 tracking-wider uppercase text-white/20"
             >
               RDK Esports · Powered by RDK Technologies
             </motion.p>
@@ -1059,3 +1326,4 @@ export default function LoginPage() {
     </>
   )
 }
+
