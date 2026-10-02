@@ -587,144 +587,7 @@ export function createDefaultRoadmap(tourneyName: string): TournamentRoadmap {
   return {
     title: `ROAD TO CHAMPIONSHIP - ${tourneyName.toUpperCase()}`,
     trophyName: 'Grand Champions Cup',
-    stages: [
-      {
-        id: 'stage_kopo',
-        name: 'Knockout Play-offs',
-        shortCode: 'KOPO',
-        dateRange: 'Day 1 - Qualifying',
-        matches: [
-          {
-            id: 'm_1',
-            stageId: 'stage_kopo',
-            matchNumber: 1,
-            team1: { name: 'Monaco Esports', seed: '21', score: '2', isWinner: true },
-            team2: { name: 'Paris Gaming', seed: '11', score: '1' },
-            status: 'completed',
-          },
-          {
-            id: 'm_2',
-            stageId: 'stage_kopo',
-            matchNumber: 2,
-            team1: { name: 'Galatasaray', seed: '20', score: '0' },
-            team2: { name: 'Juventus Clutches', seed: '13', score: '2', isWinner: true },
-            status: 'completed',
-          },
-          {
-            id: 'm_3',
-            stageId: 'stage_kopo',
-            matchNumber: 3,
-            team1: { name: 'Benfica Squad', seed: '24', score: '1' },
-            team2: { name: 'Real Madrid LAN', seed: '9', score: '2', isWinner: true },
-            status: 'completed',
-          },
-          {
-            id: 'm_4',
-            stageId: 'stage_kopo',
-            matchNumber: 4,
-            team1: { name: 'B. Dortmund', seed: '17', score: '2', isWinner: true },
-            team2: { name: 'Atalanta Titans', seed: '15', score: '0' },
-            status: 'completed',
-          },
-        ],
-      },
-      {
-        id: 'stage_r16',
-        name: 'Round of 16',
-        shortCode: 'R16',
-        dateRange: 'Day 2 - Elimination',
-        matches: [
-          {
-            id: 'm_5',
-            stageId: 'stage_r16',
-            matchNumber: 5,
-            team1: { name: 'Barcelona Elite', seed: '5', score: '1' },
-            team2: { name: 'Chelsea Strikers', seed: '6', score: '2', isWinner: true },
-            status: 'completed',
-          },
-          {
-            id: 'm_6',
-            stageId: 'stage_r16',
-            matchNumber: 6,
-            team1: { name: 'Liverpool Kings', seed: '3', score: '2', isWinner: true },
-            team2: { name: 'Tottenham Spurs', seed: '4', score: '1' },
-            status: 'completed',
-          },
-          {
-            id: 'm_7',
-            stageId: 'stage_r16',
-            matchNumber: 7,
-            team1: { name: 'Sporting CP', seed: '7', score: '0' },
-            team2: { name: 'Man City Esports', seed: '8', score: '2', isWinner: true },
-            status: 'completed',
-          },
-          {
-            id: 'm_8',
-            stageId: 'stage_r16',
-            matchNumber: 8,
-            team1: { name: 'Arsenal Gunners', seed: '1', score: '2', isWinner: true },
-            team2: { name: 'Bayern Munich', seed: '2', score: '1' },
-            status: 'completed',
-          },
-        ],
-      },
-      {
-        id: 'stage_qf',
-        name: 'Quarter-Finals',
-        shortCode: 'QF',
-        dateRange: 'Day 3 - Super 8',
-        matches: [
-          {
-            id: 'm_9',
-            stageId: 'stage_qf',
-            matchNumber: 9,
-            team1: { name: 'Chelsea Strikers', seed: '6', score: '2', isWinner: true },
-            team2: { name: 'Liverpool Kings', seed: '3', score: '1' },
-            status: 'completed',
-          },
-          {
-            id: 'm_10',
-            stageId: 'stage_qf',
-            matchNumber: 10,
-            team1: { name: 'Man City Esports', seed: '8', score: '1' },
-            team2: { name: 'Arsenal Gunners', seed: '1', score: '2', isWinner: true },
-            status: 'completed',
-          },
-        ],
-      },
-      {
-        id: 'stage_sf',
-        name: 'Semi-Finals',
-        shortCode: 'SF',
-        dateRange: 'Day 4 - Final 4',
-        matches: [
-          {
-            id: 'm_11',
-            stageId: 'stage_sf',
-            matchNumber: 11,
-            team1: { name: 'Chelsea Strikers', seed: '6', score: '3', isWinner: true },
-            team2: { name: 'Arsenal Gunners', seed: '1', score: '2' },
-            status: 'completed',
-          },
-        ],
-      },
-      {
-        id: 'stage_final',
-        name: 'Grand Championship Final',
-        shortCode: 'FINAL',
-        dateRange: 'Grand LAN Finale',
-        matches: [
-          {
-            id: 'm_12',
-            stageId: 'stage_final',
-            matchNumber: 12,
-            team1: { name: 'Chelsea Strikers', seed: '6', score: '?' },
-            team2: { name: 'Phoenix Titans', seed: '1', score: '?' },
-            status: 'live',
-          },
-        ],
-      },
-    ],
+    stages: [],
   }
 }
 
@@ -1597,8 +1460,8 @@ app.delete('/api/creators/ambassadors/:id', async (req: Request, res: Response) 
 
   if (isDatabaseConfigured) {
     try {
-      await prisma.ambassador.delete({ where: { id } }).catch(() => {})
-    } catch {}
+      await prisma.ambassador.delete({ where: { id } }).catch(() => { })
+    } catch { }
   }
 
   return res.json({ success: true, message: 'Ambassador revoked successfully' })
@@ -1772,9 +1635,56 @@ app.post('/api/tournaments', requirePartnerOrAdmin, (req: Request, res: Response
 })
 
 // Get Single Tournament Details (With Data Privacy Protection for normal users)
-app.get('/api/tournaments/:id', (req: Request, res: Response) => {
-  const { id } = req.params
-  const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+app.get('/api/tournaments/:id', async (req: Request, res: Response) => {
+  const tourneyId = String(req.params.id)
+  let tourney = TOURNAMENTS.find((t) => t.id === tourneyId || t.slug === tourneyId)
+
+  if (isDatabaseConfigured) {
+    const dbT = await prisma.tournament.findFirst({
+      where: { OR: [{ id: tourneyId }, { slug: tourneyId }] },
+    }).catch(() => null)
+    if (dbT) {
+      if (!tourney) {
+        tourney = {
+          ...dbT,
+          creatorId: dbT.creatorId || undefined,
+          creatorAvatar: dbT.creatorAvatar || undefined,
+          upiId: dbT.upiId || undefined,
+          upiName: dbT.upiName || undefined,
+          upiQrUrl: dbT.upiQrUrl || undefined,
+          rules: dbT.rules || undefined,
+          roomId: dbT.roomId || undefined,
+          roomPassword: dbT.roomPassword || undefined,
+          streamUrl: dbT.streamUrl || undefined,
+          streamTitle: dbT.streamTitle || undefined,
+          scheduledMatchInfo: dbT.scheduledMatchInfo || undefined,
+          status: dbT.status as any,
+          roadmap: dbT.roadmap ? JSON.parse(dbT.roadmap) : undefined,
+          streamStatus: dbT.streamStatus as any,
+          streamPlatform: dbT.streamPlatform as any,
+        }
+        TOURNAMENTS.push(tourney)
+      } else {
+        if (dbT.roadmap) {
+          try {
+            tourney.roadmap = JSON.parse(dbT.roadmap)
+          } catch {}
+        }
+        if (dbT.status) tourney.status = dbT.status as any
+        if (dbT.prizePool) tourney.prizePool = dbT.prizePool
+        if (dbT.entryFee) tourney.entryFee = dbT.entryFee
+        if (dbT.banner) tourney.banner = dbT.banner
+        if (dbT.roomId !== undefined) tourney.roomId = dbT.roomId || undefined
+        if (dbT.roomPassword !== undefined) tourney.roomPassword = dbT.roomPassword || undefined
+        if (dbT.roomPublished !== undefined) tourney.roomPublished = dbT.roomPublished
+        if (dbT.streamUrl !== undefined) tourney.streamUrl = dbT.streamUrl || undefined
+        if (dbT.streamTitle !== undefined) tourney.streamTitle = dbT.streamTitle || undefined
+        if (dbT.streamStatus !== undefined) tourney.streamStatus = dbT.streamStatus as any
+        if (dbT.rules !== undefined) tourney.rules = dbT.rules || undefined
+      }
+    }
+  }
+
   if (!tourney) {
     return res.status(404).json({ error: 'Tournament not found' })
   }
@@ -1983,15 +1893,15 @@ app.delete('/api/tournaments/:id', requirePartnerOrAdmin, async (req: Request, r
 
     // Remove from database if configured
     if (isDatabaseConfigured) {
-      await prisma.registeredTeam.deleteMany({ where: { tournamentId: tid } }).catch(() => {})
-      await prisma.paymentSubmission.deleteMany({ where: { tournamentId: tid } }).catch(() => {})
-      await prisma.auctionPlayer.deleteMany({ where: { tournamentId: tid } }).catch(() => {})
-      await prisma.ephemeralAuctionBidder.deleteMany({ where: { auctionId: tid } }).catch(() => {})
-      await prisma.ambassador.deleteMany({ where: { tournamentId: tid } }).catch(() => {})
-      await prisma.platformSettlement.deleteMany({ where: { tournamentId: tid } }).catch(() => {})
-      await prisma.auctionReversal.deleteMany({ where: { tournamentId: tid } }).catch(() => {})
-      await prisma.platformAuditLog.deleteMany({ where: { tournamentId: tid } }).catch(() => {})
-      await prisma.tournament.deleteMany({ where: { id: tid } }).catch(() => {})
+      await prisma.registeredTeam.deleteMany({ where: { tournamentId: tid } }).catch(() => { })
+      await prisma.paymentSubmission.deleteMany({ where: { tournamentId: tid } }).catch(() => { })
+      await prisma.auctionPlayer.deleteMany({ where: { tournamentId: tid } }).catch(() => { })
+      await prisma.ephemeralAuctionBidder.deleteMany({ where: { auctionId: tid } }).catch(() => { })
+      await prisma.ambassador.deleteMany({ where: { tournamentId: tid } }).catch(() => { })
+      await prisma.platformSettlement.deleteMany({ where: { tournamentId: tid } }).catch(() => { })
+      await prisma.auctionReversal.deleteMany({ where: { tournamentId: tid } }).catch(() => { })
+      await prisma.platformAuditLog.deleteMany({ where: { tournamentId: tid } }).catch(() => { })
+      await prisma.tournament.deleteMany({ where: { id: tid } }).catch(() => { })
     }
 
     logAuditEvent({
@@ -2049,15 +1959,15 @@ app.post('/api/admin/purge-test-data', requireSuperAdmin, async (req: Request, r
 
     if (isDatabaseConfigured) {
       if (tourneyIds.length > 0) {
-        await prisma.registeredTeam.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-        await prisma.paymentSubmission.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-        await prisma.auctionPlayer.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-        await prisma.ephemeralAuctionBidder.deleteMany({ where: { auctionId: { in: tourneyIds } } }).catch(() => {})
-        await prisma.ambassador.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-        await prisma.platformSettlement.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-        await prisma.auctionReversal.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-        await prisma.platformAuditLog.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => {})
-        await prisma.tournament.deleteMany({ where: { id: { in: tourneyIds } } }).catch(() => {})
+        await prisma.registeredTeam.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => { })
+        await prisma.paymentSubmission.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => { })
+        await prisma.auctionPlayer.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => { })
+        await prisma.ephemeralAuctionBidder.deleteMany({ where: { auctionId: { in: tourneyIds } } }).catch(() => { })
+        await prisma.ambassador.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => { })
+        await prisma.platformSettlement.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => { })
+        await prisma.auctionReversal.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => { })
+        await prisma.platformAuditLog.deleteMany({ where: { tournamentId: { in: tourneyIds } } }).catch(() => { })
+        await prisma.tournament.deleteMany({ where: { id: { in: tourneyIds } } }).catch(() => { })
       }
 
       if (testCreatorIds.length > 0) {
@@ -2068,7 +1978,7 @@ app.post('/api/admin/purge-test-data', requireSuperAdmin, async (req: Request, r
               { email: { contains: 'testpartner', mode: 'insensitive' } },
             ],
           },
-        }).catch(() => {})
+        }).catch(() => { })
         await prisma.officialCreator.deleteMany({
           where: {
             OR: [
@@ -2077,7 +1987,7 @@ app.post('/api/admin/purge-test-data', requireSuperAdmin, async (req: Request, r
               { handle: { contains: 'testpartner', mode: 'insensitive' } },
             ],
           },
-        }).catch(() => {})
+        }).catch(() => { })
       }
     }
 
@@ -2860,7 +2770,7 @@ app.delete('/api/tournaments/:id/teams/:teamId', requirePartnerOrAdmin, async (r
           data: { registeredTeamsCount: tourney.registeredTeamsCount, teams: tourney.registeredTeamsCount },
         })
         // Also delete any associated payment submission for this team
-        await prisma.paymentSubmission.deleteMany({ where: { teamId: String(teamId) } }).catch(() => {})
+        await prisma.paymentSubmission.deleteMany({ where: { teamId: String(teamId) } }).catch(() => { })
       } catch (dbErr) {
         console.warn('[Database] Notice deleting team from PostgreSQL:', dbErr)
       }
@@ -3341,11 +3251,25 @@ app.get('/api/tournaments/:id/export', handleUniversalExport)
 app.get('/api/auctions/:id/sheets/export', handleUniversalExport)
 
 // Get Tournament Roadmap / Bracket
-app.get('/api/tournaments/:id/roadmap', (req: Request, res: Response) => {
+app.get('/api/tournaments/:id/roadmap', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   const { id } = req.params
   const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
   if (!tourney) {
     return res.status(404).json({ error: 'Tournament not found' })
+  }
+
+  // Always pull directly from database when configured so updates in DB/Studio are immediately reflected
+  if (isDatabaseConfigured) {
+    const dbTourney = await prisma.tournament.findFirst({
+      where: { OR: [{ id: tourney.id }, { slug: tourney.slug }] },
+      select: { roadmap: true },
+    }).catch(() => null)
+    if (dbTourney?.roadmap) {
+      try {
+        tourney.roadmap = JSON.parse(dbTourney.roadmap)
+      } catch {}
+    }
   }
 
   if (!tourney.roadmap) {
@@ -3355,8 +3279,8 @@ app.get('/api/tournaments/:id/roadmap', (req: Request, res: Response) => {
   return res.json({ success: true, roadmap: tourney.roadmap })
 })
 
-// Update Tournament Roadmap / Bracket (Creator Studio Customizer)
-app.put('/api/tournaments/:id/roadmap', (req: Request, res: Response) => {
+// Update Tournament Roadmap / Bracket (Creator Studio Customizer - persists directly to Database)
+const handleSaveRoadmap = async (req: Request, res: Response) => {
   try {
     const { id } = req.params
     const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
@@ -3370,16 +3294,36 @@ app.put('/api/tournaments/:id/roadmap', (req: Request, res: Response) => {
     }
 
     tourney.roadmap = roadmap
+
+    if (isDatabaseConfigured) {
+      await prisma.tournament.updateMany({
+        where: { OR: [{ id: tourney.id }, { slug: tourney.slug }] },
+        data: { roadmap: JSON.stringify(roadmap) },
+      }).catch((err) => console.error('[Database] Error persisting roadmap to PostgreSQL:', err))
+    }
+
+    logAuditEvent({
+      tournamentId: tourney.id,
+      action: 'ROADMAP_PUBLISHED',
+      actorId: req.user?.id,
+      actorName: req.user?.name,
+      actorRole: req.user?.role,
+      details: `Tournament roadmap & bracket for "${tourney.name}" published live with ${roadmap.stages?.length || 0} stages.`,
+    })
+
     return res.json({
       success: true,
-      message: 'Tournament roadmap & bracket published successfully!',
+      message: 'Tournament roadmap & bracket published successfully to database & public portal!',
       roadmap: tourney.roadmap,
     })
   } catch (error) {
     console.error('Error saving roadmap:', error)
     return res.status(500).json({ error: 'Failed to update roadmap' })
   }
-})
+}
+
+app.put('/api/tournaments/:id/roadmap', handleSaveRoadmap)
+app.post('/api/tournaments/:id/roadmap', handleSaveRoadmap)
 
 // Ephemeral Auction Bidder Credentials: Get all active team credentials for auction
 app.get('/api/auctions/:id/credentials', (req: Request, res: Response) => {
@@ -3542,102 +3486,102 @@ const handlePlaceBid = (req: Request, res: Response) => {
     const id = String(req.params.id)
     const { teamName, amount, playerId } = req.body
 
-  if (!teamName || !amount) {
-    return res.status(400).json({ error: 'Team name and bid amount are required' })
-  }
-
-  const numAmount = Number(amount)
-  if (isNaN(numAmount) || numAmount <= 0) {
-    return res.status(400).json({ error: 'Valid positive bid amount is required' })
-  }
-
-  // Find bidder to verify remaining purse balance
-  const bidder = EPHEMERAL_BIDDERS.find(
-    (b) => b.auctionId === id && b.teamName.toLowerCase() === String(teamName).toLowerCase()
-  )
-
-  const currentPurse = bidder ? bidder.allocatedPurse : 150000
-
-  if (numAmount > currentPurse) {
-    return res.status(400).json({
-      error: `Purse Limit Exceeded: Team "${teamName}" only has ₹${currentPurse.toLocaleString()} remaining in purse tokens. Bid of ₹${numAmount.toLocaleString()} cannot be placed.`,
-      remainingPurse: currentPurse,
-    })
-  }
-
-  // Find tournament settings
-  const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
-  const maxSquadSize = tourney?.maxSquadSize || 6
-
-  // Find active player being bid on
-  const targetPlayerId = playerId || LIVE_AUCTION_STATE[id]?.activePlayerId
-  const activePlayer = AUCTION_PLAYERS.find(
-    (p) => (p.auctionId === id || p.tournamentId === id) && p.id === targetPlayerId
-  )
-  const baseBidPrice = activePlayer?.basePrice || tourney?.basePrice || 5000
-
-  // Count players already acquired by this franchise
-  const mySquad = AUCTION_PLAYERS.filter(
-    (p) =>
-      (p.auctionId === id || p.tournamentId === id) &&
-      p.status === 'sold' &&
-      p.soldToTeam?.toLowerCase() === String(teamName).toLowerCase()
-  )
-  const currentSquadCount = mySquad.length
-
-  if (currentSquadCount >= maxSquadSize) {
-    return res.status(400).json({
-      error: `Squad Roster Full: Team "${teamName}" has already reached its maximum roster limit of ${maxSquadSize} members (${currentSquadCount}/${maxSquadSize}). You cannot bid for additional players.`,
-      squadCount: currentSquadCount,
-      maxSquadSize,
-    })
-  }
-
-  // Budget Gatekeeper Constraint:
-  // After winning this player, the franchise will need remainingSlotsAfter = maxSquadSize - (currentSquadCount + 1)
-  // Each remaining player requires at least baseBidPrice.
-  // requiredReserve = remainingSlotsAfter * baseBidPrice.
-  // maxAllowedBid = currentPurse - requiredReserve.
-  const remainingSlotsAfter = Math.max(0, maxSquadSize - (currentSquadCount + 1))
-  const requiredReserve = remainingSlotsAfter * baseBidPrice
-  const maxAllowedBid = Math.max(0, currentPurse - requiredReserve)
-
-  if (numAmount > maxAllowedBid) {
-    return res.status(400).json({
-      error: `Purse Reserve Violation: Team "${teamName}" must keep at least ₹${requiredReserve.toLocaleString()} (₹${baseBidPrice.toLocaleString()} base bid × ${remainingSlotsAfter} slots) in reserve to complete the ${maxSquadSize}-member squad. Maximum allowed bid is ₹${maxAllowedBid.toLocaleString()}.`,
-      maxAllowedBid,
-      requiredReserve,
-      remainingSlotsAfter,
-      currentPurse,
-    })
-  }
-
-  let state = LIVE_AUCTION_STATE[id]
-  if (!state) {
-    state = {
-      activePlayerId: playerId || '',
-      currentBid: 0,
-      highestBidderTeam: '',
-      bidHistory: [],
+    if (!teamName || !amount) {
+      return res.status(400).json({ error: 'Team name and bid amount are required' })
     }
-    LIVE_AUCTION_STATE[id] = state
-  }
 
-  if (playerId && state.activePlayerId !== playerId) {
-    state.activePlayerId = playerId
-  }
+    const numAmount = Number(amount)
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ error: 'Valid positive bid amount is required' })
+    }
 
-  if (numAmount <= state.currentBid) {
-    return res.status(400).json({ error: `Bid must be greater than current bid (₹${state.currentBid.toLocaleString()})` })
-  }
+    // Find bidder to verify remaining purse balance
+    const bidder = EPHEMERAL_BIDDERS.find(
+      (b) => b.auctionId === id && b.teamName.toLowerCase() === String(teamName).toLowerCase()
+    )
 
-  state.currentBid = numAmount
-  state.highestBidderTeam = String(teamName)
-  state.bidHistory.unshift({
-    team: String(teamName),
-    amount: numAmount,
-    time: new Date().toLocaleTimeString(),
-  })
+    const currentPurse = bidder ? bidder.allocatedPurse : 150000
+
+    if (numAmount > currentPurse) {
+      return res.status(400).json({
+        error: `Purse Limit Exceeded: Team "${teamName}" only has ₹${currentPurse.toLocaleString()} remaining in purse tokens. Bid of ₹${numAmount.toLocaleString()} cannot be placed.`,
+        remainingPurse: currentPurse,
+      })
+    }
+
+    // Find tournament settings
+    const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
+    const maxSquadSize = tourney?.maxSquadSize || 6
+
+    // Find active player being bid on
+    const targetPlayerId = playerId || LIVE_AUCTION_STATE[id]?.activePlayerId
+    const activePlayer = AUCTION_PLAYERS.find(
+      (p) => (p.auctionId === id || p.tournamentId === id) && p.id === targetPlayerId
+    )
+    const baseBidPrice = activePlayer?.basePrice || tourney?.basePrice || 5000
+
+    // Count players already acquired by this franchise
+    const mySquad = AUCTION_PLAYERS.filter(
+      (p) =>
+        (p.auctionId === id || p.tournamentId === id) &&
+        p.status === 'sold' &&
+        p.soldToTeam?.toLowerCase() === String(teamName).toLowerCase()
+    )
+    const currentSquadCount = mySquad.length
+
+    if (currentSquadCount >= maxSquadSize) {
+      return res.status(400).json({
+        error: `Squad Roster Full: Team "${teamName}" has already reached its maximum roster limit of ${maxSquadSize} members (${currentSquadCount}/${maxSquadSize}). You cannot bid for additional players.`,
+        squadCount: currentSquadCount,
+        maxSquadSize,
+      })
+    }
+
+    // Budget Gatekeeper Constraint:
+    // After winning this player, the franchise will need remainingSlotsAfter = maxSquadSize - (currentSquadCount + 1)
+    // Each remaining player requires at least baseBidPrice.
+    // requiredReserve = remainingSlotsAfter * baseBidPrice.
+    // maxAllowedBid = currentPurse - requiredReserve.
+    const remainingSlotsAfter = Math.max(0, maxSquadSize - (currentSquadCount + 1))
+    const requiredReserve = remainingSlotsAfter * baseBidPrice
+    const maxAllowedBid = Math.max(0, currentPurse - requiredReserve)
+
+    if (numAmount > maxAllowedBid) {
+      return res.status(400).json({
+        error: `Purse Reserve Violation: Team "${teamName}" must keep at least ₹${requiredReserve.toLocaleString()} (₹${baseBidPrice.toLocaleString()} base bid × ${remainingSlotsAfter} slots) in reserve to complete the ${maxSquadSize}-member squad. Maximum allowed bid is ₹${maxAllowedBid.toLocaleString()}.`,
+        maxAllowedBid,
+        requiredReserve,
+        remainingSlotsAfter,
+        currentPurse,
+      })
+    }
+
+    let state = LIVE_AUCTION_STATE[id]
+    if (!state) {
+      state = {
+        activePlayerId: playerId || '',
+        currentBid: 0,
+        highestBidderTeam: '',
+        bidHistory: [],
+      }
+      LIVE_AUCTION_STATE[id] = state
+    }
+
+    if (playerId && state.activePlayerId !== playerId) {
+      state.activePlayerId = playerId
+    }
+
+    if (numAmount <= state.currentBid) {
+      return res.status(400).json({ error: `Bid must be greater than current bid (₹${state.currentBid.toLocaleString()})` })
+    }
+
+    state.currentBid = numAmount
+    state.highestBidderTeam = String(teamName)
+    state.bidHistory.unshift({
+      team: String(teamName),
+      amount: numAmount,
+      time: new Date().toLocaleTimeString(),
+    })
 
     return res.json({
       success: true,

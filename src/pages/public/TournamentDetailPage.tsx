@@ -257,7 +257,7 @@ export default function TournamentDetailPage() {
   const franchiseGroups = useMemo(() => {
     if (!isAuction) return []
 
-    // 1. Collect all franchise teams from dynamically loaded ambassadors and teams
+    // 1. Collect all franchise teams from dynamically loaded ambassadors
     const franchiseList: Array<{ name: string; ambassador: string; group?: string }> = []
     const seen = new Set<string>()
 
@@ -274,20 +274,23 @@ export default function TournamentDetailPage() {
       }
     })
 
-    teams.forEach((t: any) => {
-      if (t.ambassadorName) {
-        const teamName = (t.name || t.ambassadorName).trim()
-        const key = teamName.toLowerCase()
-        if (key && !seen.has(key)) {
-          seen.add(key)
-          franchiseList.push({
-            name: teamName,
-            ambassador: t.ambassadorName,
-            group: t.group,
-          })
+    // Only if no ambassadors found in DB, fallback to unique ambassador names assigned to teams
+    if (franchiseList.length === 0) {
+      teams.forEach((t: any) => {
+        if (t.ambassadorName) {
+          const teamName = t.ambassadorName.trim()
+          const key = teamName.toLowerCase()
+          if (key && !seen.has(key)) {
+            seen.add(key)
+            franchiseList.push({
+              name: teamName,
+              ambassador: t.ambassadorName,
+              group: t.group,
+            })
+          }
         }
-      }
-    })
+      })
+    }
 
     if (franchiseList.length === 0) return []
 
@@ -434,10 +437,15 @@ export default function TournamentDetailPage() {
 
       // Load tournament roadmap / bracket
       try {
-        const rRes = await fetch(`/api/tournaments/${data.tournament.id}/roadmap`)
+        if (data.tournament.roadmap) {
+          setRoadmap(data.tournament.roadmap)
+        }
+        const rRes = await fetch(`/api/tournaments/${data.tournament.id}/roadmap?t=${Date.now()}`, {
+          cache: 'no-store',
+        })
         if (rRes.ok) {
           const rData = await rRes.json()
-          setRoadmap(rData.roadmap)
+          if (rData.roadmap) setRoadmap(rData.roadmap)
         }
       } catch {
         // Fallback roadmap will be displayed
@@ -1086,7 +1094,17 @@ export default function TournamentDetailPage() {
           </button>
 
           <button
-            onClick={() => setActiveTab('roadmap')}
+            onClick={() => {
+              setActiveTab('roadmap')
+              if (tournament?.id) {
+                fetch(`/api/tournaments/${tournament.id}/roadmap?t=${Date.now()}`, { cache: 'no-store' })
+                  .then((res) => (res.ok ? res.json() : null))
+                  .then((rData) => {
+                    if (rData?.roadmap) setRoadmap(rData.roadmap)
+                  })
+                  .catch(() => {})
+              }
+            }}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-all border-b-2 whitespace-nowrap ${
               activeTab === 'roadmap'
                 ? 'border-primary text-primary bg-primary/5'
