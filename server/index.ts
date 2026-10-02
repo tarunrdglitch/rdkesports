@@ -4674,8 +4674,15 @@ async function initDatabase() {
         streamUrl: t.streamUrl || undefined,
         streamTitle: t.streamTitle || undefined,
         scheduledMatchInfo: t.scheduledMatchInfo || undefined,
+        roadmap: (() => {
+          if (!t.roadmap) return undefined
+          try {
+            return typeof t.roadmap === 'string' ? JSON.parse(t.roadmap) : t.roadmap
+          } catch {
+            return undefined
+          }
+        })(),
         status: t.status as any,
-        roadmap: t.roadmap ? JSON.parse(t.roadmap) : undefined,
         streamStatus: t.streamStatus as any,
         streamPlatform: t.streamPlatform as any,
       }))
