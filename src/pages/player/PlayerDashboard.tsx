@@ -100,6 +100,9 @@ export default function PlayerDashboard() {
               roomPassword: liveOrRoomTourney.roomPublished ? liveOrRoomTourney.roomPassword : undefined,
               status: liveOrRoomTourney.status,
               scheduledMatchInfo: liveOrRoomTourney.scheduledMatchInfo || 'Match in progress',
+              scheduledMatchTime: liveOrRoomTourney.scheduledMatchTime,
+              reportingTime: liveOrRoomTourney.reportingTime,
+              roomInstructions: liveOrRoomTourney.roomInstructions,
             }
           }
         }
@@ -151,7 +154,9 @@ export default function PlayerDashboard() {
 
   const handleCopyRoom = () => {
     if (!playerData.activeMatch) return
-    const text = `Room ID: ${playerData.activeMatch.roomId || 'TBA'} | Pass: ${playerData.activeMatch.roomPassword || 'TBA'} | ${playerData.activeMatch.tournamentName}`
+    const scheduleText = playerData.activeMatch.scheduledMatchTime ? ` | Match: ${playerData.activeMatch.scheduledMatchTime}` : ''
+    const reportText = playerData.activeMatch.reportingTime ? ` | Report Before: ${playerData.activeMatch.reportingTime}` : ''
+    const text = `Room ID: ${playerData.activeMatch.roomId || 'TBA'} | Pass: ${playerData.activeMatch.roomPassword || 'None'}${scheduleText}${reportText} | ${playerData.activeMatch.tournamentName}`
     navigator.clipboard.writeText(text).catch(() => {})
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -237,9 +242,21 @@ export default function PlayerDashboard() {
                     <code className="font-mono text-foreground font-bold bg-surface px-2.5 py-0.5 rounded-md text-[12px] border border-border">
                       {playerData.activeMatch.roomPassword || 'None'}
                     </code>
-                    <span className="text-muted-foreground">
-                      Status: <span className="text-emerald-400 font-semibold">{playerData.activeMatch.scheduledMatchInfo}</span>
-                    </span>
+                    {playerData.activeMatch.scheduledMatchTime && (
+                      <span className="text-muted-foreground">
+                        Match: <span className="text-foreground font-semibold">{playerData.activeMatch.scheduledMatchTime}</span>
+                      </span>
+                    )}
+                    {playerData.activeMatch.reportingTime ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold">
+                        <Clock className="size-3 text-amber-400" />
+                        Be In Room Before: {playerData.activeMatch.reportingTime}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        Status: <span className="text-emerald-400 font-semibold">{playerData.activeMatch.scheduledMatchInfo}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

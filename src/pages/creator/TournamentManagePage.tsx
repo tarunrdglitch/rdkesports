@@ -15,6 +15,7 @@ import {
   Save,
   Radio,
   Clock,
+  Calendar,
   Sparkles,
   Search,
   GitBranch,
@@ -239,11 +240,46 @@ export default function TournamentManagePage() {
   const [scheduledMatchInfo, setScheduledMatchInfo] = useState('')
   const [isSavingStream, setIsSavingStream] = useState(false)
 
-  // Room Credentials State
+  // Room Credentials & Match Scheduling State
   const [roomId, setRoomId] = useState('')
   const [roomPassword, setRoomPassword] = useState('')
   const [roomPublished, setRoomPublished] = useState(false)
   const [isSavingRoom, setIsSavingRoom] = useState(false)
+  const [isSchedulingEnabled, setIsSchedulingEnabled] = useState(false)
+  const [scheduledMatchTime, setScheduledMatchTime] = useState('')
+  const [reportingTime, setReportingTime] = useState('')
+  const [reportingPreset, setReportingPreset] = useState<'5m' | '10m' | '15m' | 'custom'>('10m')
+  const [roomInstructions, setRoomInstructions] = useState('')
+
+  const applyReportingPreset = (preset: '5m' | '10m' | '15m' | 'custom', matchTimeStr?: string) => {
+    setReportingPreset(preset)
+    const timeToUse = matchTimeStr !== undefined ? matchTimeStr : scheduledMatchTime
+    if (preset === 'custom' || !timeToUse) return
+
+    try {
+      const d = new Date(timeToUse)
+      if (!isNaN(d.getTime())) {
+        const mins = preset === '5m' ? 5 : preset === '10m' ? 10 : 15
+        const reportingDate = new Date(d.getTime() - mins * 60 * 1000)
+        const hours = reportingDate.getHours()
+        const minutes = String(reportingDate.getMinutes()).padStart(2, '0')
+        const ampm = hours >= 12 ? 'PM' : 'AM'
+        const h12 = hours % 12 || 12
+        const formattedReporting = `${String(h12).padStart(2, '0')}:${minutes} ${ampm} (${mins} mins before match start)`
+        setReportingTime(formattedReporting)
+
+        const matchHours = d.getHours()
+        const matchMinutes = String(d.getMinutes()).padStart(2, '0')
+        const matchAmpm = matchHours >= 12 ? 'PM' : 'AM'
+        const matchH12 = matchHours % 12 || 12
+        const formattedMatch = `${String(matchH12).padStart(2, '0')}:${matchMinutes} ${matchAmpm}`
+
+        setRoomInstructions(
+          `Match scheduled at ${formattedMatch}. All squad members and captains MUST report and be inside the custom room before ${String(h12).padStart(2, '0')}:${minutes} ${ampm}. Teams not present in their assigned slot before deadline will forfeit.`
+        )
+      }
+    } catch {}
+  }
 
   // Platform Settlement & Closure State
   const [settlementInfo, setSettlementInfo] = useState<SettlementInfo | null>(null)
@@ -482,6 +518,12 @@ export default function TournamentManagePage() {
       setRoomId(t.roomId || '')
       setRoomPassword(t.roomPassword || '')
       setRoomPublished(Boolean(t.roomPublished))
+      setScheduledMatchTime(t.scheduledMatchTime || '')
+      setReportingTime(t.reportingTime || '')
+      setRoomInstructions(t.roomInstructions || '')
+      if (t.scheduledMatchTime || t.reportingTime || t.roomInstructions) {
+        setIsSchedulingEnabled(true)
+      }
       setTourneyStatus(t.status)
       setRulesText(t.rules || '')
       setStreamUrl(t.streamUrl || '')
@@ -570,10 +612,22 @@ export default function TournamentManagePage() {
     setIsSavingRoom(true)
     setSuccessMsg('')
     try {
+      const computedMatchInfo = isSchedulingEnabled && (scheduledMatchTime || reportingTime)
+        ? `Match: ${scheduledMatchTime || 'TBA'} • Report: ${reportingTime || '10m before'}`
+        : ''
+
       const res = await fetch(`/api/tournaments/${id}/room`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, roomPassword, roomPublished }),
+        body: JSON.stringify({
+          roomId,
+          roomPassword,
+          roomPublished,
+          scheduledMatchTime: isSchedulingEnabled ? scheduledMatchTime : '',
+          reportingTime: isSchedulingEnabled ? reportingTime : '',
+          roomInstructions: isSchedulingEnabled ? roomInstructions : '',
+          scheduledMatchInfo: computedMatchInfo || scheduledMatchInfo,
+        }),
       })
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
@@ -581,10 +635,10 @@ export default function TournamentManagePage() {
       }
       setSuccessMsg(
         roomPublished
-          ? 'Match Room ID & Password broadcasted and LIVE to verified captains!'
-          : 'Match Room credentials saved in DRAFT mode (hidden from players).'
+          ? 'Match Room ID, Password & Schedule broadcasted and LIVE to verified players!'
+          : 'Match Room credentials & schedule saved in DRAFT mode (hidden from players).'
       )
-      setTimeout(() => setSuccessMsg(''), 3000)
+      setTimeout(() => setSuccessMsg(''), 4000)
     } catch (err: unknown) {
       if (err instanceof Error) setError(err.message)
     } finally {
@@ -2332,16 +2386,159 @@ export default function TournamentManagePage() {
               />
             </div>
 
+            {/* ═══ Match Scheduling & Reporting Deadline ('Before this you should be there') ═══ */}
+            <div className="p-4 rounded-xl border border-border/80 bg-background/60 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="size-8 rounded-lg bg-primary/10 border border-primary/25 flex items-center justify-center text-primary">
+                    <Clock className="size-4 text-primary" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                      Match Schedule & Reporting Time
+                    </h4>
+                    <p className="text-[11px] text-muted-foreground">
+                      Set start time & report deadline ("You should be there before this")
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !isSchedulingEnabled
+                    setIsSchedulingEnabled(next)
+                    if (next && !scheduledMatchTime) {
+                      // Default to 30 mins from now
+                      const nextTime = new Date(Date.now() + 30 * 60 * 1000)
+                      const localIso = new Date(nextTime.getTime() - nextTime.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+                      setScheduledMatchTime(localIso)
+                      applyReportingPreset(reportingPreset, localIso)
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    isSchedulingEnabled
+                      ? 'bg-primary text-background shadow-md shadow-primary/20'
+                      : 'bg-muted text-muted-foreground hover:text-foreground border border-border'
+                  }`}
+                >
+                  <Calendar className="size-3.5" />
+                  <span>{isSchedulingEnabled ? 'Schedule Enabled' : '+ Add Schedule'}</span>
+                </button>
+              </div>
+
+              {isSchedulingEnabled && (
+                <div className="space-y-3 pt-2 border-t border-border/60">
+                  {/* Match Start Date & Time */}
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Scheduled Match Start Time *
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={scheduledMatchTime}
+                      onChange={(e) => {
+                        setScheduledMatchTime(e.target.value)
+                        applyReportingPreset(reportingPreset, e.target.value)
+                      }}
+                      className="w-full bg-background border border-border rounded px-3 py-2 text-xs text-foreground font-mono focus:outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  {/* Mandatory Reporting Deadline ('Before this you should be there') */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                        Reporting Deadline (Must Be Inside Room Before) *
+                      </label>
+                      <span className="text-[10px] text-muted-foreground font-medium">Quick offset:</span>
+                    </div>
+
+                    {/* Presets */}
+                    <div className="grid grid-cols-4 gap-1.5 mb-2">
+                      {(['5m', '10m', '15m', 'custom'] as const).map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => applyReportingPreset(preset)}
+                          className={`py-1 rounded text-[11px] font-bold transition border cursor-pointer ${
+                            reportingPreset === preset
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                              : 'bg-background/80 text-muted-foreground border-border hover:text-foreground'
+                          }`}
+                        >
+                          {preset === '5m' ? '5m Before' : preset === '10m' ? '10m Before' : preset === '15m' ? '15m Before' : 'Custom'}
+                        </button>
+                      ))}
+                    </div>
+
+                    <input
+                      type="text"
+                      value={reportingTime}
+                      onChange={(e) => {
+                        setReportingPreset('custom')
+                        setReportingTime(e.target.value)
+                      }}
+                      placeholder="e.g. 07:20 PM (10 mins before match start)"
+                      className="w-full bg-background border border-border rounded px-3 py-2 text-xs text-foreground font-mono focus:outline-none focus:border-primary"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Players will be notified: <strong className="text-amber-300">"Be in the room before this time"</strong>
+                    </p>
+                  </div>
+
+                  {/* Broadcast Instructions / Player Notice */}
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Player & Squad Notice (Broadcasted with ID/Pass)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={roomInstructions}
+                      onChange={(e) => setRoomInstructions(e.target.value)}
+                      placeholder="e.g. Match starts at 07:30 PM. All team captains and players MUST be inside room before 07:20 PM. Teams not present before deadline will forfeit."
+                      className="w-full bg-background border border-border rounded p-2.5 text-xs text-foreground focus:outline-none focus:border-primary leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Live Player Preview */}
+                  <div className="p-3 rounded-lg border border-emerald-500/25 bg-emerald-500/5 space-y-1.5 text-left">
+                    <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider flex items-center gap-1.5">
+                      <CheckCircle2 className="size-3 text-emerald-400" />
+                      Live Player Briefing Preview
+                    </span>
+                    <div className="text-[11px] text-foreground font-medium space-y-0.5">
+                      <p>
+                        🕒 <span className="text-muted-foreground">Match Start:</span>{' '}
+                        <strong className="text-white">{scheduledMatchTime || 'Not set'}</strong>
+                      </p>
+                      <p>
+                        ⚠️ <span className="text-muted-foreground">Be There Before:</span>{' '}
+                        <strong className="text-amber-300">{reportingTime || '10 mins prior'}</strong>
+                      </p>
+                      {roomInstructions && (
+                        <p className="text-[10px] text-muted-foreground pt-1 border-t border-white/5">
+                          📋 {roomInstructions}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
               type="submit"
               disabled={isSavingRoom}
-              className="w-full py-2.5 rounded bg-primary text-background font-bold text-xs hover:bg-primary/90 transition shadow flex items-center justify-center gap-1.5"
+              className="w-full py-2.5 rounded bg-primary text-background font-bold text-xs hover:bg-primary/90 transition shadow flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               <Save className="size-4" />
               {isSavingRoom
-                ? 'Saving Credentials…'
+                ? 'Saving Credentials & Schedule…'
                 : roomPublished
-                ? 'Save & Broadcast Live to Players'
+                ? isSchedulingEnabled
+                  ? 'Save Schedule & Broadcast Live to Players'
+                  : 'Save & Broadcast Live to Players'
                 : 'Save as Hidden Draft'}
             </button>
           </form>

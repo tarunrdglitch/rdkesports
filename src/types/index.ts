@@ -110,6 +110,10 @@ export interface Tournament {
   roomId?: string
   roomPassword?: string
   roomPublished?: boolean
+  scheduledMatchTime?: string
+  reportingTime?: string
+  roomInstructions?: string
+  roomReleaseTime?: string
   roadmap?: any
   streamUrl?: string
   streamTitle?: string

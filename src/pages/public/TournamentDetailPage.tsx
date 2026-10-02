@@ -97,6 +97,10 @@ interface Tournament {
   rules?: string
   roomId?: string
   roomPassword?: string
+  roomPublished?: boolean
+  scheduledMatchTime?: string
+  reportingTime?: string
+  roomInstructions?: string
   streamUrl?: string
   streamTitle?: string
   streamStatus?: 'offline' | 'starting_soon' | 'live'
@@ -840,7 +844,9 @@ export default function TournamentDetailPage() {
     const finalRoomId = registeredAccess.roomId || tournament?.roomId
     const finalRoomPassword = registeredAccess.roomPassword || tournament?.roomPassword
     if (finalRoomId) {
-      navigator.clipboard.writeText(`Room ID: ${finalRoomId} | Password: ${finalRoomPassword || 'None'}`)
+      const scheduleText = tournament?.scheduledMatchTime ? ` | Match: ${tournament.scheduledMatchTime}` : ''
+      const reportText = tournament?.reportingTime ? ` | Report Before: ${tournament.reportingTime}` : ''
+      navigator.clipboard.writeText(`Room ID: ${finalRoomId} | Password: ${finalRoomPassword || 'None'}${scheduleText}${reportText} | ${tournament?.name || 'RDK Esports'}`)
       setCopiedRoom(true)
       setTimeout(() => setCopiedRoom(false), 2000)
     }
@@ -2167,10 +2173,61 @@ export default function TournamentDetailPage() {
                 </span>
               </div>
 
-              {tournament.status === 'live' && (registeredAccess.roomId || tournament.roomId) ? (
+              {/* Match Schedule & Mandatory Reporting Deadline Banner */}
+              {(tournament.scheduledMatchTime || tournament.reportingTime || tournament.roomInstructions || tournament.scheduledMatchInfo) && (
+                <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-left space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+                      <Clock className="size-4 shrink-0 text-amber-400" />
+                      <span>Official Match Schedule</span>
+                    </div>
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      Mandatory Check-In
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    {tournament.scheduledMatchTime && (
+                      <div className="p-2.5 rounded-lg bg-black/40 border border-white/5 space-y-0.5">
+                        <span className="text-muted-foreground text-[10px] uppercase font-bold block">
+                          Match Start Time
+                        </span>
+                        <span className="text-white font-mono font-bold text-xs">
+                          {tournament.scheduledMatchTime}
+                        </span>
+                      </div>
+                    )}
+                    {tournament.reportingTime && (
+                      <div className="p-2.5 rounded-lg bg-amber-500/15 border border-amber-500/30 space-y-0.5">
+                        <span className="text-amber-300 text-[10px] uppercase font-bold block flex items-center gap-1">
+                          <AlertCircle className="size-3 text-amber-300" />
+                          You Must Be Inside Room Before:
+                        </span>
+                        <span className="text-amber-200 font-mono font-black text-xs">
+                          {tournament.reportingTime}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {tournament.roomInstructions ? (
+                    <div className="text-[11px] text-muted-foreground bg-black/40 p-2.5 rounded-lg border border-white/5 leading-relaxed">
+                      <strong className="text-foreground">Organizer Instructions: </strong>
+                      {tournament.roomInstructions}
+                    </div>
+                  ) : tournament.scheduledMatchInfo ? (
+                    <div className="text-[11px] text-muted-foreground bg-black/40 p-2.5 rounded-lg border border-white/5 leading-relaxed">
+                      <strong className="text-foreground">Schedule Notice: </strong>
+                      {tournament.scheduledMatchInfo}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {(tournament.roomPublished || registeredAccess.roomId || tournament.roomId) && (registeredAccess.roomId || tournament.roomId) ? (
                 <div className="p-4 bg-muted/40 border border-emerald-500/30 rounded-lg space-y-3">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground font-bold">Room ID</span>
+                    <span className="text-muted-foreground font-bold">Room ID / Custom Code</span>
                     <span className="font-mono font-black text-sm text-primary tracking-wider">
                       {registeredAccess.roomId || tournament.roomId}
                     </span>
@@ -2183,10 +2240,10 @@ export default function TournamentDetailPage() {
                   </div>
                   <button
                     onClick={handleCopyRoom}
-                    className="w-full mt-2 py-2 rounded bg-emerald-500 hover:bg-emerald-400 text-background font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-[0_0_15px_rgba(16,185,129,0.25)]"
+                    className="w-full mt-2 py-2 rounded bg-emerald-500 hover:bg-emerald-400 text-background font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-[0_0_15px_rgba(16,185,129,0.25)] cursor-pointer"
                   >
                     {copiedRoom ? <CheckCircle2 className="size-4" /> : <Copy className="size-4" />}
-                    <span>{copiedRoom ? 'Copied to Clipboard' : 'Copy Room Details'}</span>
+                    <span>{copiedRoom ? 'Copied Room Details & Schedule!' : 'Copy Room Details & Schedule'}</span>
                   </button>
                 </div>
               ) : (
@@ -2194,7 +2251,7 @@ export default function TournamentDetailPage() {
                   <Clock className="size-5 mx-auto mb-2 text-muted-foreground" />
                   <p className="font-semibold text-foreground">Room ID not yet broadcasted</p>
                   <p className="mt-1 text-[11px]">
-                    The organizer or match operator will broadcast the Room ID and Password 15 minutes before the match start. Because you are verified, credentials will unlock automatically here.
+                    The organizer will broadcast the Room ID and Password before match start. Because you are verified, credentials will unlock automatically here.
                   </p>
                 </div>
               )}

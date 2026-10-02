@@ -12,6 +12,9 @@ export interface PlayerTournamentData {
     roomPassword?: string
     status: string
     scheduledMatchInfo?: string
+    scheduledMatchTime?: string
+    reportingTime?: string
+    roomInstructions?: string
   } | null
 }
 

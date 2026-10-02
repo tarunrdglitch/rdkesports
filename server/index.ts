@@ -2470,11 +2470,20 @@ app.post('/api/tournaments/:id/approve-all-entries', requirePartnerOrAdmin, asyn
   }
 })
 
-// Update Match Room ID & Room Password (With Publishing Toggle)
+// Update Match Room ID & Room Password (With Publishing Toggle & Schedule Broadcasting)
 // Auth: Only the tournament organizer (Official Partner who owns it) or Super Admin can set room credentials
 app.patch('/api/tournaments/:id/room', requirePartnerOrAdmin, (req: Request, res: Response) => {
   const { id } = req.params
-  const { roomId, roomPassword, roomPublished } = req.body
+  const {
+    roomId,
+    roomPassword,
+    roomPublished,
+    scheduledMatchTime,
+    reportingTime,
+    scheduledMatchInfo,
+    roomInstructions,
+    roomReleaseTime,
+  } = req.body
   const tourney = TOURNAMENTS.find((t) => t.id === id || t.slug === id)
   if (!tourney) {
     return res.status(404).json({ error: 'Tournament not found' })
@@ -2482,6 +2491,17 @@ app.patch('/api/tournaments/:id/room', requirePartnerOrAdmin, (req: Request, res
 
   if (roomId !== undefined) tourney.roomId = roomId
   if (roomPassword !== undefined) tourney.roomPassword = roomPassword
+  if (scheduledMatchTime !== undefined) (tourney as any).scheduledMatchTime = scheduledMatchTime
+  if (reportingTime !== undefined) (tourney as any).reportingTime = reportingTime
+  if (roomInstructions !== undefined) (tourney as any).roomInstructions = roomInstructions
+  if (roomReleaseTime !== undefined) (tourney as any).roomReleaseTime = roomReleaseTime
+
+  if (scheduledMatchInfo !== undefined) {
+    tourney.scheduledMatchInfo = scheduledMatchInfo
+  } else if (scheduledMatchTime || reportingTime) {
+    tourney.scheduledMatchInfo = `Match: ${scheduledMatchTime || ''} • Report Before: ${reportingTime || ''}`.trim()
+  }
+
   if (roomPublished !== undefined) {
     tourney.roomPublished = Boolean(roomPublished)
     logAuditEvent({
@@ -2490,7 +2510,7 @@ app.patch('/api/tournaments/:id/room', requirePartnerOrAdmin, (req: Request, res
       actorId: req.user?.id,
       actorName: req.user?.name,
       actorRole: req.user?.role,
-      details: `Match room credentials ${roomPublished ? 'PUBLISHED' : 'HIDDEN'} for tournament "${tourney.name}".`,
+      details: `Match room credentials ${roomPublished ? 'PUBLISHED' : 'HIDDEN'} for tournament "${tourney.name}". ${scheduledMatchTime ? `[Scheduled: ${scheduledMatchTime} | Reporting: ${reportingTime}]` : ''}`,
     })
   }
 
@@ -2502,6 +2522,7 @@ app.patch('/api/tournaments/:id/room', requirePartnerOrAdmin, (req: Request, res
           roomId: tourney.roomId,
           roomPassword: tourney.roomPassword,
           roomPublished: tourney.roomPublished,
+          scheduledMatchInfo: tourney.scheduledMatchInfo,
         },
       })
       .catch((err) => console.error('[Database] Notice updating room credentials:', err))
@@ -2510,11 +2531,15 @@ app.patch('/api/tournaments/:id/room', requirePartnerOrAdmin, (req: Request, res
   return res.json({
     success: true,
     message: tourney.roomPublished
-      ? 'Room credentials saved and PUBLISHED to verified players!'
-      : 'Room credentials saved (hidden from players until published).',
+      ? 'Room credentials and schedule saved and BROADCASTED to verified players!'
+      : 'Room credentials and schedule saved (hidden until broadcasted).',
     roomId: tourney.roomId,
     roomPassword: tourney.roomPassword,
     roomPublished: tourney.roomPublished,
+    scheduledMatchTime: (tourney as any).scheduledMatchTime,
+    reportingTime: (tourney as any).reportingTime,
+    roomInstructions: (tourney as any).roomInstructions,
+    scheduledMatchInfo: tourney.scheduledMatchInfo,
   })
 })
 
@@ -3736,6 +3761,10 @@ app.get('/api/player/my-tournaments', (req: Request, res: Response) => {
         roomPassword: liveOrUpcomingWithRoom.roomPublished ? liveOrUpcomingWithRoom.roomPassword : undefined,
         status: liveOrUpcomingWithRoom.status,
         scheduledMatchInfo: liveOrUpcomingWithRoom.scheduledMatchInfo || 'Match in progress',
+        scheduledMatchTime: (liveOrUpcomingWithRoom as any).scheduledMatchTime,
+        reportingTime: (liveOrUpcomingWithRoom as any).reportingTime,
+        roomInstructions: (liveOrUpcomingWithRoom as any).roomInstructions,
+        roomPublished: liveOrUpcomingWithRoom.roomPublished,
       }
     }
 
