@@ -1,9 +1,24 @@
 import type { OfficialPartner, OfficialCreator, PlatformStats } from '@/types'
 
+const getHeaders = (hasBody = true): Record<string, string> => {
+  const token = localStorage.getItem('rdk_auth_token')
+  const headers: Record<string, string> = {}
+  if (hasBody) {
+    headers['Content-Type'] = 'application/json'
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  return headers
+}
+
 export const creatorService = {
   async list(includeAll = false): Promise<OfficialPartner[]> {
     try {
-      const res = await fetch(`/api/creators${includeAll ? '?includeAll=true' : ''}`)
+      const res = await fetch(`/api/creators${includeAll ? '?includeAll=true' : ''}`, {
+        headers: getHeaders(false),
+        credentials: 'include',
+      })
       if (res.ok) {
         return await res.json()
       }
@@ -15,7 +30,10 @@ export const creatorService = {
 
   async getPlatformStats(): Promise<PlatformStats | null> {
     try {
-      const res = await fetch('/api/platform/stats')
+      const res = await fetch('/api/platform/stats', {
+        headers: getHeaders(false),
+        credentials: 'include',
+      })
       if (res.ok) {
         return await res.json()
       }
@@ -26,8 +44,11 @@ export const creatorService = {
   },
 
   async getDetails(id: string): Promise<{ partner: OfficialPartner; tournaments: any[] }> {
-    const res = await fetch(`/api/creators/${id}/details`)
-    const json = await res.json()
+    const res = await fetch(`/api/creators/${id}/details`, {
+      headers: getHeaders(false),
+      credentials: 'include',
+    })
+    const json = await res.json().catch(() => ({}))
     if (!res.ok) {
       throw new Error(json.error || 'Failed to fetch partner details')
     }
@@ -37,10 +58,11 @@ export const creatorService = {
   async create(data: Partial<OfficialPartner> & { email?: string; password?: string; phone?: string }): Promise<OfficialPartner> {
     const res = await fetch('/api/creators', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(true),
+      credentials: 'include',
       body: JSON.stringify(data),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     if (!res.ok) {
       throw new Error(json.error || 'Failed to create partner')
     }
@@ -50,10 +72,11 @@ export const creatorService = {
   async update(id: string, data: Partial<OfficialPartner> & { email?: string; password?: string; phone?: string }): Promise<OfficialPartner> {
     const res = await fetch(`/api/creators/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(true),
+      credentials: 'include',
       body: JSON.stringify(data),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     if (!res.ok) {
       throw new Error(json.error || 'Failed to update partner')
     }
@@ -63,10 +86,11 @@ export const creatorService = {
   async updateStatus(id: string, status: 'active' | 'suspended' | 'deactivated'): Promise<OfficialPartner> {
     const res = await fetch(`/api/creators/${id}/status`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(true),
+      credentials: 'include',
       body: JSON.stringify({ status }),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     if (!res.ok) {
       throw new Error(json.error || 'Failed to update partner status')
     }
@@ -76,10 +100,11 @@ export const creatorService = {
   async resetAccess(id: string, newPassword?: string): Promise<{ email?: string; temporaryPassword: string }> {
     const res = await fetch(`/api/creators/${id}/reset-access`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(true),
+      credentials: 'include',
       body: JSON.stringify({ newPassword }),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     if (!res.ok) {
       throw new Error(json.error || 'Failed to reset partner access')
     }
@@ -89,6 +114,8 @@ export const creatorService = {
   async delete(id: string): Promise<void> {
     const res = await fetch(`/api/creators/${id}`, {
       method: 'DELETE',
+      headers: getHeaders(false),
+      credentials: 'include',
     })
     if (!res.ok) {
       const json = await res.json().catch(() => ({}))

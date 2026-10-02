@@ -821,7 +821,7 @@ export default function LandingPage() {
                 {/* Accent top border */}
                 <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r ${card.accentBar} opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-t-2xl`} />
 
-                <div className={`size-13 rounded-2xl border flex items-center justify-center mb-5 ${card.iconColor} transition-transform duration-300 group-hover:scale-110`}>
+                <div className={`size-12 rounded-2xl border flex items-center justify-center mb-5 ${card.iconColor} transition-transform duration-300 group-hover:scale-110`}>
                   <card.icon className="size-5" />
                 </div>
                 <h3 className="font-heading text-lg font-bold text-foreground mb-2">{card.title}</h3>

@@ -419,8 +419,15 @@ export default function CreatorsManagementPage() {
                   <div>
                     {/* Header: Avatar, Name, Status Badge */}
                     <div className="flex items-start gap-3.5 mb-3.5">
-                      <div className="relative size-13 rounded-2xl border border-white/10 overflow-hidden shrink-0 bg-black/60 shadow-md">
-                        <img src={c.avatar} alt={c.name} className="w-full h-full object-cover" />
+                      <div className="relative w-14 h-14 min-w-[56px] min-h-[56px] rounded-2xl border border-white/10 overflow-hidden shrink-0 bg-black/60 shadow-md">
+                        <img
+                          src={c.avatar}
+                          alt={c.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            ;(e.target as HTMLImageElement).src = 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(c.name)
+                          }}
+                        />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
@@ -593,7 +600,10 @@ export default function CreatorsManagementPage() {
                   <img
                     src={detailsModalPartner.avatar}
                     alt={detailsModalPartner.name}
-                    className="size-11 rounded-xl border border-white/10 object-cover shadow"
+                    className="w-12 h-12 min-w-[48px] min-h-[48px] rounded-xl border border-white/10 object-cover shadow shrink-0"
+                    onError={(e) => {
+                      ;(e.target as HTMLImageElement).src = 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(detailsModalPartner.name)
+                    }}
                   />
                   <div>
                     <h3 className="font-display text-base text-white flex items-center gap-2">
