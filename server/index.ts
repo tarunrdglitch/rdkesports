@@ -1453,10 +1453,183 @@ app.post('/api/creators/ambassadors', async (req: Request, res: Response) => {
   }
 })
 
+app.patch('/api/creators/ambassadors/:id', updateAmbassadorHandler)
+app.put('/api/creators/ambassadors/:id', updateAmbassadorHandler)
+
+async function updateAmbassadorHandler(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id)
+    const { name, email, password, assignedTeamRange, phone, allocatedPurse } = req.body
+
+    let amb = AMBASSADORS.find((a) => a.id === id || a.email.toLowerCase() === id.toLowerCase())
+    const oldEmail = amb?.email || id
+    const oldName = amb?.name || ''
+    const oldTeam = amb?.assignedTeamRange || ''
+
+    const normalizedEmail = email ? String(email).trim().toLowerCase() : (oldEmail ? oldEmail.toLowerCase() : '')
+
+    // Check if new email is taken by another user
+    if (normalizedEmail && normalizedEmail !== oldEmail.toLowerCase()) {
+      const emailConflict = USERS.find(
+        (u) => u.email.toLowerCase() === normalizedEmail && u.id !== id && (!amb || u.id !== amb.id)
+      )
+      if (emailConflict) {
+        return res.status(409).json({ error: 'An account with this email already exists' })
+      }
+    }
+
+    if (!amb) {
+      // Check ephemeral bidders or tournaments if dynamic
+      const bidder = EPHEMERAL_BIDDERS.find(
+        (b) => b.id === id || b.loginCode.toLowerCase() === id.toLowerCase() || b.loginCode.toLowerCase() === oldEmail.toLowerCase()
+      )
+      const tourney = bidder ? TOURNAMENTS.find((t) => t.id === bidder.auctionId || t.slug === bidder.auctionId) : undefined
+
+      amb = {
+        id,
+        name: name ? String(name).trim() : (bidder ? `${bidder.teamName} (Franchise Bidder)` : 'Ambassador'),
+        email: normalizedEmail || (bidder ? bidder.loginCode : `${id}@auction.rdk`),
+        creatorId: tourney?.creatorId || 'creator',
+        tournamentId: bidder?.auctionId || '',
+        tournamentName: tourney?.name || 'Auction Tournament',
+        assignedTeamRange: assignedTeamRange ? String(assignedTeamRange).trim() : (bidder?.teamName || 'Live Auction Bidder'),
+        phone: phone ? String(phone).trim() : '',
+        createdAt: new Date().toISOString(),
+      }
+      AMBASSADORS.push(amb)
+    } else {
+      if (name) amb.name = String(name).trim()
+      if (normalizedEmail) amb.email = normalizedEmail
+      if (assignedTeamRange !== undefined) amb.assignedTeamRange = String(assignedTeamRange).trim()
+      if (phone !== undefined) amb.phone = String(phone).trim()
+    }
+
+    // Update matching EPHEMERAL_BIDDERS
+    const bidder = EPHEMERAL_BIDDERS.find(
+      (b) =>
+        b.id === id ||
+        b.loginCode.toLowerCase() === oldEmail.toLowerCase() ||
+        (normalizedEmail && b.loginCode.toLowerCase() === normalizedEmail) ||
+        (oldTeam && b.teamName.toLowerCase() === oldTeam.toLowerCase())
+    )
+    if (bidder) {
+      if (assignedTeamRange) bidder.teamName = String(assignedTeamRange).trim()
+      if (normalizedEmail) bidder.loginCode = normalizedEmail
+      if (password && String(password).trim()) bidder.passkey = String(password).trim()
+      if (allocatedPurse !== undefined && !isNaN(Number(allocatedPurse))) {
+        bidder.allocatedPurse = Number(allocatedPurse)
+      }
+    }
+
+    // Update or upsert matching UserRecord in USERS
+    let userRec = USERS.find(
+      (u) =>
+        u.id === id ||
+        (amb && u.id === amb.id) ||
+        (oldEmail && u.email.toLowerCase() === oldEmail.toLowerCase()) ||
+        (normalizedEmail && u.email.toLowerCase() === normalizedEmail)
+    )
+
+    if (userRec) {
+      if (name) userRec.name = String(name).trim()
+      if (normalizedEmail) userRec.email = normalizedEmail
+      if (assignedTeamRange) {
+        userRec.teamName = String(assignedTeamRange).trim()
+        userRec.organizationName = String(assignedTeamRange).trim()
+      }
+      if (phone !== undefined) userRec.phone = String(phone).trim()
+      if (password && String(password).trim()) userRec.password = String(password).trim()
+      if (allocatedPurse !== undefined && !isNaN(Number(allocatedPurse))) {
+        userRec.allocatedPurse = Number(allocatedPurse)
+      }
+    } else {
+      userRec = {
+        id: amb.id,
+        name: amb.name,
+        email: amb.email,
+        role: 'ambassador',
+        organizationId: amb.creatorId,
+        password: password && String(password).trim() ? String(password).trim() : 'password123',
+        teamName: amb.assignedTeamRange,
+        organizationName: amb.assignedTeamRange,
+        phone: amb.phone,
+        allocatedPurse: allocatedPurse !== undefined && !isNaN(Number(allocatedPurse)) ? Number(allocatedPurse) : 150000,
+        createdAt: new Date().toISOString(),
+      }
+      USERS.push(userRec)
+    }
+
+    // Update in REGISTERED_TEAMS if any team is assigned to this ambassador or matches old name
+    for (const tm of REGISTERED_TEAMS) {
+      if (
+        tm.ambassadorId === id ||
+        (amb && tm.ambassadorId === amb.id) ||
+        (oldName && tm.ambassadorName?.toLowerCase() === oldName.toLowerCase()) ||
+        (oldTeam && tm.name?.toLowerCase() === oldTeam.toLowerCase())
+      ) {
+        if (name) tm.ambassadorName = String(name).trim()
+        if (assignedTeamRange) tm.name = String(assignedTeamRange).trim()
+      }
+    }
+
+    // Update in database if configured
+    if (isDatabaseConfigured) {
+      try {
+        await prisma.ambassador.upsert({
+          where: { id: amb.id },
+          update: {
+            name: amb.name,
+            email: amb.email,
+            assignedTeamRange: amb.assignedTeamRange,
+            phone: amb.phone || null,
+          },
+          create: {
+            id: amb.id,
+            name: amb.name,
+            email: amb.email,
+            creatorId: amb.creatorId,
+            tournamentId: amb.tournamentId,
+            tournamentName: amb.tournamentName,
+            assignedTeamRange: amb.assignedTeamRange,
+            phone: amb.phone || null,
+          },
+        }).catch(() => {})
+
+        await prisma.user.updateMany({
+          where: {
+            OR: [
+              { id: amb.id },
+              ...(oldEmail ? [{ email: { equals: oldEmail, mode: 'insensitive' as const } }] : []),
+              ...(normalizedEmail ? [{ email: { equals: normalizedEmail, mode: 'insensitive' as const } }] : []),
+            ],
+          },
+          data: {
+            name: amb.name,
+            email: amb.email,
+            phone: amb.phone || null,
+            ...(password && String(password).trim() ? { password: String(password).trim() } : {}),
+          },
+        }).catch(() => {})
+      } catch (dbErr) {
+        console.warn('[Database] Notice updating ambassador in DB:', dbErr)
+      }
+    }
+
+    return res.json({ success: true, message: 'Ambassador details updated successfully', ambassador: amb })
+  } catch (error) {
+    console.error('Error updating ambassador:', error)
+    return res.status(500).json({ error: 'Internal server error while updating ambassador' })
+  }
+}
+
 app.delete('/api/creators/ambassadors/:id', async (req: Request, res: Response) => {
   const id = String(req.params.id)
+  const targetAmb = AMBASSADORS.find((a) => a.id === id)
+  const oldEmail = targetAmb?.email || ''
+
   AMBASSADORS = AMBASSADORS.filter((a) => a.id !== id)
-  USERS = USERS.filter((u) => u.id !== id)
+  USERS = USERS.filter((u) => u.id !== id && (!oldEmail || u.email.toLowerCase() !== oldEmail.toLowerCase()))
+  EPHEMERAL_BIDDERS = EPHEMERAL_BIDDERS.filter((b) => b.id !== id && (!oldEmail || b.loginCode.toLowerCase() !== oldEmail.toLowerCase()))
 
   if (isDatabaseConfigured) {
     try {

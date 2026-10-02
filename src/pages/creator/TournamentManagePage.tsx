@@ -218,6 +218,19 @@ export default function TournamentManagePage() {
     phone: '',
   })
 
+  // Edit Ambassador Modal State
+  const [editingAmbassador, setEditingAmbassador] = useState<TournamentAmbassador | null>(null)
+  const [isEditAmbassadorOpen, setIsEditAmbassadorOpen] = useState(false)
+  const [isUpdatingAmbassador, setIsUpdatingAmbassador] = useState(false)
+  const [editAmbassadorForm, setEditAmbassadorForm] = useState({
+    name: '',
+    email: '',
+    assignedTeamRange: '',
+    password: '',
+    phone: '',
+    allocatedPurse: '150000',
+  })
+
   // Live Stream Broadcast Studio State
   const [streamUrl, setStreamUrl] = useState('')
   const [streamTitle, setStreamTitle] = useState('')
@@ -838,6 +851,53 @@ export default function TournamentManagePage() {
       }
     } catch {
       setError('Failed to revoke ambassador')
+    }
+  }
+
+  const handleOpenEditAmbassador = (a: TournamentAmbassador) => {
+    setEditingAmbassador(a)
+    setEditAmbassadorForm({
+      name: a.name || '',
+      email: a.email || '',
+      assignedTeamRange: a.assignedTeamRange || '',
+      password: '',
+      phone: a.phone && a.phone !== '—' ? a.phone : '',
+      allocatedPurse: '150000',
+    })
+    setIsEditAmbassadorOpen(true)
+  }
+
+  const handleUpdateAmbassador = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingAmbassador) return
+    setIsUpdatingAmbassador(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/creators/ambassadors/${editingAmbassador.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editAmbassadorForm.name,
+          email: editAmbassadorForm.email,
+          assignedTeamRange: editAmbassadorForm.assignedTeamRange,
+          password: editAmbassadorForm.password || undefined,
+          phone: editAmbassadorForm.phone,
+          allocatedPurse: editAmbassadorForm.allocatedPurse ? Number(editAmbassadorForm.allocatedPurse) : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to update ambassador details')
+
+      setSuccessMsg(`Details for "${editAmbassadorForm.name}" updated successfully!`)
+      setTimeout(() => setSuccessMsg(''), 4000)
+      setIsEditAmbassadorOpen(false)
+      setEditingAmbassador(null)
+      loadAmbassadors()
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message)
+      else setError('Failed to update ambassador')
+    } finally {
+      setIsUpdatingAmbassador(false)
     }
   }
 
@@ -3509,13 +3569,22 @@ export default function TournamentManagePage() {
                         </td>
                         <td className="p-3 text-muted-foreground">{a.phone || '—'}</td>
                         <td className="p-3 text-right">
-                          <button
-                            onClick={() => handleDeleteAmbassador(a.id, a.name)}
-                            className="rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition"
-                            title="Revoke Ambassador"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleOpenEditAmbassador(a)}
+                              className="rounded p-1 text-muted-foreground hover:text-primary hover:bg-primary/10 transition"
+                              title="Edit Ambassador Details"
+                            >
+                              <Edit3 className="size-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteAmbassador(a.id, a.name)}
+                              className="rounded p-1 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition"
+                              title="Revoke Ambassador"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -3612,6 +3681,129 @@ export default function TournamentManagePage() {
                       className="rounded bg-primary px-4 py-1.5 text-xs font-bold text-background hover:opacity-90 disabled:opacity-60"
                     >
                       {isSubmittingAmbassador ? 'Creating…' : 'Issue Ambassador Account'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Ambassador Modal */}
+          {isEditAmbassadorOpen && editingAmbassador && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="size-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                      <Edit3 className="size-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-base text-foreground">Edit Ambassador & Bidder</h3>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Update credentials and franchise delegation</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setIsEditAmbassadorOpen(false)
+                      setEditingAmbassador(null)
+                    }}
+                    className="rounded p-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleUpdateAmbassador} className="space-y-3">
+                  <label className="block text-xs font-medium text-foreground">
+                    Ambassador / Bidder Full Name *
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Madurai Warriors Ambassador"
+                      className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                      value={editAmbassadorForm.name}
+                      onChange={(e) => setEditAmbassadorForm({ ...editAmbassadorForm, name: e.target.value })}
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block text-xs font-medium text-foreground">
+                      Login Email Address *
+                      <input
+                        type="email"
+                        required
+                        placeholder="ambassador@auction.rdk"
+                        className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                        value={editAmbassadorForm.email}
+                        onChange={(e) => setEditAmbassadorForm({ ...editAmbassadorForm, email: e.target.value })}
+                      />
+                    </label>
+
+                    <label className="block text-xs font-medium text-foreground">
+                      Franchise / Team Role *
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. MADURAI WARRIORS"
+                        className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none font-semibold text-primary"
+                        value={editAmbassadorForm.assignedTeamRange}
+                        onChange={(e) => setEditAmbassadorForm({ ...editAmbassadorForm, assignedTeamRange: e.target.value })}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block text-xs font-medium text-foreground">
+                      New Password / Passkey
+                      <input
+                        type="text"
+                        placeholder="Leave blank to keep current"
+                        className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                        value={editAmbassadorForm.password}
+                        onChange={(e) => setEditAmbassadorForm({ ...editAmbassadorForm, password: e.target.value })}
+                      />
+                    </label>
+
+                    <label className="block text-xs font-medium text-foreground">
+                      Virtual Purse (₹)
+                      <input
+                        type="number"
+                        placeholder="150000"
+                        className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                        value={editAmbassadorForm.allocatedPurse}
+                        onChange={(e) => setEditAmbassadorForm({ ...editAmbassadorForm, allocatedPurse: e.target.value })}
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block text-xs font-medium text-foreground">
+                    Phone (WhatsApp Contact - Optional)
+                    <input
+                      type="tel"
+                      placeholder="+91 98765 43210"
+                      className="mt-1 w-full rounded border border-border bg-muted px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                      value={editAmbassadorForm.phone}
+                      onChange={(e) => setEditAmbassadorForm({ ...editAmbassadorForm, phone: e.target.value })}
+                    />
+                  </label>
+
+                  <div className="pt-3 flex justify-end gap-2 border-t border-border mt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditAmbassadorOpen(false)
+                        setEditingAmbassador(null)
+                      }}
+                      className="rounded border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isUpdatingAmbassador}
+                      className="rounded bg-primary px-4 py-1.5 text-xs font-bold text-background hover:opacity-90 disabled:opacity-60 flex items-center gap-1.5"
+                    >
+                      {isUpdatingAmbassador ? 'Saving…' : 'Save Changes'}
                     </button>
                   </div>
                 </form>

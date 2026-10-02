@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Users, Plus, Trash2, CheckCircle2, X,
-  Mail, Trophy, Gavel, Shield, Phone, KeyRound,
+  Mail, Trophy, Gavel, Shield, Phone, KeyRound, Edit3,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { useAuth } from '@/stores/authStore'
@@ -26,6 +26,19 @@ export default function AmbassadorManagementPage() {
   const [formData, setFormData] = useState({
     name: '', email: '', password: 'password123',
     tournamentId: '', phone: '',
+  })
+
+  // Edit Ambassador State
+  const [editingAmbassador, setEditingAmbassador] = useState<Ambassador | null>(null)
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    email: '',
+    assignedTeamRange: '',
+    password: '',
+    phone: '',
+    allocatedPurse: '150000',
   })
 
   useEffect(() => { loadAmbassadors(); loadTournaments() }, [])
@@ -80,6 +93,51 @@ export default function AmbassadorManagementPage() {
       const res = await fetch(`/api/creators/ambassadors/${id}`, { method: 'DELETE' })
       if (res.ok) { setMsg(`Ambassador ${name} revoked.`); loadAmbassadors() }
     } catch { setErr('Failed to revoke ambassador') }
+  }
+
+  const handleOpenEdit = (a: Ambassador) => {
+    setEditingAmbassador(a)
+    setEditFormData({
+      name: a.name || '',
+      email: a.email || '',
+      assignedTeamRange: a.assignedTeamRange || '',
+      password: '',
+      phone: a.phone && a.phone !== '—' ? a.phone : '',
+      allocatedPurse: '150000',
+    })
+    setIsEditOpen(true)
+  }
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingAmbassador) return
+    setIsUpdating(true)
+    setErr('')
+    setMsg('')
+    try {
+      const res = await fetch(`/api/creators/ambassadors/${editingAmbassador.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editFormData.name,
+          email: editFormData.email,
+          assignedTeamRange: editFormData.assignedTeamRange,
+          password: editFormData.password || undefined,
+          phone: editFormData.phone,
+          allocatedPurse: editFormData.allocatedPurse ? Number(editFormData.allocatedPurse) : undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to update ambassador')
+      setMsg(`Details for "${editFormData.name}" updated successfully!`)
+      setIsEditOpen(false)
+      setEditingAmbassador(null)
+      loadAmbassadors()
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Failed to update ambassador')
+    } finally {
+      setIsUpdating(false)
+    }
   }
 
   return (
@@ -201,11 +259,18 @@ export default function AmbassadorManagementPage() {
                       </td>
                       <td className="px-4 py-3 text-muted-foreground font-body">{a.phone || '—'}</td>
                       <td className="px-4 py-3">
-                        <button onClick={() => handleDelete(a.id, a.name)}
-                          className="size-7 flex items-center justify-center rounded-lg bg-danger/08 border border-danger/20 text-danger/50 hover:text-danger hover:bg-danger/15 hover:border-danger/35 transition-all duration-200 cursor-pointer"
-                          title="Revoke Ambassador">
-                          <Trash2 className="size-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => handleOpenEdit(a)}
+                            className="size-7 flex items-center justify-center rounded-lg bg-primary/10 border border-primary/20 text-primary/70 hover:text-primary hover:bg-primary/20 hover:border-primary/40 transition-all duration-200 cursor-pointer"
+                            title="Edit Ambassador Details">
+                            <Edit3 className="size-3.5" />
+                          </button>
+                          <button onClick={() => handleDelete(a.id, a.name)}
+                            className="size-7 flex items-center justify-center rounded-lg bg-danger/08 border border-danger/20 text-danger/50 hover:text-danger hover:bg-danger/15 hover:border-danger/35 transition-all duration-200 cursor-pointer"
+                            title="Revoke Ambassador">
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </motion.tr>
                   ))}
@@ -290,6 +355,100 @@ export default function AmbassadorManagementPage() {
                           <><span className="size-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />Creating…</>
                         ) : (
                           <><KeyRound className="size-3.5" />Issue Account</>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+
+        {/* Edit Modal */}
+        {isEditOpen && editingAmbassador && (
+          <>
+            <motion.div className="fixed inset-0 z-50" style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => { setIsEditOpen(false); setEditingAmbassador(null) }} />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div className="w-full max-w-md rounded-2xl overflow-hidden"
+                style={{ background: 'linear-gradient(160deg, #0E0C10, #0A080D)', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 32px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(245,26,26,0.08)' }}
+                initial={{ opacity: 0, scale: 0.94, y: 24 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.94, y: 24 }} transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                onClick={e => e.stopPropagation()}
+              >
+                {/* Top bar */}
+                <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(245,26,26,0.6), transparent)' }} />
+                <div className="relative z-10 p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-2.5">
+                      <div className="size-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                        <Edit3 className="size-4" />
+                      </div>
+                      <div>
+                        <h3 className="font-heading font-bold text-base text-white">Edit Ambassador & Bidder</h3>
+                        <p className="text-[11px] font-body mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Update credentials and franchise delegation</p>
+                      </div>
+                    </div>
+                    <button onClick={() => { setIsEditOpen(false); setEditingAmbassador(null) }}
+                      className="size-7 flex items-center justify-center rounded-lg bg-white/05 hover:bg-white/10 text-muted-foreground hover:text-white cursor-pointer transition">
+                      <X className="size-4" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleUpdate} className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider font-body mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>Full Name *</label>
+                      <input type="text" required placeholder="e.g. Praveen Kumar" value={editFormData.name}
+                        onChange={e => setEditFormData({ ...editFormData, name: e.target.value })}
+                        className="rdk-input text-xs" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider font-body mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>Login Email *</label>
+                        <input type="email" required placeholder="ambassador@org.com" value={editFormData.email}
+                          onChange={e => setEditFormData({ ...editFormData, email: e.target.value })}
+                          className="rdk-input text-xs" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider font-body mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>Franchise / Team Role *</label>
+                        <input type="text" required placeholder="e.g. MADURAI WARRIORS" value={editFormData.assignedTeamRange}
+                          onChange={e => setEditFormData({ ...editFormData, assignedTeamRange: e.target.value })}
+                          className="rdk-input text-xs font-semibold text-primary" />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider font-body mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>New Password</label>
+                        <input type="text" placeholder="Leave blank to keep current" value={editFormData.password}
+                          onChange={e => setEditFormData({ ...editFormData, password: e.target.value })}
+                          className="rdk-input text-xs" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider font-body mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>Virtual Purse (₹)</label>
+                        <input type="number" placeholder="150000" value={editFormData.allocatedPurse}
+                          onChange={e => setEditFormData({ ...editFormData, allocatedPurse: e.target.value })}
+                          className="rdk-input text-xs" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider font-body mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>WhatsApp Contact (Optional)</label>
+                      <input type="tel" placeholder="+91 98765 43210" value={editFormData.phone}
+                        onChange={e => setEditFormData({ ...editFormData, phone: e.target.value })}
+                        className="rdk-input text-xs" />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button type="button" onClick={() => { setIsEditOpen(false); setEditingAmbassador(null) }} className="btn-ghost text-xs cursor-pointer">Cancel</button>
+                      <button type="submit" disabled={isUpdating} className="btn-primary text-xs cursor-pointer disabled:opacity-60 flex items-center gap-1.5">
+                        {isUpdating ? (
+                          <><span className="size-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />Saving…</>
+                        ) : (
+                          'Save Changes'
                         )}
                       </button>
                     </div>
