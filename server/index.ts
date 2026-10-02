@@ -342,22 +342,7 @@ export interface EphemeralAuctionBidder {
 }
 
 // 1. Official Creators (Partners) - dynamic, onboarded by super_admin
-let OFFICIAL_CREATORS: OfficialCreator[] = [
-  {
-    id: 'cr_tamil_aura_zoner',
-    name: 'Tamil Aura Zoner',
-    handle: '@tamilaurazonerofficial',
-    organizationName: 'Tamil Aura Zoner Esports',
-    avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=300&q=80',
-    bio: 'Official verified gaming creator & tournament partner on RDK Esports.',
-    subscribers: 'Official Partner',
-    verified: true,
-    games: ['Free Fire', 'BGMI'],
-    socials: { loginEmail: 'tamilaurazonerofficial@gmail.com' },
-    activeTournaments: 0,
-    totalTournaments: 0,
-  },
-]
+let OFFICIAL_CREATORS: OfficialCreator[] = []
 
 // 2. Base Users List (Platform Authority)
 // NOTE: Only real credentials here — test accounts removed for production security.
@@ -369,26 +354,6 @@ let USERS: UserRecord[] = [
     role: 'super_admin',
     password: 'clasher@2026',
     organizationName: 'RDK Esports Org',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'usr_cr_tamilaurazoner',
-    name: 'Tamil Aura Zoner',
-    email: 'tamilaurazonerofficial@gmail.com',
-    role: 'creator',
-    organizationId: 'cr_tamil_aura_zoner',
-    organizationName: 'Tamil Aura Zoner Esports',
-    password: 'password123',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'usr_cr_tamilaurazoner_handle',
-    name: 'Tamil Aura Zoner',
-    email: 'tamilaurazonerofficial',
-    role: 'creator',
-    organizationId: 'cr_tamil_aura_zoner',
-    organizationName: 'Tamil Aura Zoner Esports',
-    password: 'password123',
     createdAt: new Date().toISOString(),
   },
 ]
@@ -1012,7 +977,7 @@ app.get('/api/creators', (req: Request, res: Response) => {
   const includeAll = req.query.includeAll === 'true'
   let list = OFFICIAL_CREATORS
   if (!includeAll) {
-    list = list.filter((c) => !c.isDeleted && c.status !== 'deactivated')
+    list = list.filter((c) => !c.isDeleted && (c.status === 'active' || !c.status))
   }
 
   // Calculate live tournament counts and financials for each partner
@@ -1211,51 +1176,71 @@ app.post('/api/creators', requireSuperAdmin, (req: Request, res: Response) => {
   }
 })
 
-// 4b. Soft-Delete / Decommission an Official Partner (Super Admin only - NEVER permanently deletes tournament history!)
+// 4b. Permanent Delete of an Official Partner (Super Admin only - removes from platform & landing page)
 app.delete('/api/creators/:id', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id)
     const partner = OFFICIAL_CREATORS.find((c) => c.id === id)
-    if (!partner) {
-      return res.status(404).json({ error: 'Official Partner not found' })
-    }
 
-    // Soft deletion: flag as deactivated and isDeleted, preserve historical tournament data!
-    partner.status = 'deactivated'
-    partner.isDeleted = true
+    // Remove from in-memory arrays
+    OFFICIAL_CREATORS = OFFICIAL_CREATORS.filter((c) => c.id !== id)
+    USERS = USERS.filter(
+      (u) =>
+        u.organizationId !== id &&
+        u.id !== id &&
+        (!partner?.socials?.loginEmail || u.email?.toLowerCase() !== partner.socials.loginEmail.toLowerCase())
+    )
 
-    const user = USERS.find((u) => u.organizationId === id || (u.email && u.email.toLowerCase() === partner.socials?.loginEmail?.toLowerCase()))
-    if (user) {
-      (user as any).status = 'deactivated'
-      user.isDeleted = true
-    }
+    // Reassign any tournaments created by this partner to platform head so tournament records remain valid
+    TOURNAMENTS.forEach((t) => {
+      if (t.creatorId === id) {
+        t.creatorId = 'rdk_head'
+        t.creatorName = 'RDK Esports'
+        t.creatorHandle = '@rdkesports'
+      }
+    })
 
     if (isDatabaseConfigured) {
-      await prisma.officialCreator.updateMany({
+      await prisma.officialCreator.deleteMany({
         where: { id },
-        data: { status: 'deactivated', isDeleted: true },
       }).catch(() => { })
-      await prisma.user.updateMany({
-        where: { organizationId: id },
-        data: { status: 'deactivated', isDeleted: true },
+
+      await prisma.user.deleteMany({
+        where: {
+          OR: [
+            { organizationId: id },
+            ...(partner?.socials?.loginEmail
+              ? [{ email: { equals: partner.socials.loginEmail, mode: 'insensitive' as const } }]
+              : []),
+          ],
+        },
+      }).catch(() => { })
+
+      await prisma.tournament.updateMany({
+        where: { creatorId: id },
+        data: {
+          creatorId: 'rdk_head',
+          creatorName: 'RDK Esports',
+          creatorHandle: '@rdkesports',
+        },
       }).catch(() => { })
     }
 
     logAuditEvent({
-      action: 'PARTNER_DECOMMISSIONED',
+      action: 'PARTNER_DELETED',
       actorId: req.user?.id,
       actorName: req.user?.name,
       actorRole: req.user?.role,
-      details: `Official Partner "${partner.name}" decommissioned. Historical tournament records preserved for audit.`,
+      details: `Official Partner "${partner?.name || id}" (${partner?.handle || ''}) permanently deleted from platform and landing page.`,
     })
 
     return res.json({
       success: true,
-      message: `Official Partner "${partner.name}" decommissioned successfully. Historical records preserved.`,
+      message: `Official Partner "${partner?.name || id}" deleted successfully and removed from landing page.`,
     })
   } catch (error) {
-    console.error('Error decommissioning partner:', error)
-    return res.status(500).json({ error: 'Failed to decommission partner' })
+    console.error('Error deleting partner:', error)
+    return res.status(500).json({ error: 'Failed to delete partner' })
   }
 })
 
@@ -4854,71 +4839,7 @@ async function initDatabase() {
       console.error('[Database] Notice syncing owner credentials to DB:', ownerSyncErr)
     }
 
-    // Ensure Official Creator (Tamil Aura Zoner) and all onboarded creators exist in PostgreSQL and in USERS
-    try {
-      await prisma.officialCreator.upsert({
-        where: { id: 'cr_tamil_aura_zoner' },
-        update: {
-          name: 'Tamil Aura Zoner',
-          handle: '@tamilaurazonerofficial',
-          organizationName: 'Tamil Aura Zoner Esports',
-          verified: true,
-        },
-        create: {
-          id: 'cr_tamil_aura_zoner',
-          name: 'Tamil Aura Zoner',
-          handle: '@tamilaurazonerofficial',
-          organizationName: 'Tamil Aura Zoner Esports',
-          avatar:
-            'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=300&q=80',
-          bio: 'Official verified gaming creator & tournament partner on RDK Esports.',
-          subscribers: 'Official Partner',
-          verified: true,
-          games: JSON.stringify(['Free Fire', 'BGMI']),
-          socials: JSON.stringify({ loginEmail: 'tamilaurazonerofficial@gmail.com' }),
-        },
-      })
 
-      // Upgrade any registered user matching aurazoner or tamilaurazoner to role 'creator'
-      await prisma.user.updateMany({
-        where: {
-          OR: [
-            { email: { contains: 'aurazoner', mode: 'insensitive' } },
-            { name: { contains: 'aurazoner', mode: 'insensitive' } },
-            { email: { equals: 'tamilaurazonerofficial@gmail.com', mode: 'insensitive' } },
-            { email: { equals: 'tamilaurazonerofficial', mode: 'insensitive' } },
-          ],
-        },
-        data: {
-          role: 'creator',
-          organizationId: 'cr_tamil_aura_zoner',
-          organizationName: 'Tamil Aura Zoner Esports',
-        },
-      })
-
-      // Upsert creator user into PostgreSQL
-      await prisma.user.upsert({
-        where: { email: 'tamilaurazonerofficial@gmail.com' },
-        update: {
-          name: 'Tamil Aura Zoner',
-          role: 'creator',
-          organizationId: 'cr_tamil_aura_zoner',
-          organizationName: 'Tamil Aura Zoner Esports',
-        },
-        create: {
-          id: 'usr_cr_tamilaurazoner',
-          name: 'Tamil Aura Zoner',
-          email: 'tamilaurazonerofficial@gmail.com',
-          role: 'creator',
-          password: 'password123',
-          organizationId: 'cr_tamil_aura_zoner',
-          organizationName: 'Tamil Aura Zoner Esports',
-        },
-      })
-      console.log('[Database] Official Creator (Tamil Aura Zoner) verified & in sync in PostgreSQL.')
-    } catch (crErr) {
-      console.error('[Database] Notice syncing creator credentials to DB:', crErr)
-    }
 
     // Auto-seed TNBBL Season 2 36 District Franchise Teams & Ambassadors if not yet in PostgreSQL
     try {

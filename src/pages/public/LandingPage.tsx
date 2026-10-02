@@ -56,26 +56,6 @@ const DEFAULT_CREATORS = [
       discord: 'https://discord.gg/rdkesports',
     },
   },
-  {
-    id: 'tamil_aura_zoner',
-    name: 'Tamil Aura Zoner',
-    handle: '@tamilaurazonerofficial',
-    title: 'Official Partner Creator',
-    photo: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=400&q=80',
-    subscribers: 'Official Partner',
-    bio: 'Official verified esports creator, tournament broadcaster, and community partner conducting competitive Free Fire & BGMI championships on RDK Esports.',
-    games: ['Free Fire', 'BGMI'],
-    activeTournaments: 1,
-    totalTournaments: 8,
-    verified: true,
-    rank: 2,
-    accentColor: '#FF4D2D',
-    socials: {
-      youtube: 'https://youtube.com',
-      instagram: 'https://instagram.com',
-      discord: 'https://discord.gg',
-    },
-  },
 ]
 const OFFICIAL_CREATORS = DEFAULT_CREATORS
 
@@ -438,8 +418,9 @@ export default function LandingPage() {
     tournamentService.list().then(setTournaments)
     creatorService.getPlatformStats().then(setStats)
     creatorService.list().then((dbList) => {
-      if (dbList && dbList.length > 0) {
-        const mapped = dbList.map((c, i) => ({
+      const activeList = (dbList || []).filter((c: any) => (!c.status || c.status === 'active') && !c.isDeleted)
+      if (activeList.length > 0) {
+        const mapped = activeList.map((c, i) => ({
           id: c.id,
           name: c.name,
           handle: c.handle,
@@ -450,14 +431,16 @@ export default function LandingPage() {
           subscribers: c.subscribers || 'Official Partner',
           bio: c.bio,
           games: Array.isArray(c.games) ? c.games : ['Free Fire', 'BGMI'],
-          activeTournaments: c.activeTournaments || 1,
-          totalTournaments: c.totalTournaments || 6,
+          activeTournaments: c.activeTournaments || 0,
+          totalTournaments: c.totalTournaments || 0,
           verified: true,
           rank: i + 1,
           accentColor: i === 0 ? '#FF4D2D' : i === 1 ? '#8B5CF6' : '#F59E0B',
           socials: c.socials || {},
         }))
         setCreators(mapped)
+      } else {
+        setCreators(DEFAULT_CREATORS)
       }
     })
     const onScroll = () => setNavScrolled(window.scrollY > 40)
@@ -625,7 +608,7 @@ export default function LandingPage() {
                   { label: 'Tournaments', value: stats?.totalTournamentsHosted ?? '36+', color: 'gradient-text' },
                   { label: 'Prize Given', value: stats?.totalPrizeDistributed ?? '₹8.75L+', color: 'text-primary' },
                   { label: 'Gamers', value: stats?.registeredGamers ?? '12K+', color: 'gradient-text' },
-                  { label: 'Partners', value: `${OFFICIAL_CREATORS.length}`, color: 'gradient-text-gold' },
+                  { label: 'Partners', value: `${creators.length}`, color: 'gradient-text-gold' },
                 ].map((s) => (
                   <div key={s.label}>
                     <p className={`stat-number text-3xl ${s.color}`}>{s.value}</p>

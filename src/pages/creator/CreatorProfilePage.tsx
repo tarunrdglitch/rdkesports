@@ -157,7 +157,11 @@ export default function CreatorProfilePage() {
     setIsSavingDp(true)
     setDpMsg(null)
     try {
-      const creatorId = creator?.id || 'cr_tamil_aura_zoner'
+      const creatorId = creator?.id || user?.organizationId || ''
+      if (!creatorId) {
+        setDpMsg({ text: 'Creator profile not found', type: 'error' })
+        return
+      }
       await creatorService.update(creatorId, { avatar: targetUrl })
       setCreator((prev) => (prev ? { ...prev, avatar: targetUrl } : null))
       updateUser({ avatar: targetUrl })

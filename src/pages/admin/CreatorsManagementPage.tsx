@@ -164,17 +164,17 @@ export default function CreatorsManagementPage() {
   const handleDelete = async (id: string, name: string) => {
     if (
       !window.confirm(
-        `Are you sure you want to decommission Official Partner "${name}"?\n\nNOTE: Historical tournaments, teams, and financial settlement records will be permanently preserved for audits (Soft Deletion).`
+        `Are you sure you want to permanently delete Official Partner "${name}"?\n\nThis will completely remove the partner from the platform and landing page.`
       )
     )
       return
     try {
       await creatorService.delete(id)
-      setSuccessMsg(`Official Partner "${name}" decommissioned. Historical audit data preserved.`)
+      setSuccessMsg(`Official Partner "${name}" deleted successfully and removed from landing page.`)
       loadCreators()
     } catch (err: unknown) {
       if (err instanceof Error) setErrorMsg(err.message)
-      else setErrorMsg('Failed to decommission partner')
+      else setErrorMsg('Failed to delete partner')
     }
   }
 
@@ -514,15 +514,15 @@ export default function CreatorsManagementPage() {
                       </button>
                     </div>
 
-                    {!isDeactivated && (
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(c.id, c.name)}
-                        className="w-full text-center text-[10px] text-danger/70 hover:text-danger pt-1 transition"
-                      >
-                        Decommission Partner (Preserve History)
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(c.id, c.name)}
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 mt-2 rounded bg-destructive/10 hover:bg-destructive/20 border border-destructive/30 text-xs font-semibold text-destructive transition cursor-pointer"
+                      title="Permanently Delete Official Partner"
+                    >
+                      <Trash2 className="size-3.5" />
+                      Delete Partner
+                    </button>
                   </div>
                 </div>
               )
